@@ -1,7 +1,7 @@
 #define PI32 3.14159265359
+#define RENDER_HANDNESS 1 //positive is left hand handess -> z going into the screen. 
 #define NEAR_CLIP_PLANE -(RENDER_HANDNESS)*0.1;
 #define FAR_CLIP_PLANE -(RENDER_HANDNESS)*10000.0f
-#define USING_ATTRIBS_FOR_INSTANCING 1
 
 #define PRINT_NUMBER_DRAW_CALLS 0
 
@@ -26,6 +26,17 @@
 
 #include "easy_shaders.h"
 
+#define EASY_MAX_LIGHT_COUNT 16
+
+#define VERTEX_ATTRIB_LOCATION 0
+#define NORMAL_ATTRIB_LOCATION 1
+#define UV_ATTRIB_LOCATION 2
+#define MODEL_ATTRIB_LOCATION 3
+#define VIEW_ATTRIB_LOCATION 7
+#define PROJECTION_ATTRIB_LOCATION 11
+#define COLOR_ATTRIB_LOCATION 15
+#define UVATLAS_ATTRIB_LOCATION 17
+
 #define PROJECTION_TYPE(FUNC) \
 FUNC(PERSPECTIVE_MATRIX) \
 FUNC(ORTHO_MATRIX) \
@@ -39,12 +50,12 @@ typedef enum {
 static char *ProjectionTypeStrings[] = { PROJECTION_TYPE(STRING) };
 
 typedef struct {
-    V3 pos;
-    float flux;
-} LightInfo;
-
-static int globalLightInfoCount;
-static LightInfo globalLightInfos[64];
+    V4 direction; //or position w component == 1 for points lights, w == 0 for directional lights
+    
+    V3 ambient;
+    V3 diffuse;
+    V3 specular;
+} EasyLight;
 
 typedef struct {
     s32 handle;
@@ -66,6 +77,7 @@ typedef struct {
 } RenderProgram;
 
 RenderProgram phongProgram;
+RenderProgram skyboxProgram;
 RenderProgram textureProgram;
 
 typedef struct {
@@ -104,12 +116,19 @@ typedef struct {
             V3 normal;
             V2 texUV;
             V4 color;
-            float lengthRatio; //just for rects. mmm, should i be sticking more things in here?????? 
-            float percentY;
             u32 instanceIndex;
         };
     };
 } Vertex;
+
+static inline Vertex vertex(V3 pos, V3 normal, V2 texUV) {
+    Vertex v = {};
+    v.position = pos;
+    v.normal = normal;
+    v.texUV = texUV;
+
+    return v;
+}
 
 
 #define getOffsetForVertex(attrib) (void *)(&(((Vertex *)(0))->attrib))
@@ -119,6 +138,7 @@ typedef enum {
     SHAPE_RECTANGLE_GRAD,
     SHAPE_TEXTURE,
     SHAPE_MODEL,
+    SHAPE_SKYBOX,
     SHAPE_SHADOW,
     SHAPE_CIRCLE,
     SHAPE_LINE,
@@ -126,28 +146,112 @@ typedef enum {
 } ShapeType;
 
 typedef enum {
+    TEXTURE_FILTER_LINEAR, 
+    TEXTURE_FILTER_NEAREST, 
+} RenderTextureFilter;
+
+typedef enum {
     BLEND_FUNC_STANDARD,
-    BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA,
+    BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA, 
 } BlendFuncType;
 
 typedef struct {
     GLuint vaoHandle;
     int indexCount; // this is to keep around so opnegl knows how many triangles to draw after the initialization frame
     bool valid;
-    GLuint vboHandle; //this is for instancing data
+    GLuint vboInstanceData; //this is for instancing data
 } VaoHandle;
 
 //just has a dim of 1 by 1 and you can rotate, scale etc. by a model matrix
-static V3 globalQuadPositionData[4] = {
-    v3(-0.5f, -0.5f, 0),
-    v3(-0.5f, 0.5f, 0),
-    v3(0.5f, -0.5f, 0),
-    v3(0.5f, 0.5f, 0) 
+static Vertex globalQuadPositionData[4] = {
+    vertex(v3(-0.5f, -0.5f, 0), v3(0, 0, 1), v2(0, 0)),
+    vertex(v3(0.5f, -0.5f, 0), v3(0, 0, 1), v2(1, 0)),
+    vertex(v3(0.5f, 0.5f, 0), v3(0, 0, 1), v2(1, 1)),
+    vertex(v3(-0.5f, 0.5f, 0), v3(0, 0, 1), v2(0, 1))
 };
 
-static unsigned int globalQuadIndicesData[6] = {0, 1, 3, 0, 2, 3};
+static unsigned int globalQuadIndicesData[6] = {0, 1, 2, 0, 2, 3};
 
 static VaoHandle globalQuadVaoHandle = {};
+
+//For a cude
+static Vertex globalCubeVertexData[24] = { //anti-clockwise 
+    vertex(v3(-0.5f, -0.5f, 0.5f), v3(0, 0, 1), v2(0, 0)), //back panel
+    vertex(v3(-0.5f, 0.5f, 0.5f), v3(0, 0, 1), v2(0, 1)),
+    vertex(v3(0.5f, 0.5f, 0.5f), v3(0, 0, 1), v2(1, 1)),
+    vertex(v3(0.5f, -0.5f, 0.5f), v3(0, 0, 1), v2(1, 0)),
+
+    vertex(v3(-0.5f, -0.5f, -0.5f), v3(0, 0, -1), v2(0, 0)), //front panel 
+    vertex(v3(0.5f, -0.5f, -0.5f), v3(0, 0, -1), v2(1, 0)),
+    vertex(v3(0.5f, 0.5f, -0.5f), v3(0, 0, -1), v2(1, 1)),
+    vertex(v3(-0.5f, 0.5f, -0.5f), v3(0, 0, -1), v2(0, 1)),
+
+    vertex(v3(-0.5f, -0.5f, 0.5f), v3(-1, 0, 0), v2(0, 0)), // left side
+    vertex(v3(-0.5f, -0.5f, -0.5f), v3(-1, 0, 0), v2(1, 0)),
+    vertex(v3(-0.5f, 0.5f, -0.5f), v3(-1, 0, 0), v2(1, 1)),
+    vertex(v3(-0.5f, 0.5f, 0.5f), v3(-1, 0, 0), v2(0, 1)),
+
+    vertex(v3(0.5f, -0.5f, 0.5f), v3(1, 0, 0), v2(0, 0)), //right side
+    vertex(v3(0.5f, 0.5f, 0.5f), v3(1, 0, 0), v2(0, 1)),
+    vertex(v3(0.5f, 0.5f, -0.5f), v3(1, 0, 0), v2(1, 1)),
+    vertex(v3(0.5f, -0.5f, -0.5f), v3(1, 0, 0), v2(1, 0)),
+
+    vertex(v3(0.5f, 0.5f, -0.5f), v3(0, 1, 0), v2(0, 0)), //top panel
+    vertex(v3(0.5f, 0.5f, 0.5f), v3(0, 1, 0), v2(1, 0)),
+    vertex(v3(-0.5f, 0.5f, 0.5f), v3(0, 1, 0), v2(1, 1)),
+    vertex(v3(-0.5f, 0.5f, -0.5f), v3(0, 1, 0), v2(0, 1)),
+
+    vertex(v3(0.5f, -0.5f, -0.5f), v3(0, -1, 0), v2(0, 0)), //bottom panel
+    vertex(v3(-0.5f, -0.5f, -0.5f), v3(0, -1, 0), v2(0, 1)),
+    vertex(v3(-0.5f, -0.5f, 0.5f), v3(0, -1, 0), v2(1, 1)),
+    vertex(v3(0.5f, -0.5f, 0.5f), v3(0, -1, 0), v2(1, 0))
+};
+
+
+static Vertex globalCubeMapVertexData[24] = { //anti-clockwise 
+    
+
+    vertex(v3(1.0f, -1.0f, 1.0f), v3(1, 0, 0), v2(0, 0)), //right side
+    vertex(v3(1.0f, 1.0f, 1.0f), v3(1, 0, 0), v2(0, 1)),
+    vertex(v3(1.0f, 1.0f, -1.0f), v3(1, 0, 0), v2(1, 1)),
+    vertex(v3(1.0f, -1.0f, -1.0f), v3(1, 0, 0), v2(1, 0)),
+
+    vertex(v3(-1.0f, -1.0f, 1.0f), v3(-1, 0, 0), v2(0, 0)), // left side
+    vertex(v3(-1.0f, -1.0f, -1.0f), v3(-1, 0, 0), v2(1, 0)),
+    vertex(v3(-1.0f, 1.0f, -1.0f), v3(-1, 0, 0), v2(1, 1)),
+    vertex(v3(-1.0f, 1.0f, 1.0f), v3(-1, 0, 0), v2(0, 1)),
+
+    vertex(v3(1.0f, 1.0f, -1.0f), v3(0, 1, 0), v2(0, 0)), //top panel
+    vertex(v3(1.0f, 1.0f, 1.0f), v3(0, 1, 0), v2(1, 0)),
+    vertex(v3(-1.0f, 1.0f, 1.0f), v3(0, 1, 0), v2(1, 1)),
+    vertex(v3(-1.0f, 1.0f, -1.0f), v3(0, 1, 0), v2(0, 1)),
+
+    vertex(v3(1.0f, -1.0f, -1.0f), v3(0, -1, 0), v2(0, 0)), //bottom panel
+    vertex(v3(-1.0f, -1.0f, -1.0f), v3(0, -1, 0), v2(0, 1)),
+    vertex(v3(-1.0f, -1.0f, 1.0f), v3(0, -1, 0), v2(1, 1)),
+    vertex(v3(1.0f, -1.0f, 1.0f), v3(0, -1, 0), v2(1, 0)),
+
+    vertex(v3(-1.0f, -1.0f, 1.0f), v3(0, 0, 1), v2(0, 0)), //back panel
+    vertex(v3(-1.0f, 1.0f, 1.0f), v3(0, 0, 1), v2(0, 1)),
+    vertex(v3(1.0f, 1.0f, 1.0f), v3(0, 0, 1), v2(1, 1)),
+    vertex(v3(1.0f, -1.0f, 1.0f), v3(0, 0, 1), v2(1, 0)),
+
+    vertex(v3(-1.0f, -1.0f, -1.0f), v3(0, 0, -1), v2(0, 0)), //front panel 
+    vertex(v3(1.0f, -1.0f, -1.0f), v3(0, 0, -1), v2(1, 0)),
+    vertex(v3(1.0f, 1.0f, -1.0f), v3(0, 0, -1), v2(1, 1)),
+    vertex(v3(-1.0f, 1.0f, -1.0f), v3(0, 0, -1), v2(0, 1))
+};
+
+static unsigned int globalCubeIndicesData[36] = 
+{0, 1, 2, 0, 2, 3, 
+4, 5, 6, 4, 6, 7, 
+8, 9, 10, 8, 10, 11,
+12, 13, 14, 12, 14, 15,
+16, 17, 18, 16, 18, 19,
+20, 21, 22, 20, 22, 23 };
+
+static VaoHandle globalCubeVaoHandle = {};
+static VaoHandle globalCubeMapVaoHandle = {};
 
 typedef struct {
     GLuint id;
@@ -157,44 +261,128 @@ typedef struct {
     
 } Texture;
 
-typedef enum {
-    RENDER_LIGHT_DIRECTIONAL,
-    RENDER_LIGHT_POINT,
-    RENDER_LIGHT_FLASHLIGHT
-} RenderLightType;
 
 typedef struct {
-    RenderLightType type;
+    int w;
+    int h;
+    int comp;
+    unsigned char *image;
+} EasyStbImage;
+
+Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderTextureFilter filter) {
+    Texture result = {};
+    if(image) {
+        
+        result.width = w;
+        result.height = h;
+        result.uvCoords = rect2f(0, 0, 1, 1);
+        
+        glGenTextures(1, &result.id);
+        
+        glBindTexture(GL_TEXTURE_2D, result.id);
+        
+        GLuint filterVal = GL_LINEAR;
+        if(filter == TEXTURE_FILTER_NEAREST) {
+            filterVal = GL_NEAREST;
+        } 
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterVal);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterVal);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        
+        if(comp == 3) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+        } else if(comp == 4) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+        } else {
+            assert(!"Channel number not handled!");
+        }
+        
+        glBindTexture(GL_TEXTURE_2D, 0);
+    } 
     
-    V3 position; //or direction
+    return result;
+}
 
-    V3 ambient;
-    V3 diffuse; 
-    V3 specular; //Usually black->white mono
+static inline EasyStbImage loadImage_(char *fileName) {
+    EasyStbImage result;
+    result.comp = 4;
+    result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, &result.comp, STBI_rgb_alpha);
+    
+    if(result.image) {
+        if(result.comp == 3) {
+            stbi_image_free(result.image);
+            result.image = stbi_load(fileName, &result.w, &result.h, &result.comp, STBI_rgb);
+            assert(result.image);
+            assert(result.comp == 3);
+        }
+    } else {
+        printf("%s\n", fileName);
+        assert(!"no image found");
+    }
+    
+    
+    return result;
+}
 
-    //for point light and flash light -> represents the attentuation as you get further away
-    float constant;
-    float linear;
-    float quadratic;
-    ///
+static inline void easy_endStbImage(EasyStbImage *image) {
+    if(image->image) {
+        stbi_image_free(image->image);
+    }
+}
 
-    //for just the flash light -> for the cone of the flash light
-    float cutoff;
-    float outerCutoff;
-    //
-} RenderLight;
+Texture loadImage(char *fileName, RenderTextureFilter filter) {
+    EasyStbImage image = loadImage_(fileName);
+    
+    Texture result = createTextureOnGPU(image.image, image.w, image.h, image.comp, filter);
+    easy_endStbImage(&image);
+    return result;
+}
+
+
+
+
+// typedef enum {
+//     RENDER_LIGHT_DIRECTIONAL,
+//     RENDER_LIGHT_POINT,
+//     RENDER_LIGHT_FLASHLIGHT
+// } RenderLightType;
+
+// // typedef struct {
+// //     RenderLightType type;
+    
+// //     V3 position; //or direction
+
+// //     V3 ambient;
+// //     V3 diffuse; 
+// //     V3 specular; //Usually black->white mono
+
+// //     //for point light and flash light -> represents the attentuation as you get further away
+// //     float constant;
+// //     float linear;
+// //     float quadratic;
+// //     ///
+
+// //     //for just the flash light -> for the cone of the flash light
+// //     float cutoff;
+// //     float outerCutoff;
+// //     //
+// // } EasyLight;
 
 typedef struct {
     Texture *diffuseMap;
+    Texture *normalMap;
     Texture *specularMap;
-    float shininess;
-} Material;
+
+    float specularConstant;
+
+} EasyMaterial;
 
 typedef struct {
-    InfiniteAlloc triangleData;
+    Vertex *triangleData;
     int triCount; 
     
-    InfiniteAlloc indicesData; 
+    unsigned int *indicesData; 
     int indexCount; 
     
     RenderProgram *program; 
@@ -203,8 +391,11 @@ typedef struct {
     u32 textureHandle;
     Rect2f textureUVs;    
     
-    Matrix4 vmMat;  //TODOL change to just VM
+    Matrix4 mMat;  
+    Matrix4 vMat;  //TODOL change to just VM
     Matrix4 pMat; //P of PVM
+
+    EasyMaterial *material;
 
     float zAt;
     
@@ -225,6 +416,66 @@ typedef struct {
 } BufferStorage;
 
 typedef struct {
+    // GL_TEXTURE_CUBE_MAP_POSITIVE_X //right panel
+    // GL_TEXTURE_CUBE_MAP_NEGATIVE_X //left panel
+    // GL_TEXTURE_CUBE_MAP_POSITIVE_Y //top panel
+    // GL_TEXTURE_CUBE_MAP_NEGATIVE_Y //bottom panel
+    // GL_TEXTURE_CUBE_MAP_POSITIVE_Z //back panel 
+    // GL_TEXTURE_CUBE_MAP_NEGATIVE_Z //front panel
+    char *fileNames[6];
+} EasySkyBoxImages;
+
+typedef struct {
+    uint gpuHandle;
+} EasySkyBox;
+
+//Cube Maps have been specified to follow the RenderMan specification 
+//(for whatever reason), and RenderMan assumes the images' origin 
+//being in the upper left, contrary to the usual OpenGL behaviour 
+//of having the image origin in the lower left. That's why things get 
+//swapped in the Y direction. It totally breaks with the usual OpenGL 
+//semantics and doesn't make sense at all. But now we're stuck with it.
+
+static inline EasySkyBox *easy_makeSkybox(EasySkyBoxImages *images) {
+    stbi_set_flip_vertically_on_load(false);
+    
+    EasySkyBox *skyBox = pushStruct(&globalLongTermArena, EasySkyBox);
+    
+#if OPENGL_BACKEND
+        unsigned int textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+        skyBox->gpuHandle = textureID;
+#endif
+    
+    for(int i = 0; i < arrayCount(images->fileNames); ++i) {
+        char *fileName = images->fileNames[i];
+        EasyStbImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena));
+#if OPENGL_BACKEND
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
+                    0, GL_RGB, image.w, image.h, 0, GL_RGB, GL_UNSIGNED_BYTE, image.image
+                    );
+#endif
+        easy_endStbImage(&image);
+        }
+
+#if OPENGL_BACKEND
+       glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+       glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+       glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+       glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+       glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+       glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+    stbi_set_flip_vertically_on_load(true);
+    
+    return skyBox;
+
+}
+
+
+typedef struct {
     int currentBufferId;
     bool currentDepthTest;
     VaoHandle *currentBufferHandles;
@@ -233,20 +484,87 @@ typedef struct {
     int idAt; 
     InfiniteAlloc items; //type: RenderItem
     
-    int lastStorageBufferCount;
-    BufferStorage lastBufferStorage[512];
+    // int lastStorageBufferCount;
+    // BufferStorage lastBufferStorage[512];
 
-    Texture *whiteTexture;
+    Texture whiteTexture;
 
-    //RenderLight lights[16];
+    //NOTE: you can do a declaritive style of shaders via SetShader
+    RenderProgram *currentShader;
+    Matrix4 modelTransform;
+    Matrix4 viewTransform;
+    Matrix4 projectionTransform;
+
+    V3 eyePos;
+
+    EasyLight *lights[EASY_MAX_LIGHT_COUNT];
+    EasySkyBox *skybox;
+    int lightCount;
+
+    bool initied;
     
 } RenderGroup;
 
+static inline EasyLight *easy_makeLight(V4 direction, V3 ambient, V3 diffuse, V3 specular) {
+    EasyLight *light = pushStruct(&globalLongTermArena, EasyLight);
+
+    light->direction = direction;
+    light->ambient = ambient;
+    light->diffuse = diffuse;
+    light->specular = specular;
+
+    return light;
+}
+
+static inline void easy_addLight(RenderGroup *group, EasyLight *light) {
+    assert(group->lightCount < arrayCount(group->lights));
+    group->lights[group->lightCount++] = light;
+}
+
+
 void initRenderGroup(RenderGroup *group) {
+    assert(!group->initied);
     group->items = initInfinteAlloc(RenderItem);
     group->currentDepthTest = true;
     group->blendFuncType = BLEND_FUNC_STANDARD;
-    group->lastStorageBufferCount = 0;
+    
+    group->currentShader = 0;
+    group->modelTransform = mat4();
+    group->viewTransform = mat4();
+    group->projectionTransform = mat4();
+
+    group->skybox = 0;
+    group->initied = true;
+
+    u32 *imageData = pushArray(&globalPerFrameArena, 512*512, u32);
+    for(int y = 0; y < 512; ++y) {
+        for(int x = 0; x < 512; ++x) {
+            imageData[y*512 + x] = 0xFFFFFFFF;     
+        }
+    }
+    
+    group->whiteTexture = createTextureOnGPU((unsigned char *)imageData, 512, 512, 4, TEXTURE_FILTER_LINEAR);
+    
+}
+
+void renderSetShader(RenderGroup *group, RenderProgram *shader) {
+    group->currentShader = shader;
+}
+
+void easy_setEyePosition(RenderGroup *group, V3 pos) {
+    group->eyePos = pos;
+}
+
+void setModelTransform(RenderGroup *group, Matrix4 trans) {
+    group->modelTransform = trans;
+}
+
+void setViewTransform(RenderGroup *group, Matrix4 trans) {
+    group->viewTransform = trans;
+}
+
+void setProjectionTransform(RenderGroup *group, Matrix4 trans) {
+    group->projectionTransform = trans;
 }
 
 void setFrameBufferId(RenderGroup *group, int bufferId) {
@@ -272,30 +590,8 @@ void renderSetViewPort(float x0, float y0, float x1, float y1) {
     glViewport(x0, y0, x1, y1);
 }
 
-void pushRenderItemForModel(VaoHandle *handles, RenderGroup *group, RenderProgram *program, Material *material, Matrix4 P, Matrix4 VM, V4 color) {
-    if(!isInfinteAllocActive(&group->items)) {
-        initRenderGroup(group);
-    }
-    
-    RenderItem *info = (RenderItem *)addElementInifinteAlloc_(&group->items, 0);
-    assert(info);
-    info->bufferId = group->currentBufferId;
-    info->depthTest = group->currentDepthTest;
-    info->blendFuncType = group->blendFuncType;
-    info->bufferHandles = handles;
-    info->color = color;
-    
-    info->id = group->idAt++;
-    
-    info->program = program;
-    info->type = SHAPE_MODEL;
-}
-
-void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 vmMat, Matrix4 pMat, V4 color, float zAt) {
-    if(!isInfinteAllocActive(&group->items)) {
-        initRenderGroup(group);
-        // group->items = initInfinteAlloc(RenderItem);
-    }
+void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material) {
+    assert(group->initied);
     
     RenderItem *info = (RenderItem *)addElementInifinteAlloc_(&group->items, 0);
     assert(info);
@@ -305,19 +601,11 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
     info->bufferHandles = handles;
     info->color = color;
     info->zAt = zAt;
-    
-    info->triangleData = initInfinteAlloc(Vertex);
+
+    info->material = material;
     info->triCount = triCount; 
-    
-    for(int triIndex = 0; triIndex < triCount; ++triIndex) {
-        addElementInifinteAlloc_(&info->triangleData, &triangleData[triIndex]);
-    }
-    
-    info->indicesData = initInfinteAlloc(unsigned int); 
-    
-    for(int indicesIndex = 0; indicesIndex < indexCount; ++indicesIndex) {
-        addElementInifinteAlloc_(&info->indicesData, &indicesData[indicesIndex]);
-    }
+    info->triangleData = triangleData;
+    info->indicesData = indicesData;
     
     info->indexCount = indexCount;
     
@@ -333,7 +621,7 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
         info->program = &textureProgram;
         info->type = SHAPE_TEXTURE; 
         //set the texture so the render item gets assigned the uv data.
-        texture = group->whiteTexture;
+        texture = &group->whiteTexture;
     } 
     
     if(texture) {
@@ -341,9 +629,22 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
         assert(info->textureHandle);
         info->textureUVs = texture->uvCoords;
     } 
+
     info->pMat = pMat;
-    info->vmMat = vmMat;
+    info->vMat = vMat;
+    info->mMat = mMat;
 }
+
+#define renderCheckError() renderCheckError_(__LINE__, (char *)__FILE__)
+void renderCheckError_(int lineNumber, char *fileName) {
+    GLenum err = glGetError();
+    if(err) {
+        printf((char *)"GL error check: %x at %d in %s\n", err, lineNumber, fileName);
+        assert(!err);
+    }
+    
+}
+
 
 RenderProgram createRenderProgram(char *vShaderSource, char *fShaderSource) {
     RenderProgram result = {};
@@ -351,24 +652,58 @@ RenderProgram createRenderProgram(char *vShaderSource, char *fShaderSource) {
     result.valid = true;
     
     result.glShaderV = glCreateShader(GL_VERTEX_SHADER);
+    renderCheckError();
     result.glShaderF = glCreateShader(GL_FRAGMENT_SHADER);
+    renderCheckError();
     
     glShaderSource(result.glShaderV, 1, (const GLchar **)(&vShaderSource), 0);
+    renderCheckError();
     glShaderSource(result.glShaderF, 1, (const GLchar **)(&fShaderSource), 0);
+    renderCheckError();
     
     glCompileShader(result.glShaderV);
+    renderCheckError();
     glCompileShader(result.glShaderF);
+    renderCheckError();
     result.glProgram = glCreateProgram();
+    renderCheckError();
     glAttachShader(result.glProgram, result.glShaderV);
+    renderCheckError();
     glAttachShader(result.glProgram, result.glShaderF);
+    renderCheckError();
+
+    //printf("%d\n", GL_MAX_VERTEX_ATTRIBS);
+
+    glBindAttribLocation(result.glProgram, VERTEX_ATTRIB_LOCATION, "vertex");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, NORMAL_ATTRIB_LOCATION, "normal");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, UV_ATTRIB_LOCATION, "texUV");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, MODEL_ATTRIB_LOCATION, "M");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, VIEW_ATTRIB_LOCATION, "V");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, PROJECTION_ATTRIB_LOCATION, "P");
+    renderCheckError();
+    glBindAttribLocation(result.glProgram, COLOR_ATTRIB_LOCATION, "color");
+    renderCheckError();
+    //glBindAttribLocation(result.glProgram, UVATLAS_ATTRIB_LOCATION, "uvAtlas");
+    // renderCheckError();
+
     glLinkProgram(result.glProgram);
+    renderCheckError();
     glUseProgram(result.glProgram);
+    // renderCheckError();
+
     
     GLint success = 0;
     glGetShaderiv(result.glShaderV, GL_COMPILE_STATUS, &success);
     
+    
     GLint success1 = 0;
     glGetShaderiv(result.glShaderF, GL_COMPILE_STATUS, &success1); 
+
     
     
     if(success == GL_FALSE || success1 == GL_FALSE) {
@@ -397,56 +732,47 @@ RenderProgram createRenderProgram(char *vShaderSource, char *fShaderSource) {
     return result;
 }
 
-#define renderCheckError() renderCheckError_(__LINE__, (char *)__FILE__)
-void renderCheckError_(int lineNumber, char *fileName) {
-    GLenum err = glGetError();
-    if(err) {
-        printf((char *)"GL error check: %x at %d in %s\n", err, lineNumber, fileName);
-        assert(!err);
-    }
-    
-}
 
 typedef struct {
     s32 handle;
     bool valid;
 } ShaderValInfo;
 
-ShaderValInfo getAttribFromProgram(RenderProgram *prog, char *name) {
-    ShaderValInfo result = {};
-    for(int i = 0; i < prog->attribCount; ++i) {
-        ShaderVal *val = prog->attribs + i;
-        if(cmpStrNull(name, val->name)) {
-            result.handle = val->handle;
-            result.valid = true;
-            break;
-        }
-    }
-    if(!result.valid) {
-        printf("%s\n", name);
-    }
-    assert(result.valid);
-    return result;
-}
+// ShaderValInfo getAttribFromProgram(RenderProgram *prog, char *name) {
+//     ShaderValInfo result = {};
+//     for(int i = 0; i < prog->attribCount; ++i) {
+//         ShaderVal *val = prog->attribs + i;
+//         if(cmpStrNull(name, val->name)) {
+//             result.handle = val->handle;
+//             result.valid = true;
+//             break;
+//         }
+//     }
+//     if(!result.valid) {
+//         printf("%s\n", name);
+//     }
+//     // assert(result.valid);
+//     return result;
+// }
 
-ShaderValInfo getUniformFromProgram(RenderProgram *prog, char *name) {
-    ShaderValInfo result = {};
-    for(int i = 0; i < prog->uniformCount; ++i) {
-        ShaderVal *val = prog->uniforms + i;
-        if(cmpStrNull(name, val->name)) {
-            result.handle = val->handle;
-            //printf("%d\n", val->handle);
-            //assert(result.handle > 0);
-            result.valid = true;
-            break;
-        }
-    }
-    if(!result.valid) {
-        printf("%s\n", name);
-    }
-    assert(result.valid);
-    return result;
-}
+// ShaderValInfo getUniformFromProgram(RenderProgram *prog, char *name) {
+//     ShaderValInfo result = {};
+//     for(int i = 0; i < prog->uniformCount; ++i) {
+//         ShaderVal *val = prog->uniforms + i;
+//         if(cmpStrNull(name, val->name)) {
+//             result.handle = val->handle;
+//             //printf("%d\n", val->handle);
+//             //assert(result.handle > 0);
+//             result.valid = true;
+//             break;
+//         }
+//     }
+//     if(!result.valid) {
+//         printf("%s\n", name);
+//     }
+//     assert(result.valid);
+//     return result;
+// }
 
 GLuint renderGetUniformLocation(RenderProgram *program, char *name) {
     GLuint result = glGetUniformLocation(program->glProgram, name);
@@ -476,13 +802,14 @@ void findAttribsAndUniforms(RenderProgram *prog, char *stream, bool isVertexShad
             case TOKEN_WORD: {
                 // lexPrintToken(&token);
                 if(stringsMatchNullN("uniform", token.at, token.size)) {
-                    lexGetNextToken(&tokenizer);
+                    lexGetNextToken(&tokenizer); //the type of it
                     token = lexGetNextToken(&tokenizer);
                     char *name = nullTerminate(token.at, token.size);
                     //printf("Uniform Found: %s\n", name);
                     assert(prog->uniformCount < arrayCount(prog->uniforms));
                     ShaderVal *val = prog->uniforms + prog->uniformCount++;
                     val->name = name;
+                    // printf("%s\n", name);
                     val->handle = renderGetUniformLocation(prog, name);
                     
                 }
@@ -524,8 +851,8 @@ RenderProgram createProgramFromFile(char *vertexShaderFilename, char *fragmentSh
     
     RenderProgram result = createRenderProgram(vertStream, fragStream);
     
-    findAttribsAndUniforms(&result, vertStream, true);
-    findAttribsAndUniforms(&result, fragStream, false);
+    // findAttribsAndUniforms(&result, vertStream, true);
+    // findAttribsAndUniforms(&result, fragStream, false);
     
     free(vertStream);
     free(fragStream);
@@ -650,6 +977,13 @@ V2 transformWorldPToScreenP(V2 inputA, float zPos, V2 resolution, V2 screenDim, 
     return result;
 }
 
+void render_enableCullFace() {
+    glEnable(GL_CULL_FACE); 
+    glCullFace(GL_BACK);  
+    glFrontFace(GL_CCW);  
+
+}
+
 V3 transformScreenPToWorldP(V2 inputA, float zPos, V2 resolution, V2 screenDim, Matrix4 metresToPixels, V3 cameraPos) {
     inputA.x /= screenDim.x;
     inputA.y /= screenDim.y;
@@ -693,6 +1027,11 @@ void enableRenderer(int width, int height, Arena *arena) {
     
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+
+    render_enableCullFace();
+    // glEnable(GL_CULL_FACE); 
+    // glCullFace(GL_BACK);  
+    // glFrontFace(GL_CCW);  
     //SRGB TEXTURE???
     // glEnable(GL_SAMPLE_ALPHA_TO_ONE);
     // glEnable(GL_DEBUG_OUTPUT);
@@ -732,8 +1071,11 @@ void enableRenderer(int width, int height, Arena *arena) {
     // rectangleProgram = createProgramFromFile(vertex_shader_rectangle_attrib_shader, fragment_shader_rectangle_shader, false);
     // renderCheckError();
 
-    // phongProgram = createProgramFromFile(vertex_model_shader, frag_model_shader, false);
-    // renderCheckError();
+    phongProgram = createProgramFromFile(vertex_model_shader, frag_model_shader, false);
+    renderCheckError();
+
+    skyboxProgram = createProgramFromFile(vertex_skybox_shader, frag_skybox_shader, false);
+    renderCheckError();
     
     textureProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, fragment_shader_texture_shader, false);
     renderCheckError();
@@ -757,6 +1099,10 @@ void enableRenderer(int width, int height, Arena *arena) {
     // renderCheckError();
     // free(append);
 #endif
+
+    //Init global Render Group
+    initRenderGroup(globalRenderGroup);
+    ////
 }
 
 
@@ -971,7 +1317,8 @@ static inline void addInstanceAttribForMatrix(int index, GLuint attribLoc, int n
 }
 
 static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_t offsetForStruct, size_t offsetInStruct, int divisor) {
-    
+        
+    // printf("attrib loc: %u\n", attribLoc);
     assert(attribLoc < GL_MAX_VERTEX_ATTRIBS);
     assert(offsetForStruct > 0);
     if(numOfFloats == 16) {
@@ -1033,54 +1380,76 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
         bufferHandles->valid = true;
         
         //these can also be retrieved before hand to speed up the process!!!
-        GLint vertexAttrib = getAttribFromProgram(program, "vertex").handle;
+        GLint vertexAttrib = VERTEX_ATTRIB_LOCATION;
         renderCheckError();
-        ShaderValInfo texUV_val= getAttribFromProgram(program, "texUV");
-        renderCheckError();
+        // ShaderValInfo texUV_val= 2;
+        // renderCheckError();
+
+        // ShaderValInfo normals = 1;
+        // renderCheckError();
         
-        if(texUV_val.valid) {
+        // if(texUV_val.valid) {
             
-            GLint texUVAttrib = texUV_val.handle;
+            GLint texUVAttrib = UV_ATTRIB_LOCATION;
             glEnableVertexAttribArray(texUVAttrib);  
             renderCheckError();
             unsigned int uvByteOffset = (intptr_t)(&(((Vertex *)0)->texUV));
             glVertexAttribPointer(texUVAttrib, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), ((char *)0) + uvByteOffset);
             renderCheckError();
-        }
+        // }
+
+        // if (normals.valid) {
+            GLint normalsAttrib = NORMAL_ATTRIB_LOCATION;
+            glEnableVertexAttribArray(normalsAttrib);  
+            renderCheckError();
+            unsigned int normalOffset = (intptr_t)(&(((Vertex *)0)->normal));
+            glVertexAttribPointer(normalsAttrib, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), ((char *)0) + normalOffset);
+            renderCheckError();
+        // }
         
         glEnableVertexAttribArray(vertexAttrib);  
         renderCheckError();
         glVertexAttribPointer(vertexAttrib, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
         renderCheckError();
 
-        glGenBuffers(1, &bufferHandles->vboHandle);
+        glGenBuffers(1, &bufferHandles->vboInstanceData);
         renderCheckError();
 
-        glBindBuffer(GL_ARRAY_BUFFER, bufferHandles->vboHandle);
+        glBindBuffer(GL_ARRAY_BUFFER, bufferHandles->vboInstanceData);
         renderCheckError();
 
-        GLint vmAttrib = getAttribFromProgram(program, "VM").handle;
+        GLint mAttrib = MODEL_ATTRIB_LOCATION;
         renderCheckError();
-        GLint pAttrib = getAttribFromProgram(program, "P").handle;
+        GLint vAttrib = VIEW_ATTRIB_LOCATION;
         renderCheckError();
-        GLint colorAttrib = getAttribFromProgram(program, "color").handle;
+        GLint pAttrib = PROJECTION_ATTRIB_LOCATION;
+        renderCheckError();
+        GLint colorAttrib = COLOR_ATTRIB_LOCATION;
         renderCheckError();
         
-        size_t offsetForStruct = sizeof(float)*(16+16+4+4); 
+        size_t offsetForStruct = sizeof(float)*(16+16+16+4+4); 
         
         //matrix plus vector4 plus vector4
-        addInstancingAttrib (vmAttrib, 16, offsetForStruct, 0, 1);
-        addInstancingAttrib (pAttrib, 16, offsetForStruct, sizeof(float)*16, 1);
-        addInstancingAttrib (colorAttrib, 4, offsetForStruct, sizeof(float)*32, 1);
+        addInstancingAttrib (mAttrib, 16, offsetForStruct, 0, 1);
+        // printf("m attrib: %d\n", mAttrib);
+        addInstancingAttrib (vAttrib, 16, offsetForStruct, sizeof(float)*16, 1);
+        // printf("v attrib: %d\n", vAttrib);
+        addInstancingAttrib (pAttrib, 16, offsetForStruct, sizeof(float)*32, 1);
+        // printf("p attrib: %d\n", pAttrib);
+        addInstancingAttrib (colorAttrib, 4, offsetForStruct, sizeof(float)*48, 1);
+        // printf("color attrib: %d\n", colorAttrib);
         // if(hasUvs) 
         {
-            GLint UVattrib = getAttribFromProgram(program, "uvAtlas").handle;
-            // printf("uv attrib: %d\n", UVattrib);
-            renderCheckError();
-            addInstancingAttrib (UVattrib, 4, offsetForStruct, sizeof(float)*36, 1);
+
+            // GLint UVattrib = UVATLAS_ATTRIB_LOCATION;
+            // if(glGetAttribLocation(program->glProgram, name) != -1) { //@Cleanup to using layout specifers
+                // printf("uv attrib: %d\n", UVattrib);
+                // renderCheckError();
+                // addInstancingAttrib (UVattrib, 4, offsetForStruct, sizeof(float)*52, 1);
+            // }
         }
         
-        assert(offsetForStruct == sizeof(float)*40);
+        assert(offsetForStruct == sizeof(float)*56);
         
         glBindVertexArray(0);
         
@@ -1089,9 +1458,25 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
     }
 }
 
+void easy_BindTexture(char *uniformName, int slotId, GLint textureId, RenderProgram *program) {
+
+    // GLint texUniform = getUniformFromProgram(program, uniformName).handle;
+    GLint texUniform = glGetUniformLocation(program->glProgram, uniformName); 
+    renderCheckError();
+    
+    glUniform1i(texUniform, slotId);
+    renderCheckError();
+    
+    glActiveTexture(GL_TEXTURE0 + slotId);
+    renderCheckError();
+    
+    // printf("texture id: %d\n", textureId);
+    glBindTexture(GL_TEXTURE_2D, textureId); 
+    renderCheckError();
+}
 
 static V2 globalBlurDir = {};
-void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, u32 PVMId, u32 colorId, u32 uvsId, V4 color, DrawCallType drawCallType, int instanceCount) {
+void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, DrawCallType drawCallType, int instanceCount, EasyMaterial *material, RenderGroup *group) {
     
     assert(bufferHandles);
     assert(bufferHandles->valid);
@@ -1106,63 +1491,124 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     glBindBuffer(GL_ARRAY_BUFFER, bufferHandles->vboHandle);
     renderCheckError();
 #endif
-    
-#if !USING_ATTRIBS_FOR_INSTANCING
-    GLint pvmUniform = getUniformFromProgram(program, "PVMArray").handle;
-    //GLint pvmUniform = glGetUniformLocation(programId, "PVMArray");
-    renderCheckError();
-    
-    glUniform1i(pvmUniform, 0);
-    renderCheckError();
-    glActiveTexture(GL_TEXTURE0);
-    renderCheckError();
-    
-    glBindTexture(RENDER_TEXTURE_BUFFER_ENUM, PVMId); 
-    renderCheckError();
-    
-    GLint colorUniform = getUniformFromProgram(program, "ColorArray").handle;
-    // GLint colorUniform = glGetUniformLocation(programId, "ColorArray");
-    renderCheckError();
-    
-    glUniform1i(colorUniform, 1);
-    renderCheckError();
-    glActiveTexture(GL_TEXTURE1);
-    renderCheckError();
-    
-    glBindTexture(RENDER_TEXTURE_BUFFER_ENUM, colorId); 
-    renderCheckError();
-    
-    if(uvsId) {
-        GLint uvUniform = getUniformFromProgram(program, "UVArray").handle;
+
+    if(type == SHAPE_SKYBOX) {
+        GLint texUniform = glGetUniformLocation(program->glProgram, "skybox"); 
         renderCheckError();
         
-        glUniform1i(uvUniform, 2);
+        glUniform1i(texUniform, 1);
         renderCheckError();
-        glActiveTexture(GL_TEXTURE2);
+
+        glActiveTexture(GL_TEXTURE1);
         renderCheckError();
-        
-        glBindTexture(RENDER_TEXTURE_BUFFER_ENUM, uvsId); 
+        glBindTexture(GL_TEXTURE_CUBE_MAP, textureId);
         renderCheckError();
+
+        Matrix4 result = mat4_noTranslate(group->viewTransform);
+        // Matrix4 result = group->viewTransform;
+        // printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
+        // printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
+        // printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
+        // printf("%f %f %f \n", result.d.x, result.d.y, result.d.z);
+        // printf("%s\n", "----------------");
+
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, group->projectionTransform.E_);
+        renderCheckError();
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "view"), 1, GL_FALSE, result.E_);
+        renderCheckError();
+
+
     }
-#endif
-    
+
+    if(type == SHAPE_MODEL) {
+        assert(material);
+        assert(material->diffuseMap);
+        easy_BindTexture("material.diffuse", 1, material->diffuseMap->id, program);
+
+        assert(material->specularMap);
+        easy_BindTexture("material.specular", 2, material->specularMap->id, program);
+
+        //NOTE(ol): Normal map stuff here
+        // if(getUniformFromProgram(program, "material.normalMap").valid) {
+        //     if(material->normal) {
+        //         easy_BindTexture("material.normals", 1, material->normalMap->id, program);    
+        //     } else {
+        //         //dummy texture if there isn't a normal map
+        //         easy_BindTexture("material.normals", 1, material->diffuseMap->id, program);
+        //     }
+        // }
+
+        // GLint specularConstant = getUniformFromProgram(program, "material.specularConstant").handle;
+        GLint specularConstant = glGetUniformLocation(program->glProgram, "material.specularConstant"); 
+        renderCheckError();
+        glUniform1f(specularConstant, material->specularConstant);
+        renderCheckError();
+
+        GLint eyepos = glGetUniformLocation(program->glProgram, "eye_worldspace"); 
+        renderCheckError();
+        glUniform3f(eyepos, group->eyePos.x, group->eyePos.y, group->eyePos.z);
+        renderCheckError();
+
+        //lights 
+        for(int i = 0; i < group->lightCount; ++i) {
+            EasyLight *light = group->lights[i];
+
+            // glUniform3fv
+            char str[512]; 
+            sprintf(str, "lights[%d].direction", i);
+            // GLint lightDir = getUniformFromProgram(program, str).handle;
+            GLint lightDir = glGetUniformLocation(program->glProgram, str); 
+            renderCheckError();
+            glUniform4f(lightDir, light->direction.x, light->direction.y, light->direction.z, light->direction.w);
+            renderCheckError();
+
+            sprintf(str, "lights[%d].ambient", i);
+            // GLint amb = getUniformFromProgram(program, str).handle;
+            GLint amb = glGetUniformLocation(program->glProgram, str); 
+            renderCheckError();
+            glUniform3f(amb, light->ambient.x, light->ambient.y, light->ambient.z);
+            renderCheckError();
+
+            sprintf(str, "lights[%d].diffuse", i);
+            // GLint diff = getUniformFromProgram(program, str).handle;
+            GLint diff = glGetUniformLocation(program->glProgram, str); 
+            renderCheckError();
+            glUniform3f(diff, light->diffuse.x, light->diffuse.y, light->diffuse.z);
+            renderCheckError();
+
+            sprintf(str, "lights[%d].specular", i);
+            // GLint spec = getUniformFromProgram(program, str).handle;
+            GLint spec = glGetUniformLocation(program->glProgram, str); 
+            renderCheckError();
+            glUniform3f(spec, light->specular.x, light->specular.y, light->specular.z);
+            renderCheckError();
+            
+        }
+        
+
+        
+    }
+
     if(type == SHAPE_TEXTURE || type == SHAPE_SHADOW || type == SHAPE_BLUR) {
-        GLint texUniform = getUniformFromProgram(program, "tex").handle;
-        //GLint texUniform = glGetUniformLocation(programId, "tex");
-        renderCheckError();
+
+        easy_BindTexture("tex", 3, textureId, program);
+
+        // GLint texUniform = getUniformFromProgram(program, "tex").handle;
+        // //GLint texUniform = glGetUniformLocation(programId, "tex");
+        // renderCheckError();
         
-        glUniform1i(texUniform, 3);
-        renderCheckError();
-        glActiveTexture(GL_TEXTURE3);
-        renderCheckError();
+        // glUniform1i(texUniform, 3);
+        // renderCheckError();
+        // glActiveTexture(GL_TEXTURE3);
+        // renderCheckError();
         
-        // printf("texture id: %d\n", textureId);
-        glBindTexture(GL_TEXTURE_2D, textureId); 
-        renderCheckError();
+        // // printf("texture id: %d\n", textureId);
+        // glBindTexture(GL_TEXTURE_2D, textureId); 
+        // renderCheckError();
         
         if(type == SHAPE_BLUR) {
             //GLint directionUniform = glGetUniformLocation(programId, "dir");
-            GLint directionUniform = getUniformFromProgram(program, "dir").handle;
+            GLint directionUniform = glGetUniformLocation(program->glProgram, "dir"); 
             glUniform2f(directionUniform, globalBlurDir.x, globalBlurDir.y);
         }
         
@@ -1186,8 +1632,8 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         }
         
     } else if(type == SHAPE_LINE || type == SHAPE_CIRCLE) {
-        GLint percentUniform = getUniformFromProgram(program, "percentY").handle;
-        //GLint percentUniform = glGetUniformLocation(programId, "percentY");
+        // GLint percentUniform = getUniformFromProgram(program, "percentY").handle;
+        GLint percentUniform = glGetUniformLocation(program->glProgram, "percentY");
         renderCheckError();
     }
     
@@ -1211,16 +1657,8 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     
 }
 
-void getQuadVertexes(Vertex *triangleData) { //has to be length of four
-    triangleData[0].position = globalQuadPositionData[0];
-    triangleData[1].position = globalQuadPositionData[1];
-    triangleData[2].position = globalQuadPositionData[2];
-    triangleData[3].position = globalQuadPositionData[3];
-    
-    triangleData[0].texUV = v2(0, 0);
-    triangleData[1].texUV = v2(0, 1);
-    triangleData[2].texUV = v2(1, 0);
-    triangleData[3].texUV = v2(1, 1);
+void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
+    pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
 }
 
 #define renderDrawRectOutlineCenterDim(center, dim, color, rot, offsetTransform, projectionMatrix) renderDrawRectOutlineCenterDim_(center, dim, color, rot, offsetTransform, projectionMatrix, 0.1f)
@@ -1263,11 +1701,6 @@ void renderDrawRectOutlineCenterDim_(V3 center, V2 dim, V4 color, float rot, Mat
         v2(0, -halfDim.y),
     };
     
-    Vertex triangleData[4] = {};
-    if(!globalQuadVaoHandle.valid) {
-        getQuadVertexes(triangleData);
-    }
-    
     for(int i = 0; i < 4; ++i) {
         float rotat = rotations[i];
         float halfLen = 0.5f*lengths[i];
@@ -1279,7 +1712,7 @@ void renderDrawRectOutlineCenterDim_(V3 center, V2 dim, V4 color, float rot, Mat
                 0,  0,  1,  0,
                 offset.x, offset.y, 0,  1
             }};
-        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, triangleData, arrayCount(triangleData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), &textureProgram, SHAPE_RECTANGLE, 0, Mat4Mult(rotationMat, rotationMat1), projectionMatrix,  color, center.z);
+        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), &textureProgram, SHAPE_RECTANGLE, 0, rotationMat1, rotationMat, projectionMatrix, color, center.z, 0);
     }
 }
 
@@ -1302,18 +1735,13 @@ void renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 
             deltaP.x, deltaP.y, deltaP.z,  1
         }};
     
-    Vertex triangleData[4] = {};
-    if(!globalQuadVaoHandle.valid) {
-        getQuadVertexes(triangleData);
-        
-    }
+    
     if(globalImmediateModeGraphics) {
     } else {
-        int triCount = arrayCount(triangleData);
         int indicesCount = arrayCount(globalQuadIndicesData);
-        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, triangleData, triCount, 
-                       globalQuadIndicesData, indicesCount, program, type, texture, 
-                       Mat4Mult(viewMatrix, rotationMat), projectionMatrix, colors[0], center.z);
+        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), 
+                       globalQuadIndicesData, indicesCount, program, type, texture, rotationMat,
+                       viewMatrix, projectionMatrix, colors[0], center.z, 0);
     }    
 }
 
@@ -1332,6 +1760,12 @@ void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float
     V4 colors[4] = {color, color, color, color}; 
     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix);
 }
+
+// void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot) {
+//     V4 colors[4] = {color, color, color, color}; 
+//     //Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix
+//     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram);
+// }
 
 void renderDeleteVaoHandle(VaoHandle *handles) {
     glDeleteVertexArrays(1, &handles->vaoHandle);
@@ -1371,12 +1805,12 @@ BufferStorage createBufferStorage(InfiniteAlloc *array) {
 }
 
 
-//Instancing data
+// // Instancing data
 // typedef struct {
 //     float pvm[16];
 //     float color[4];
 //     float uvs[4];
-// }
+// } Easy_InstancePacket;
 
 
 
@@ -1384,10 +1818,10 @@ BufferStorage createBufferStorage(InfiniteAlloc *array) {
 void createBufferStorage2(VaoHandle *vao, InfiniteAlloc *array, RenderProgram *program, bool hasUvs) {
     glBindVertexArray(vao->vaoHandle);
     renderCheckError();
-    glBindBuffer(GL_ARRAY_BUFFER, vao->vboHandle);
+    glBindBuffer(GL_ARRAY_BUFFER, vao->vboInstanceData);
     renderCheckError();
     
-    //send the data to GPU. glBufferData deletes the 
+    //send the data to GPU. glBufferData deletes the old one
     glBufferData(GL_ARRAY_BUFFER, array->sizeOfMember*array->count, array->memory, GL_DYNAMIC_DRAW);
     renderCheckError();
     
@@ -1414,7 +1848,12 @@ int cmpRenderItemFunc (const void * a, const void * b) {
         if(itemA->textureHandle == itemB->textureHandle) {
             if(itemA->bufferHandles == itemB->bufferHandles) {
                 if(itemA->program == itemB->program) {
-                    result = false;
+                    if(itemA->material == itemB->material) {
+                        result = false;
+                    } else {
+                        result = (intptr_t)itemA->material < (intptr_t)itemB->material;
+                    }
+                    
                 } else {
                     result = (intptr_t)itemA->program > (intptr_t)itemB->program;
                 }
@@ -1460,16 +1899,7 @@ void sortItems(RenderGroup *group) {
 }
 
 void beginRenderGroupForFrame(RenderGroup *group) {
-    ////Delete the storeage buffers from last frame 
-    //this is the pvm data and color data we send as tables to the GPU for the shader. 
-    for(int i = 0; i < group->lastStorageBufferCount; ++i) {
-        BufferStorage *store = group->lastBufferStorage + i;
-        deleteBufferStorage(store);
-    }
-    group->lastStorageBufferCount = 0;
-    //
-
-
+    
 }
 
 void drawRenderGroup(RenderGroup *group) {
@@ -1488,6 +1918,8 @@ void drawRenderGroup(RenderGroup *group) {
     // }
     
     int drawCallCount = 0;
+
+    render_enableCullFace();
     
     // printf("Render Items count: %d\n", group->items.count);
     // int instanceIndexAt = 0;
@@ -1514,7 +1946,9 @@ void drawRenderGroup(RenderGroup *group) {
         }
         InfiniteAlloc allInstanceData = initInfinteAlloc(float);        
         
-        addElementInifinteAllocWithCount_(&allInstanceData, info->vmMat.val, 16);
+        addElementInifinteAllocWithCount_(&allInstanceData, info->mMat.val, 16);
+
+        addElementInifinteAllocWithCount_(&allInstanceData, info->vMat.val, 16);
 
         addElementInifinteAllocWithCount_(&allInstanceData, info->pMat.val, 16);
         
@@ -1535,17 +1969,18 @@ void drawRenderGroup(RenderGroup *group) {
             RenderItem *nextItem = getRenderItem(group, i + 1);
             if(nextItem) {
                 
-                if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program) {
+                if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program && info->material == nextItem->material) {
                     
                     assert(info->blendFuncType == nextItem->blendFuncType);
                     assert(info->depthTest == nextItem->depthTest);
                     //collect data
-                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->vmMat.val, 16);
+                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->mMat.val, 16);
+
+                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->vMat.val, 16);
 
                     addElementInifinteAllocWithCount_(&allInstanceData, nextItem->pMat.val, 16);
                     
                     addElementInifinteAllocWithCount_(&allInstanceData, nextItem->color.E, 4);
-                    
                     
                     if(nextItem->textureHandle) {
                         addElementInifinteAllocWithCount_(&allInstanceData, nextItem->textureUVs.E, 4);
@@ -1556,8 +1991,6 @@ void drawRenderGroup(RenderGroup *group) {
                     }
                     
                     instanceCount++;
-                    releaseInfiniteAlloc(&nextItem->triangleData);
-                    releaseInfiniteAlloc(&nextItem->indicesData);
                     //
                     i++;
                 } else {
@@ -1569,115 +2002,39 @@ void drawRenderGroup(RenderGroup *group) {
         }
         
         
-        initVao(info->bufferHandles, (Vertex *)info->triangleData.memory, info->triCount, (unsigned int *)info->indicesData.memory, info->indexCount, info->program);
-        
-#if USING_ATTRIBS_FOR_INSTANCING
+        initVao(info->bufferHandles, info->triangleData, info->triCount, info->indicesData, info->indexCount, info->program);
     
         createBufferStorage2(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
-        BufferStorage pvmStore = {};
-        BufferStorage colorStore = {};
-        u32 uvId = 0;
-#else
-        BufferStorage pvmStore = createBufferStorage(&pvms);
-        BufferStorage colorStore = createBufferStorage(&colors);
-        BufferStorage uvStore = {};
-        u32 uvId = 0;
-        if(uvs.count > 0) {             
-            uvStore = createBufferStorage(&uvs);
-            uvId = uvStore.buffer;
-        }
-#endif
+
         //if(info->program == &rectangleProgram) //Debug: just draw rectangles
         {
-            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, pvmStore.buffer, colorStore.buffer, uvId, info->color, DRAWCALL_INSTANCED, instanceCount);
+            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, instanceCount, info->material, group);
             drawCallCount++;
         }
         
-#if !USING_ATTRIBS_FOR_INSTANCING
-        assert(group->lastStorageBufferCount < arrayCount(group->lastBufferStorage));
-        group->lastBufferStorage[group->lastStorageBufferCount++] = pvmStore;
-        assert(group->lastStorageBufferCount < arrayCount(group->lastBufferStorage));
-        group->lastBufferStorage[group->lastStorageBufferCount++] = colorStore;
-        if(uvs.count > 0) {
-            assert(group->lastStorageBufferCount < arrayCount(group->lastBufferStorage));
-            group->lastBufferStorage[group->lastStorageBufferCount++] = uvStore;
-        }
-#endif
-        releaseInfiniteAlloc(&info->triangleData);
-        releaseInfiniteAlloc(&info->indicesData);
-        
         releaseInfiniteAlloc(&allInstanceData);
     }
-    releaseInfiniteAlloc(&group->items);
+
+    glEnable(GL_CULL_FACE); 
+    glCullFace(GL_FRONT);  
+    glFrontFace(GL_CCW);  
+
+    if(group->skybox) {
+         // glDepthFunc(GL_LEQUAL);
+        if(!globalCubeMapVaoHandle.valid) {
+            printf("%s\n", "INIT SKYBOX");
+            initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), &skyboxProgram);
+        }
+        // printf("%s\n", "DRAWING SKYBOX");
+        drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group);
+         // glDepthFunc(GL_LESS);
+    }
+    // releaseInfiniteAlloc(&group->items);
+    memset(group->items.memory, 0, group->items.totalCount*group->items.sizeOfMember);
+    group->items.count = 0;
+
 #if PRINT_NUMBER_DRAW_CALLS
     printf("NUMBER OF DRAW CALLS: %d\n", drawCallCount);
 #endif
     group->idAt = 0;
-}
-
-typedef enum {
-    TEXTURE_FILTER_LINEAR, 
-    TEXTURE_FILTER_NEAREST, 
-} RenderTextureFilter;
-
-
-Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderTextureFilter filter) {
-    Texture result = {};
-    if(image) {
-        
-        result.width = w;
-        result.height = h;
-        result.uvCoords = rect2f(0, 0, 1, 1);
-        
-        glGenTextures(1, &result.id);
-        
-        glBindTexture(GL_TEXTURE_2D, result.id);
-        
-        GLuint filterVal = GL_LINEAR;
-        if(filter == TEXTURE_FILTER_NEAREST) {
-            filterVal = GL_NEAREST;
-        } 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterVal);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
-        
-        if(comp == 3) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
-        } else if(comp == 4) {
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
-        } else {
-            assert(!"Channel number not handled!");
-        }
-        
-        glBindTexture(GL_TEXTURE_2D, 0);
-    } 
-    
-    return result;
-}
-
-Texture loadImage(char *fileName, RenderTextureFilter filter) {
-    int w;
-    int h;
-    int comp = 4;
-    unsigned char* image = stbi_load(fileName, &w, &h, &comp, STBI_rgb_alpha);
-    
-    if(image) {
-        if(comp == 3) {
-            stbi_image_free(image);
-            image = stbi_load(fileName, &w, &h, &comp, STBI_rgb);
-            assert(image);
-            assert(comp == 3);
-        }
-    } else {
-        printf("%s\n", fileName);
-        assert(!"no image found");
-    }
-    
-    Texture result = createTextureOnGPU(image, w, h, comp, filter);
-    
-    if(image) {
-        stbi_image_free(image);
-    }
-    return result;
 }

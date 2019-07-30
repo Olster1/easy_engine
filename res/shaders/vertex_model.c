@@ -1,26 +1,24 @@
-in mat4 VM;
+in mat4 M;
+in mat4 V;
 in mat4 P;
 in vec4 color;
-in vec4 uvAtlas;	
+in vec4 uvAtlas;	//not using a atlas
 
 in vec3 vertex;
+in vec3 normal;
 in vec2 texUV;	
 
-out vec4 colorOut; //out going
-out vec2 texUV_out;
-
-// uniform vec4 color;
-
-in vec3 vertex;
-// in vec2 texUV;
-// in vec3 normal;
-//in int instanceIndex;
-
-// out vec4 colorOut; //out going
-// out vec2 texUV_out;
+//outgoing variables
+out vec4 color_frag; 
+out vec3 normal_frag;
+out vec2 uv_frag;
+out vec3 fragPos;
 
 void main() {
-    gl_Position = perspective * view * model * vec4(vertex, 1);
-    // colorOut = texelFetch(ColorArray, gl_InstanceID);
-    // texUV_out = texUV;
+    
+    gl_Position = P * V * M * vec4(vertex, 1);
+    color_frag = color;
+    normal_frag = mat3(transpose(inverse(M))) * normal;
+    uv_frag = texUV;
+    fragPos = vec3(M * vec4(vertex, 1));
 }

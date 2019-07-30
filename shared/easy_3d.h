@@ -1,9 +1,10 @@
 typedef struct {
-    GLuint vertices;
-    GLuint indexes;
     int facesCount;
     RenderProgram *prog;
     VaoHandle vaoHandle;
+    
+    //TODO: we store a copy of a material instead of a pointer so a mesh can change the values 
+    EasyMaterial *material;
 } Mesh;
 
 typedef enum {
@@ -51,6 +52,17 @@ void resizeVertexInfo(VertexInfo *info, int count) {
         info->data = (Vertex *)memory;
     }
 }
+
+EasyMaterial easyCreateMaterial(Texture *diffuseMap, Texture *normalMap, Texture *specularMap, float constant) {
+    EasyMaterial material = {};
+
+    material.diffuseMap = diffuseMap;
+    material.normalMap = normalMap;
+    material.specularMap = specularMap;
+    material.specularConstant = constant;
+
+    return material;
+} 
 
 
 typedef enum {
@@ -210,8 +222,10 @@ void addVertexData(VertexInfo *info, Face *face, Vertex *vertex, int index) {
     vertex->E[7] = info->data[face->vertexUV[index]].E[7];
 }
 
-Mesh loadObjFile(char *fileName) { 
+Mesh loadModel(char *fileName, EasyMaterial *material) { 
     Mesh result = {};
+    result.material = pushStruct(&globalLongTermArena, EasyMaterial);
+    memcpy(result.material, material, sizeof(EasyMaterial));
     
     FileContents fileContents = getFileContentsNullTerminate(fileName);
     unsigned char *at = fileContents.memory;
@@ -274,6 +288,7 @@ Mesh loadObjFile(char *fileName) {
                     addFaceData(&tokenizer, token, face, 2);
                     
                     for(int i = 0; i < 3; ++i) {
+                        //this assumes all the uv data etc. has already been added beforehand
                         resizeVertexInfo(&finalInfo, (vertexCount));
                         int vertexAt = vertexCount++;
                         Vertex *vertex = finalInfo.data + vertexAt;
@@ -342,14 +357,14 @@ Mesh loadObjFile(char *fileName) {
     glBindVertexArray(0);
     renderCheckError();
     
-    // glDeleteBuffers(1, &vertices);
-    // glDeleteBuffers(1, &indexes);
+    glDeleteBuffers(1, &vertices);
+    glDeleteBuffers(1, &indexes);
     
     result.facesCount = faceCount;
     return result;
 }
 
-void renderModel(Mesh *mesh,
+void easy3d_imm_renderModel(Mesh *mesh,
                  Matrix4 modelMatrix, 
                  Matrix4 viewMatrix,
                  Matrix4 perspectiveMatrix, 
@@ -362,11 +377,11 @@ void renderModel(Mesh *mesh,
     glBindVertexArray(mesh->vaoHandle.vaoHandle);
     renderCheckError();
 
-    GLuint modelUniform = getUniformFromProgram(program, "model").handle; 
+    GLuint modelUniform = glGetUniformLocation(program->glProgram, "model");
     assert(modelUniform);
-    GLuint viewUniform = getUniformFromProgram(program, "view").handle; 
+    GLuint viewUniform = glGetUniformLocation(program->glProgram, "view"); 
     assert(viewUniform);
-    GLuint perspectiveUniform = getUniformFromProgram(program, "perspective").handle; 
+    GLuint perspectiveUniform = glGetUniformLocation(program->glProgram, "perspective"); 
     // assert(perspectiveUniform);
 
     glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelMatrix.val);
@@ -376,7 +391,7 @@ void renderModel(Mesh *mesh,
     glUniformMatrix4fv(perspectiveUniform, 1, GL_FALSE, perspectiveMatrix.val);
     renderCheckError();
     
-    GLuint vertexAttrib = getAttribFromProgram(program, "vertex").handle; 
+    GLuint vertexAttrib = 0;//getAttribFromProgram(program, "vertex").handle; 
     // assert(vertexAttrib);
     // GLuint normalAttrib = getAttribFromProgram(program, "normal").handle; 
     // assert(normalAttrib);

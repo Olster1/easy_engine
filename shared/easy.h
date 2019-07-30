@@ -223,6 +223,9 @@ void releaseMemoryMark(MemoryArenaMark *mark) {
     assert(piece->currentSize <= piece->totalSize);
 }
 
+static Arena globalLongTermArena;
+static Arena globalPerFrameArena;
+static MemoryArenaMark perFrameArenaMark;
 
 bool stringsMatchN(char *a, int aLength, char *b, int bLength) {
     bool result = true;
@@ -260,12 +263,21 @@ char *nullTerminateBuffer(char *result, char *string, int length) {
 
 #define nullTerminate(string, length) nullTerminateBuffer((char *)malloc(length + 1), string, length)
 
-char *concat(char *a, char *b) {
+#define concat(a, b) concat_(a, b, 0)
+#define concatInArena(a, b, arena) concat_(a, b, arena)
+char *concat_(char *a, char *b, Arena *arena) {
     int aLen = strlen(a);
     int bLen = strlen(b);
     
     int newStrLen = aLen + bLen + 1; // +1 for null terminator
-    char *newString = (char *)calloc(newStrLen, 1); 
+    char *newString = 0;
+    if(arena) {
+        newString = (char *)pushArray(arena, newStrLen, char);
+    } else {
+        newString = (char *)calloc(newStrLen, 1); 
+    }
+    assert(newString);
+    
     newString[newStrLen - 1] = '\0';
     
     char *at = newString;

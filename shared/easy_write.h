@@ -176,7 +176,7 @@ static inline void easyWrite_UpdateTextBox(EasyTextBox *box, AppKeyStates *keyst
 	}
 }
 
-static inline void easyWrite_RenderTextBox(EasyTextBox *box, V2 resolution, AppSetupInfo *setupInfo, Font *font, float dt) {
+static inline void easyWrite_RenderTextBox(EasyTextBox *box, V2 resolution, float screenRelativeSize, Font *font, float dt) {
 	char *textToWrite = "";
 	if(box->chars.count > 0) {
 		textToWrite = (char *)box->chars.memory;
@@ -192,7 +192,7 @@ static inline void easyWrite_RenderTextBox(EasyTextBox *box, V2 resolution, AppS
 
 	Rect2f adjustMargin = reevalRect2f(box->margin);
 
-	outputText_with_cursor(font, adjustMargin.min.x, adjustMargin.min.y + font->fontHeight, box->zAt, resolution, textToWrite, adjustMargin, COLOR_BLACK, 1, box->cursorAt, cursorColor, true, setupInfo->screenRelativeSize);
+	outputText_with_cursor(font, adjustMargin.min.x, adjustMargin.min.y + font->fontHeight, box->zAt, resolution, textToWrite, adjustMargin, COLOR_BLACK, 1, box->cursorAt, cursorColor, true, screenRelativeSize);
 	//backdrop
 	V2 center = getCenter(adjustMargin);
 	renderDrawRectCenterDim(v2ToV3(center, box->zAt - 0.1f), getDim(adjustMargin), v4_hadamard(box->hoverColor, box->color), 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));

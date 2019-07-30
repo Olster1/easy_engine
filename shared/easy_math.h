@@ -257,6 +257,11 @@ V3 v3_crossProduct(V3 a, V3 b) {
     return c;
 }
 
+V3 v3_hadamard(V3 a, V3 b) {
+    V3 result = v3(a.x*b.x, a.y*b.y, a.z*b.z);
+    return result;
+}
+
 V4 v4_minus(V4 a, V4 b) {
     V4 result = {a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w};
     return result;
@@ -290,11 +295,6 @@ V3 normalizeV3(V3 a) {
 
 V3 normalize_V3(V3 a, float len) {
     V3 result = v3(safeRatio0(a.x, len), safeRatio0(a.y, len), safeRatio0(a.z, len));
-    return result;
-}
-
-V3 v3_hadamard(V3 a, V3 b) {
-    V3 result = v3(a.x*b.x, a.y*b.y, a.z*b.z);
     return result;
 }
 
@@ -646,6 +646,28 @@ Quaternion identityQuaternion() {
     return result;
 }
 
+V3 easyMath_getZAxis(Matrix4 m) {
+    return m.c.xyz;
+}
+
+V3 easyMath_getXAxis(Matrix4 m) {
+    return m.a.xyz;
+}
+
+V3 easyMath_getYAxis(Matrix4 m) {
+    return m.b.xyz;
+}
+
+Matrix4 mat4_transpose(Matrix4 val) {
+    Matrix4 result = mat4();
+    for(int i = 0; i < 4; ++i) {
+        for(int j = 0; j < 4; ++j) {
+            result.E[j][i] = val.E[i][j];
+        }
+    }
+    return result;
+}
+
 Matrix4 quaternionToMatrix(Quaternion q) {
     Matrix4 result = mat4();
     
@@ -660,6 +682,11 @@ Matrix4 quaternionToMatrix(Quaternion q) {
     result.E_[2] = 2*q.i*q.k + 2*q.j*q.r;
     result.E_[6] = 2*q.j*q.k - 2*q.i*q.r;
     result.E_[10] = 1 - (2*q.i*q.i  + 2*q.j*q.j);
+
+    //This is because we're using column notation instead of row notation
+    //TODO @speed: take this out and swap the values manually
+    result = mat4_transpose(result);
+    //
     
     return result;
     
@@ -691,6 +718,7 @@ Quaternion quaternion_mult(Quaternion q, Quaternion q2){
     return result;
 }
 
+//this is for 'intergrating' a quaternion, like updating the rotation per frame in physics
 Quaternion addScaledVectorToQuaternion(Quaternion q_, V3 vector, float timeScale) {
     Quaternion result = q_;
     Quaternion q = quaternion(0,
@@ -721,6 +749,8 @@ Quaternion eulerAnglesToQuaternion(float y, float x, float z) {
     return result;
 }
 
+
+
 Matrix4 mat4_setOrientationAndPos(Quaternion q, V3 pos) {
     Matrix4 result = quaternionToMatrix(q);
     
@@ -730,6 +760,15 @@ Matrix4 mat4_setOrientationAndPos(Quaternion q, V3 pos) {
     
     return result;
 }
+
+Matrix4 mat4_noTranslate(Matrix4 m) {
+    m.E_[12] = 0;
+    m.E_[13] = 0;
+    m.E_[14] = 0;
+    
+    return m;
+}
+
 
 Matrix4 mat4_angle_aroundZ(float angle) {
     Matrix4 result = {{
@@ -758,16 +797,6 @@ Matrix4 mat4_xyzAxis(V3 xAxis, V3 yAxis, V3 zAxis) {
             zAxis.x, zAxis.y, zAxis.z, 0,
             0, 0, 0, 1
         }};
-    return result;
-}
-
-Matrix4 mat4_transpose(Matrix4 val) {
-    Matrix4 result = mat4();
-    for(int i = 0; i < 4; ++i) {
-        for(int j = 0; j < 4; ++j) {
-            result.E[j][i] = val.E[i][j];
-        }
-    }
     return result;
 }
 

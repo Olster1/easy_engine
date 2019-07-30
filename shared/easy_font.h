@@ -9,6 +9,10 @@ File to enable writing with fonts easy to add to your project. Uses Sean Barret'
 #include "stb_image_write.h"
 
 
+//TODO API: 
+// draw font needs to take less parameters & have one without a margin, also using a unit_scale measurement based on dpi 
+// TODO: Needs to create a font bitmap the knows when it's filled. Using the texture atlas info. 
+
 typedef struct {
     int index;
     V4 color;
@@ -31,7 +35,7 @@ typedef struct {
     FontSheet *sheets;
 } Font;
 
-static stbtt_bakedchar *gh;
+// TESTING: static stbtt_bakedchar *gh;
 #define FONT_SIZE 1028 //This matters. We need to pack our own font glyphs in the future, since it's not garunteed to fit!!!
 FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
 
@@ -55,7 +59,7 @@ FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
     
     stbtt_BakeFontBitmap(contents.memory, 0, font->fontHeight, (unsigned char *)temp_bitmap, bitmapW, bitmapH, firstChar, numOfChars, sheet->cdata);
     // no guarantee this fits!
-    gh = sheet->cdata + (int)'y';
+    // gh = sheet->cdata + (int)'y';
     
     free(contents.memory);
     // NOTE(Oliver): We expand the the data out from 8 bits per pixel to 32 bits per pixel. It doens't matter that the char data is based on the smaller size since getBakedQuad divides by the width of original, smaller bitmap. 
@@ -364,7 +368,7 @@ Rect2f outputText(Font *font, float x, float y, float z, V2 resolution, char *te
 
     Rect2f result = my_stbtt_print_(font, x, y, z, resolution, text, margin, color, size, 0, display, resolutionDiffScale);
     float offset = 3*resolutionDiffScale;
-    my_stbtt_print_(font, x + offset, y + offset, z - 0.1f, resolution, text, margin, v4(0.5f, 0.5f, 0.5f, min(color.w, 0.8f)), size, 0, display, resolutionDiffScale);
+    my_stbtt_print_(font, x + offset, y + offset, z + 0.1f, resolution, text, margin, v4(0.5f, 0.5f, 0.5f, min(color.w, 0.8f)), size, 0, display, resolutionDiffScale);
     return result;
 }
 

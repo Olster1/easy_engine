@@ -7,6 +7,20 @@ typedef struct {
 	SDL_Window *windowHandle;
 	SDL_GLContext renderContext; 
 	bool valid;
+
+	//setup afterwards
+	float monitorFrameTime;
+	Matrix4 metresToPixels;
+	Matrix4 pixelsToMeters;
+	float screenRelativeSize;
+	SDL_AudioSpec audioSpec;
+	float dt;
+	float idealFrameTime;
+	unsigned int lastTime;
+
+	bool firstFrame;
+	//
+
 } OSAppInfo;
 
 OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
@@ -104,22 +118,19 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
     return result;
 }
 
-typedef struct {
-	float refresh_rate;
-	Matrix4 metresToPixels;
-	Matrix4 pixelsToMeters;
-	float screenRelativeSize;
-	SDL_AudioSpec audioSpec;
-} AppSetupInfo;
+void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
+	globalLongTermArena = createArena(Kilobytes(200));
+	globalPerFrameArena = createArena(Kilobytes(100));
+    assets = (Asset **)pushSize(&globalLongTermArena, 4096*sizeof(Asset *));
 
-AppSetupInfo easyOS_setupApp(V2 *resolution, char *resPathFolder, Arena *memArena) {
-	AppSetupInfo result = {};
-    
 	V2 idealResolution = v2(1280, 720); // Not sure if this is the best place for this?? Have to see. 
     
     SDL_DisplayMode mode;
     SDL_GetCurrentDisplayMode(0, &mode);
-    result.refresh_rate = mode.refresh_rate;
+    result->monitorFrameTime = 1.0f / mode.refresh_rate;
+
+    result->dt = result->monitorFrameTime; //use monitor refresh rate 
+    result->idealFrameTime = 1.0f / 60.0f;
 
     if(resolution->x == 0 || resolution->y == 0) {
     	resolution->x = mode.w;
@@ -143,16 +154,17 @@ AppSetupInfo easyOS_setupApp(V2 *resolution, char *resPathFolder, Arena *memAren
 #if WRITE_SHADERS
     char *fileTypes[]= {"glsl", "c"};
     compileFiles("shaders/", fileTypes, arrayCount(fileTypes));
+    exit(0);
 #endif
 #endif
     
     //////////SETUP AUDIO/////
-    initAudioSpec(&result.audioSpec, 44100);
-    initAudio(&result.audioSpec);
+    initAudioSpec(&result->audioSpec, 44100);
+    initAudio(&result->audioSpec);
     //////////
     
     ////SETUP OPEN GL//
-    enableRenderer(resolution->x, resolution->y, memArena);
+    enableRenderer(resolution->x, resolution->y, &globalLongTermArena);
     renderCheckError();
     //////
     
@@ -170,15 +182,15 @@ AppSetupInfo easyOS_setupApp(V2 *resolution, char *resPathFolder, Arena *memAren
     	screenRelativeSize = screenRelativeSize_.x;
     }
 
+    result->firstFrame = true;
+
     float ratio = 64.0f*screenRelativeSize;
     // assert(ratio.x != 0);
     // assert(ratio.y != 0);
-    result.metresToPixels = Matrix4_scale(mat4(), v3(ratio, ratio, 1));
-    result.pixelsToMeters = Matrix4_scale(mat4(), v3(1.0f / ratio, 1.0f / ratio, 1));
-    result.screenRelativeSize = screenRelativeSize;
+    result->metresToPixels = Matrix4_scale(mat4(), v3(ratio, ratio, 1));
+    result->pixelsToMeters = Matrix4_scale(mat4(), v3(1.0f / ratio, 1.0f / ratio, 1));
+    result->screenRelativeSize = screenRelativeSize;
     /////
-    
-    return result;
 }
 
 void easyOS_endProgram(OSAppInfo *appInfo) {
@@ -187,8 +199,15 @@ void easyOS_endProgram(OSAppInfo *appInfo) {
     SDL_Quit();
 }
 
-void easyOS_beginFrame(V2 resolution) {
+void easyOS_beginFrame(V2 resolution, OSAppInfo *appInfo) {
 	glViewport(0, 0, resolution.x, resolution.y);
+
+	perFrameArenaMark = takeMemoryMark(&globalPerFrameArena);
+
+	if(appInfo->firstFrame) {
+		appInfo->lastTime = SDL_GetTicks();
+		appInfo->firstFrame = false;
+	}
 }
 
 float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
@@ -202,9 +221,14 @@ float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
 	return screenRatio;
 }
 
-static inline void easyOS_endFrame(V2 resolution, V2 screenDim, float *dt_, SDL_Window *windowHandle, unsigned int compositedFrameBufferId, unsigned int backBufferId, unsigned int renderbufferId, unsigned int *lastTime, float monitorFrameTime, bool blackBars) {
-	float dt = *dt_;
-    
+static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int compositedFrameBufferId, OSAppInfo *appInfo, bool blackBars) {
+	
+	SDL_Window *windowHandle = appInfo->windowHandle;
+	unsigned int backBufferId = appInfo->frameBackBufferId;
+	unsigned int renderbufferId = appInfo->renderBackBufferId;
+	float monitorFrameTime = appInfo->monitorFrameTime; 
+	float dt = appInfo->dt;
+
 	////////Letterbox if the ratio isn't correct//
 	float screenRatio = easyOS_getScreenRatio(screenDim, resolution);
 	V2 screenActualSize = v2_scale(screenRatio, resolution);
@@ -233,7 +257,7 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, float *dt_, SDL_
     SDL_GL_SwapWindow(windowHandle);
     
     unsigned int now = SDL_GetTicks();
-    float timeInFrameMilliSeconds = (now - *lastTime);
+    float timeInFrameMilliSeconds = (now - appInfo->lastTime);
     //TODO: Do our own wait if Vsync isn't on. 
     //NOTE: This is us choosing the best frame time within the intervals of possible frame rates!!!
     dt = timeInFrameMilliSeconds / 1000.0f;
@@ -253,11 +277,13 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, float *dt_, SDL_
             newRate = val;
         }
     }
-    dt = *dt_ = newRate; //set the actual dt
+    dt = appInfo->dt = newRate; //set the actual dt
 #if PRINT_FRAME_RATE
     printf("%f\n", 1.0f / (dt)); 
 #endif
-    *lastTime = now;
+    appInfo->lastTime = now;
+
+    releaseMemoryMark(&perFrameArenaMark);
 }
 
 typedef struct {
