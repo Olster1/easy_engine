@@ -257,6 +257,11 @@ V3 v3_crossProduct(V3 a, V3 b) {
     return c;
 }
 
+float dotV3(V3 a, V3 b) {
+    float result = a.x*b.x + a.y*b.y + a.z*b.z;
+    return result;
+}
+
 V3 v3_hadamard(V3 a, V3 b) {
     V3 result = v3(a.x*b.x, a.y*b.y, a.z*b.z);
     return result;

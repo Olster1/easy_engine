@@ -1,5 +1,5 @@
 #define PI32 3.14159265359
-#define RENDER_HANDNESS 1 //positive is left hand handess -> z going into the screen. 
+#define RENDER_HANDNESS -1 //positive is left hand handess -> z going into the screen. 
 #define NEAR_CLIP_PLANE -(RENDER_HANDNESS)*0.1;
 #define FAR_CLIP_PLANE -(RENDER_HANDNESS)*10000.0f
 
@@ -1018,7 +1018,7 @@ void enableRenderer(int width, int height, Arena *arena) {
     renderCheckError();
     //Premultiplied alpha textures! 
     glEnable(GL_DEPTH_TEST);
-    //glDepthMask(GL_TRUE);  
+    glDepthMask(GL_TRUE);  
     renderCheckError();
     glDepthFunc(GL_LEQUAL);///GL_LESS);//////GL_LEQUAL);//
     
@@ -1028,8 +1028,8 @@ void enableRenderer(int width, int height, Arena *arena) {
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
-    render_enableCullFace();
-    // glEnable(GL_CULL_FACE); 
+    // render_enableCullFace();
+    glDisable(GL_CULL_FACE); 
     // glCullFace(GL_BACK);  
     // glFrontFace(GL_CCW);  
     //SRGB TEXTURE???
@@ -1106,6 +1106,7 @@ void enableRenderer(int width, int height, Arena *arena) {
 }
 
 
+//alpha is at 24 place
 static inline V4 hexARGBTo01Color(unsigned int color) {
     V4 result = {};
     
@@ -1339,14 +1340,11 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
     }
 }
 
-static inline void renderModel(VaoHandle *bufferHandles, 
-    Matrix4 modelViewMatrix, 
-    Matrix4 perspectiveMatrix, 
-    RenderProgram *program) {
-
+static inline void renderModel(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {  
+    pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
 }
 
-static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program) {
+static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount) {
     if(!bufferHandles->valid) {
         glGenVertexArrays(1, &bufferHandles->vaoHandle);
         renderCheckError();
@@ -1919,7 +1917,7 @@ void drawRenderGroup(RenderGroup *group) {
     
     int drawCallCount = 0;
 
-    render_enableCullFace();
+    // render_enableCullFace();
     
     // printf("Render Items count: %d\n", group->items.count);
     // int instanceIndexAt = 0;
@@ -2002,7 +2000,7 @@ void drawRenderGroup(RenderGroup *group) {
         }
         
         
-        initVao(info->bufferHandles, info->triangleData, info->triCount, info->indicesData, info->indexCount, info->program);
+        initVao(info->bufferHandles, info->triangleData, info->triCount, info->indicesData, info->indexCount);
     
         createBufferStorage2(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
 
@@ -2015,15 +2013,15 @@ void drawRenderGroup(RenderGroup *group) {
         releaseInfiniteAlloc(&allInstanceData);
     }
 
-    glEnable(GL_CULL_FACE); 
-    glCullFace(GL_FRONT);  
-    glFrontFace(GL_CCW);  
+    // glEnable(GL_CULL_FACE); 
+    // glCullFace(GL_FRONT);  
+    // glFrontFace(GL_CCW);  
 
     if(group->skybox) {
          // glDepthFunc(GL_LEQUAL);
         if(!globalCubeMapVaoHandle.valid) {
             printf("%s\n", "INIT SKYBOX");
-            initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), &skyboxProgram);
+            initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData));
         }
         // printf("%s\n", "DRAWING SKYBOX");
         drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group);

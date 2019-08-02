@@ -44,18 +44,67 @@ int main(int argc, char *args[]) {
 
         //SETUP
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
+        EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
 
         //
 
+
+#define perlinWidth 100
+#define perlinHeight 100
+        float perlinWordData[perlinHeight*perlinWidth];
+
+        InfiniteAlloc floormeshdata = initInfinteAlloc(Vertex);
+        InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
+
+        int triCount = 0;
+        for(s32 y = 0; y < perlinHeight; y++) {
+            for(s32 x = 0; x < perlinWidth; x++) {
+                s32 subY = y - (perlinHeight/2);
+                float height = perlinWordData[x + y*perlinWidth] = perlin2d(x, subY, 0.1, 8);
+                float height1 = perlin2d(x + 1, subY, 1, 8);
+                float height2 = perlin2d(x, subY + 1, 1, 8);
+                V3 p1 = v3(x + 1, height1, subY);
+                V3 p2 = v3(x, height2, subY + 1);
+                V3 a = normalizeV3(v3_minus(p1, v3(x, height, subY)));
+                V3 b = normalizeV3(v3_minus(p2, v3(x, height, subY)));
+
+                V3 normal = v3_crossProduct(a, b);
+
+                // printf("%f %f %f\n", a.x, a.y, a.z);
+                // printf("%f %f %f\n", b.x, b.y, b.z);
+                // printf("---------\n");
+
+                Vertex v = vertex(v3(0.2f*x, height, 0.2f*subY), normal, v2(0, 0));
+                addElementInifinteAlloc_(&floormeshdata, &v);
+                if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
+
+                    unsigned int index[6] = {
+                        x + (perlinWidth*y), 
+                        x + 1 + (perlinWidth*y),
+                        x + 1 + (perlinWidth*(y+1)), 
+                        x + (perlinWidth*y), 
+                        x + 1 + (perlinWidth*(y+1)), 
+                        x + (perlinWidth*(y+1)) 
+                    };
+                    addElementInifinteAllocWithCount_(&indicesData, &index, 6);
+                    triCount += 2;
+                }
+                
+            }
+        }
+
+        
+        VaoHandle floorMesh = {};
+        initVao(&floorMesh, (Vertex *)floormeshdata.memory, triCount, (unsigned int *)indicesData.memory, indicesData.count);
+
+        // for(s32 y = 0; y < perlinHeight; y++) {
+        //     for(s32 x = 0; x < perlinWidth; x++) {
+        //         perlinWordData[x + y*perlinWidth] = perlin2d(x, y, 0.1, 8);
+        //     }
+        // }
+
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, -2));
-
-        // GL_TEXTURE_CUBE_MAP_POSITIVE_X //left panel
-    // GL_TEXTURE_CUBE_MAP_NEGATIVE_X //right panel
-    // GL_TEXTURE_CUBE_MAP_POSITIVE_Y //top panel
-    // GL_TEXTURE_CUBE_MAP_NEGATIVE_Y //bottom panel
-    // GL_TEXTURE_CUBE_MAP_POSITIVE_Z //back panel
-    // GL_TEXTURE_CUBE_MAP_NEGATIVE_Z //front panel
 
         EasySkyBoxImages skyboxImages;
         skyboxImages.fileNames[0] = "skybox_images/right.jpg";
@@ -86,7 +135,10 @@ int main(int argc, char *args[]) {
             setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD);
             renderSetViewPort(0, 0, resolution.x, resolution.y);
 
-            tAt += 0.0001f*appInfo.dt;
+            tAt += appInfo.dt;
+
+            light->direction.xyz = v3(cos(tAt), sin(tAt), 0);
+
             float zAt = -10;//-2*sin(tAt);
             V3 eyepos = v3(2*cos(tAt), 0, zAt);
             // V3 eyepos = v3(0, 0, -10);
@@ -113,6 +165,7 @@ int main(int argc, char *args[]) {
 
             renderEnableDepthTest(globalRenderGroup);
             renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
+            renderModel(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
 
             //////
             drawRenderGroup(globalRenderGroup);
