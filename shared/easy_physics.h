@@ -96,9 +96,53 @@ RayCastInfo easy_phys_castRay(V2 startP, V2 ray, V2 *points, int count) {
 	return result;
 }
 
-// V2 AP = v2_minus(hitPoint, ent->pos.xy);
+typedef struct {
+	Matrix4 T;
+	V3 pos;
+	V3 scale;
+	Quaternion Q;
+} EasyTransform;
+
+
+typedef struct {
+	EasyTransform *T;
+	V3 velocity;
+	float mass;
+	// float inertia;
+} EasyRigidBody;
+	
+static inline EasyCollisionOutput EasyPhysics_SolveRigidBodies(EasyRigidBody *a_, EasyRigidBody *b_) {
+	EasyCollisionPolygon a = {};
+	EasyCollisionPolygon b = {};
+
+	a.T = Matrix4_translate(a_->T->T, a_->T->pos); 
+	a.p[0] = v3(-0.5, -0.5, 0);
+	a.p[1] = v3(-0.5, 0.5, 0);
+	a.p[2] = v3(0.5, 0.5, 0);
+	a.p[3] = v3(0.5, -0.5, 0);
+	a.count = 4; 
+
+	b = a;
+	b.T = Matrix4_translate(b_->T->T, b_->T->pos); 
+
+	EasyCollisionInput input = {};
+	input.a = a;
+	input.b = b;
+
+	EasyCollisionOutput output = {};
+	easyCollision_GetClosestPoint(&input, &output);
+
+	// ouput.pointA; 
+	// ouput.pointB; 
+	if(output.wasInside) {
+		printf("collision: %f\n", output.distance);
+	}
+	return output;
+}
+
+// V3 AP = v3_minus(output.pointA, ent->pos);
 // isNanErrorV2(AP);
-// V2 BP = v2_minus(hitPoint, testEnt->pos.xy);
+// V2 BP = v2_minus(output.pointB, testEnt->pos);
 // isNanErrorV2(BP);
     
 // V2 Velocity_A = v2_plus(ent->dP.xy, v2_scale(ent->dA, perp(AP)));

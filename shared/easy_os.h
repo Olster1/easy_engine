@@ -291,6 +291,7 @@ typedef struct {
     
 	V2 mouseP;
 	V2 mouseP_yUp;
+	V2 mouseP_left_up;
 
 	char *inputString;
     
@@ -507,6 +508,8 @@ static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V
 	float newMouseY = inverse_lerp(yResidue, mouseY, yResidue + screenActualSize.y);
 
 	state->mouseP = v2(newMouseX*resolution.x, newMouseY*resolution.y);
+
+	state->mouseP_left_up = v2(state->mouseP.x, -1*state->mouseP.y + resolution.y);
 	
 	state->mouseP_yUp = v2_minus(v2(state->mouseP.x, -1*state->mouseP.y + resolution.y), v2_scale(0.5f, resolution));
     

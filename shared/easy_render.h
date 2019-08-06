@@ -937,7 +937,7 @@ Matrix4 OrthoMatrixToScreen_BottomLeft(int width, int height) {
 static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 resolution, float zAt, Matrix4 cameraToWorld) {
     
     V2 screenP_01 = v2(screenP.x / resolution.x, screenP.y / resolution.y);
-    V2 ndcSpace = v2(inverse_lerp(-1, screenP_01.x, 1), inverse_lerp(-1, screenP_01.y, 1));
+    V2 ndcSpace = v2(lerp(-1, screenP_01.x, 1), lerp(-1, screenP_01.y, 1));
 
     V4 probePos = v4(0, 0, zAt, 1); //transform a position in the world to see what the clip space z would be
     

@@ -207,9 +207,16 @@ float dotV2(V2 a, V2 b) {
     return result;
 }
 
+//anti-clockwise
 V2 perp(V2 a) {
     V2 result = v2(-a.y, a.x);
     return result;
+}
+
+//clockwise
+static inline float cross2D(V2 a, V2 b)
+{
+    return a.x * b.y - a.y * b.x;
 }
 
 float getLengthSqr(V2 a) {

@@ -1,0 +1,39 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1404\cocoasubrtf460
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww10800\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 Building a texture atlas is a common optimisation technique in graphics programming. It is not a requirement of rendering, only an optimisation. You can draw things with the graphics card without texture atlases & sprite sheets. Before graphics cards, when rendering was done on the CPU, there would have been no benefit to using texture atlases. The reason they are common today with GPU rendering is the bus bottle neck. Basically the speed limitation is not how many pixels you draw, but how many draw calls you send to the graphics card each frame. The more draw calls, the slower you application. And one way to limit draw calls is batching multiple sprites together.  This is where the texture atlas comes in.  By having all the sprites or textures on the same texture, whenever the same shader is used, we can just send an array of uv coordinates to the graphics card, and this will draw multiple sprites with the same draw call. \
+\
+To build a texture atlas we need to interface functions: buildTextureAtlas() & extractTextureAtlas()\
+\
+The first one combines a list of images and makes one image out of them, along with a metadata file saying the uv coordinates and name of the seperate images. \
+\
+The extract function would do the opposite: take the atlas & metadata file and produce seperate images out of them. \
+\
+This tutorial assumes you know how to render to an image & write it out to disk. The sample code does this by first rendering all the images to an Opengl Frame Buffer object, then at the end, reading the pixels out of it and using Sean Barrett\'92s stb library, write a png to disk. Along the way we keep track of where each image is rendered to the frame buffer and take a percent to get the uv coordinates. \
+\
+The core of the algorithm is keeping a linked list of partitions of the frame buffer. It starts with one partition, the one corresponding to the total image size. When we add  an image, we break the resulting space into two partitions (to keep the square shape). When we need to add a new image we then ask for the best fit bin (the smallest bin that will fit the image). We will then remove that bin. And create two new bins, taking account for the image just added.  \
+\
+The algorithm is as follows:\
+1. We create a frame buffer say 4096 x 4096 pixels\
+2. We create a linked list to store partitions in. This just has a min & max of where the rectangle lies on the frame buffer.  We start with the frame buffer rect i.e. [ min: 0, 0 ] [ max: 4096, 4096 ]\
+3. We loop through all the images we want to add to the texture atlas. \
+4. For each image we fin the best fit bin. This is the smallest bin that will fit the image. To begin there is only one partition in the linked list. \
+5. We then render the image to the frame buffer, with the corner of the image at the min of the partition rectangle. e.g. partition was [ min: 0, 12 ] [ max: 4096, 4096], the image will have it\'92s corner at [ 0, 12 ]\
+6. Write the metadata to a file. This will be the file name and the uv coords. To calculate this, we divide min and max corners by the total frame size, to get a number between 0 & 1\
+7. Break the last bin into two new ones, taking account for the image that was rendered at the min corner.\
+8. Remove the last bin since we have used it now, and add the two new ones. \
+9. Repeat for all the images, if we run out of space, we will have to create a new frame buffer, and keep going with the new partitions. \
+\
+If we want a tight atlas i.e. no empty space, we could run the algorithm without rendering anything, and find the max x,y coordinates, then adjust the frame buffer accordingly. \
+\
+To partition the bin into two new ones, we asked if the image we just added was wider than it is tall, or vice versa. By knowing this we can distribute the space more evenly. Once we know this we can then create the new partitions using the previous partition & the image we are adding to it. \
+\
+From this we can create a texture atlas from a list of images. Then in order to read them into the game engine, we just parse the metadata file do access the uv data. \
+\
+\
+\
+\
+}

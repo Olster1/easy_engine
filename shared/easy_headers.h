@@ -24,6 +24,7 @@ static char* globalExeBasePath;
 
 #define GJK_IMPLEMENTATION 
 #include "easy_gjk.h"
+#include "easy_collision.h"
 #include "easy_physics.h"
 #include "easy_text_io.h"
 //#include "easy_sdl_joystick.h"

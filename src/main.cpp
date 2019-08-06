@@ -18,9 +18,9 @@
 
 
 int main(int argc, char *args[]) {
-    V2 screenDim = v2(800, 600); //init in create app function
+    V2 screenDim = v2(400, 400); //init in create app function
     V2 resolution = v2(0, 0);
-    screenDim = resolution;
+    // screenDim = resolution;
     bool fullscreen = false;
     OSAppInfo appInfo = easyOS_createApp("Physics 2D", &screenDim, fullscreen);
     assert(appInfo.valid);
@@ -57,41 +57,41 @@ int main(int argc, char *args[]) {
         InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
 
         int triCount = 0;
-        for(s32 y = 0; y < perlinHeight; y++) {
-            for(s32 x = 0; x < perlinWidth; x++) {
-                s32 subY = y - (perlinHeight/2);
-                float height = perlinWordData[x + y*perlinWidth] = perlin2d(x, subY, 0.1, 8);
-                float height1 = perlin2d(x + 1, subY, 1, 8);
-                float height2 = perlin2d(x, subY + 1, 1, 8);
-                V3 p1 = v3(x + 1, height1, subY);
-                V3 p2 = v3(x, height2, subY + 1);
-                V3 a = normalizeV3(v3_minus(p1, v3(x, height, subY)));
-                V3 b = normalizeV3(v3_minus(p2, v3(x, height, subY)));
+        // for(s32 y = 0; y < perlinHeight; y++) {
+        //     for(s32 x = 0; x < perlinWidth; x++) {
+        //         s32 subY = y - (perlinHeight/2);
+        //         float height = perlinWordData[x + y*perlinWidth] = perlin2d(x, subY, 0.1, 8);
+        //         float height1 = perlin2d(x + 1, subY, 1, 8);
+        //         float height2 = perlin2d(x, subY + 1, 1, 8);
+        //         V3 p1 = v3(x + 1, height1, subY);
+        //         V3 p2 = v3(x, height2, subY + 1);
+        //         V3 a = normalizeV3(v3_minus(p1, v3(x, height, subY)));
+        //         V3 b = normalizeV3(v3_minus(p2, v3(x, height, subY)));
 
-                V3 normal = v3_crossProduct(a, b);
+        //         V3 normal = v3_crossProduct(a, b);
 
-                // printf("%f %f %f\n", a.x, a.y, a.z);
-                // printf("%f %f %f\n", b.x, b.y, b.z);
-                // printf("---------\n");
+        //         // printf("%f %f %f\n", a.x, a.y, a.z);
+        //         // printf("%f %f %f\n", b.x, b.y, b.z);
+        //         // printf("---------\n");
 
-                Vertex v = vertex(v3(0.2f*x, height, 0.2f*subY), normal, v2(0, 0));
-                addElementInifinteAlloc_(&floormeshdata, &v);
-                if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
+        //         Vertex v = vertex(v3(0.2f*x, height, 0.2f*subY), normal, v2(0, 0));
+        //         addElementInifinteAlloc_(&floormeshdata, &v);
+        //         if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
 
-                    unsigned int index[6] = {
-                        x + (perlinWidth*y), 
-                        x + 1 + (perlinWidth*y),
-                        x + 1 + (perlinWidth*(y+1)), 
-                        x + (perlinWidth*y), 
-                        x + 1 + (perlinWidth*(y+1)), 
-                        x + (perlinWidth*(y+1)) 
-                    };
-                    addElementInifinteAllocWithCount_(&indicesData, &index, 6);
-                    triCount += 2;
-                }
+        //             unsigned int index[6] = {
+        //                 x + (perlinWidth*y), 
+        //                 x + 1 + (perlinWidth*y),
+        //                 x + 1 + (perlinWidth*(y+1)), 
+        //                 x + (perlinWidth*y), 
+        //                 x + 1 + (perlinWidth*(y+1)), 
+        //                 x + (perlinWidth*(y+1)) 
+        //             };
+        //             addElementInifinteAllocWithCount_(&indicesData, &index, 6);
+        //             triCount += 2;
+        //         }
                 
-            }
-        }
+        //     }
+        // }
 
         
         VaoHandle floorMesh = {};
@@ -117,7 +117,20 @@ int main(int argc, char *args[]) {
 
         EasySkyBox *skybox = easy_makeSkybox(&skyboxImages);
 
-        globalRenderGroup->skybox = skybox;
+        // globalRenderGroup->skybox = skybox;
+
+        EasyTransform aT = {};
+        aT.T = mat4();
+        aT.pos = v3(0, 0, -10);
+
+        EasyTransform bT = {};
+        bT.T = mat4();
+        bT.pos = v3(2, 2, -10);
+
+        EasyRigidBody a = {};
+        EasyRigidBody b = {};
+        a.T = &aT;
+        b.T = &bT;
 
         EasyLight *light = easy_makeLight(v4(0, 0, 1, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
         easy_addLight(globalRenderGroup, light);
@@ -164,8 +177,27 @@ int main(int argc, char *args[]) {
             setProjectionTransform(globalRenderGroup, perspectiveMatrix);
 
             renderEnableDepthTest(globalRenderGroup);
-            renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
-            renderModel(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
+            // renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
+            // renderModel(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
+
+            a.T->pos = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
+            Matrix4 m = mat4_angle_aroundZ(1.28);
+            a.T->T = m;
+            
+            EasyCollisionOutput out = EasyPhysics_SolveRigidBodies(&a, &b);
+
+            
+
+            renderDrawRectCenterDim(a.T->pos, v2(1, 1), out.wasInside ? COLOR_BLACK : COLOR_GREEN, 1.28, mat4(), perspectiveMatrix);
+            renderDrawRectCenterDim(b.T->pos, v2(1, 1), COLOR_WHITE, 0, mat4(), perspectiveMatrix);
+
+            out.pointA.z = -10;
+            out.pointB.z = -10;
+            // error_printFloat3("point A", out.pointA.E);
+            // error_printFloat3("point B", out.pointB.E);
+            // printf("%s\n", "--------");
+            renderDrawRectCenterDim(out.pointA, v2(0.1, 0.1), COLOR_BLUE, 0, mat4(), perspectiveMatrix);
+            renderDrawRectCenterDim(out.pointB, v2(0.1, 0.1), COLOR_BLUE, 0, mat4(), perspectiveMatrix);            
 
             //////
             drawRenderGroup(globalRenderGroup);
