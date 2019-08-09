@@ -32,6 +32,7 @@ typedef struct {
 	V3 pointB; //closest point on polygon a
 	float distance;
 	bool wasInside;
+	V3 normal;
 } EasyCollisionOutput;
 
 
@@ -66,32 +67,32 @@ static inline void easyCollision_solve2(EasySimplex *simplex) {
 	V2 AB = v2_minus(A, B);
 	V2 QB = v2_minus(v2(0, 0), B);
 
-	error_printFloat2("A vector: ", AB.E);
-	error_printFloat2("B vector: ", BA.E);
+	// error_printFloat2("A vector: ", AB.E);
+	// error_printFloat2("B vector: ", BA.E);
 
-	error_printFloat2("Q vector: ", QB.E);
-	error_printFloat2("Q vector: ", QA.E);
+	// error_printFloat2("Q vector: ", QB.E);
+	// error_printFloat2("Q vector: ", QA.E);
 	float d = dotV2(BA, BA);
 
 	float u = dotV2(AB, QB);
 
 	if(v <= 0.0f) {
 		//vertex A
-		printf("%s\n", "region A");
+		// printf("%s\n", "region A");
 		simplex->points[0].u = 1.0f; //baycentric contribution
 		simplex->divisor = 1;
 		simplex->count = 1;
 	} else if(u <= 0.0f) {
 		//vertex B
-		printf("%s\n", "region B");
-		printf("v value: %f\n", v/d);
-		printf("u value: %f\n", u/d);
+		// printf("%s\n", "region B");
+		// printf("v value: %f\n", v/d);
+		// printf("u value: %f\n", u/d);
 		simplex->points[0] = simplex->points[1];
 		simplex->points[0].u = 1.0f; //baycentric contribution
 		simplex->divisor = 1;
 		simplex->count = 1;
 	} else {
-		printf("%s\n", "region A B");
+		// printf("%s\n", "region A B");
 		float divisor = dotV2(BA, BA);
 		simplex->points[0].u = u; //baycentric contribution
 		simplex->points[1].u = v;
@@ -143,7 +144,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region A
 	if (ABv <= 0.0f && ACu <= 0.0f)
 	{
-		printf("a\n");
+		// printf("a\n");
 		simplex->points[0].u = 1.0f;
 		simplex->divisor = 1.0f;
 		simplex->count = 1;
@@ -153,7 +154,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region B
 	if (ABu <= 0.0f && BCv <= 0.0f)
 	{
-		 printf("b\n");
+		 // printf("b\n");
 		simplex->points[0] = simplex->points[1];
 		simplex->points[0].u = 1.0f;
 		simplex->divisor = 1.0f;
@@ -164,7 +165,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region C
 	if (BCu <= 0.0f && ACv <= 0.0f)
 	{
-		printf("c\n");
+		// printf("c\n");
 		simplex->points[0] = simplex->points[2];
 		simplex->points[0].u = 1.0f;
 		simplex->divisor = 1.0f;
@@ -194,7 +195,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region AB
 	if (ABu > 0.0f && ABv > 0.0f && wABC * area <= 0.0f)
 	{
-		printf("ab\n");
+		// printf("ab\n");
 		simplex->points[0].u = ABu;
 		simplex->points[1].u = ABv;
 		V3 e = v3_minus(B, A);
@@ -206,7 +207,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region BC
 	if (BCu > 0.0f && BCv > 0.0f && uABC * area <= 0.0f)
 	{
-		printf("cb\n");
+		// printf("cb\n");
 		simplex->points[0] = simplex->points[1];
 		simplex->points[1] = simplex->points[2];
 
@@ -221,7 +222,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 	// Region CA
 	if (ACu > 0.0f && ACv > 0.0f && vABC * area <= 0.0f)
 	{
-		printf("ac\n");
+		// printf("ac\n");
 		simplex->points[1] = simplex->points[0];
 		simplex->points[0] = simplex->points[2];
 		
@@ -286,11 +287,11 @@ static inline void easyCollision_getWitnessPoints(EasySimplex *simplex, V3 *poin
 				// printf("%s %d\n", "indexA", simplex->points[1].indexA);
 				// printf("%s %d\n", "indexB", simplex->points[1].indexB);
 				assert(!(simplex->points[0].indexA == simplex->points[1].indexA && simplex->points[0].indexB == simplex->points[1].indexB));
-				printf("%f %f\n", simplex->points[0].u, simplex->points[1].u);
-				error_printFloat3("point A", simplex->points[0].pointA.E);
-				error_printFloat3("point A", simplex->points[1].pointA.E);
-				error_printFloat3("point B", simplex->points[0].pointB.E);
-				error_printFloat3("point B", simplex->points[1].pointB.E);
+				// printf("%f %f\n", simplex->points[0].u, simplex->points[1].u);
+				// error_printFloat3("point A", simplex->points[0].pointA.E);
+				// error_printFloat3("point A", simplex->points[1].pointA.E);
+				// error_printFloat3("point B", simplex->points[0].pointB.E);
+				// error_printFloat3("point B", simplex->points[1].pointB.E);
 				
 				float u = s * simplex->points[0].u;
 				float v = s * simplex->points[1].u;
@@ -355,39 +356,39 @@ static inline void easyCollision_GetClosestPoint(EasyCollisionInput *input, Easy
 			saveB[i] = simplex.points[i].indexB;
 		}
 
-		printf("before %d\n", simplex.count);
-		printf("%s %d\n", "indexA", simplex.points[0].indexA);
-		printf("%s %d\n", "indexB", simplex.points[0].indexB);
-		printf("%s %d\n", "indexA", simplex.points[1].indexA);
-		printf("%s %d\n", "indexB", simplex.points[1].indexB);
-		printf("%s %d\n", "indexA", simplex.points[2].indexA);
-		printf("%s %d\n", "indexB", simplex.points[2].indexB);
+		// printf("before %d\n", simplex.count);
+		// printf("%s %d\n", "indexA", simplex.points[0].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[0].indexB);
+		// printf("%s %d\n", "indexA", simplex.points[1].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[1].indexB);
+		// printf("%s %d\n", "indexA", simplex.points[2].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[2].indexB);
 
 
 		//drop non-contributing verticies
 		switch(simplex.count) {
 			case 1: {
-				printf("%s\n", "solve1");
+				// printf("%s\n", "solve1");
 				//nothing happens
 			} break;
 			case 2: {
-				printf("%s\n", "solve2");
+				// printf("%s\n", "solve2");
 				easyCollision_solve2(&simplex);
 			} break; 
 			case 3: {
-				printf("%s\n", "solve3");
+				// printf("%s\n", "solve3");
 				easyCollision_solve3(&simplex);
 			} break;
 
 		}
 
-		printf("count %d\n", simplex.count);
-		printf("%s %d\n", "indexA", simplex.points[0].indexA);
-		printf("%s %d\n", "indexB", simplex.points[0].indexB);
-		printf("%s %d\n", "indexA", simplex.points[1].indexA);
-		printf("%s %d\n", "indexB", simplex.points[1].indexB);
-		printf("%s %d\n", "indexA", simplex.points[2].indexA);
-		printf("%s %d\n", "indexB", simplex.points[2].indexB);
+		// printf("count %d\n", simplex.count);
+		// printf("%s %d\n", "indexA", simplex.points[0].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[0].indexB);
+		// printf("%s %d\n", "indexA", simplex.points[1].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[1].indexB);
+		// printf("%s %d\n", "indexA", simplex.points[2].indexA);
+		// printf("%s %d\n", "indexB", simplex.points[2].indexB);
 
 		if(simplex.count == 3) {
 			// still a triangle, so point is inside triangle
@@ -400,7 +401,7 @@ static inline void easyCollision_GetClosestPoint(EasyCollisionInput *input, Easy
 
 		if(dotV3(direction, direction) == 0.0f) {
 			//overlaps vertex
-			printf("%s\n", "was null");
+			// printf("%s\n", "was null");
 			found = true;
 			continue;
 		}
@@ -430,20 +431,25 @@ static inline void easyCollision_GetClosestPoint(EasyCollisionInput *input, Easy
 				}
 			}
 			if(!found) {
-				printf("added index a: %d\n", aIndex);
-				printf("added index b: %d\n", bIndex);
+				// printf("added index a: %d\n", aIndex);
+				// printf("added index b: %d\n", bIndex);
 				simplex.count++;
 			} else {
-				printf("duplicate: %d\n", simplex.count);
-				printf("added index a: %d\n", aIndex);
-				printf("added index b: %d\n", bIndex);
+				// printf("duplicate: %d\n", simplex.count);
+				// printf("added index a: %d\n", aIndex);
+				// printf("added index b: %d\n", bIndex);
 			}
 		}
 	}
 	
-	printf("%d\n", simplex.count);
+	// printf("%d\n", simplex.count);
 	easyCollision_getWitnessPoints(&simplex, &output->pointA, &output->pointB);
-	output->distance = getLengthV3(v3_minus(output->pointA, output->pointB));
+	output->normal = v3_minus(output->pointA, output->pointB);
+	output->distance = getLengthV3(output->normal);
+	output->normal = normalizeV3(output->normal);
+	if(dotV3(output->normal, output->normal) == 0) {
+		output->normal = v3(0, 1, 0);
+	}
 	output->wasInside = (simplex.count == 3);
 }
 

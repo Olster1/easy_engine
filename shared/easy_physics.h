@@ -106,8 +106,11 @@ typedef struct {
 
 typedef struct {
 	EasyTransform *T;
-	V3 velocity;
-	float mass;
+	V3 dP;
+	float angle; //quartenion in 3D
+	float dA;
+	float inverseWeight;
+	float inverse_I;
 	// float inertia;
 } EasyRigidBody;
 	
@@ -140,41 +143,45 @@ static inline EasyCollisionOutput EasyPhysics_SolveRigidBodies(EasyRigidBody *a_
 	return output;
 }
 
-// V3 AP = v3_minus(output.pointA, ent->pos);
-// isNanErrorV2(AP);
-// V2 BP = v2_minus(output.pointB, testEnt->pos);
-// isNanErrorV2(BP);
-    
-// V2 Velocity_A = v2_plus(ent->dP.xy, v2_scale(ent->dA, perp(AP)));
-// isNanErrorV2(Velocity_A);
-// V2 Velocity_B = v2_plus(testEnt->dP.xy, v2_scale(testEnt->dA, perp(BP)));
-// isNanErrorV2(Velocity_B);
+void EasyPhysics_ResolveCollisions(EasyRigidBody *ent, EasyRigidBody *testEnt, EasyCollisionOutput *output) {
+	V2 AP = v2_minus(output->pointA.xy, ent->T->pos.xy);
+	isNanErrorV2(AP);
+	// printf("%f %f\n", output->pointB.x, output->pointB.y);
+	// printf("%f %f\n", testEnt->T->pos.x, testEnt->T->pos.y);
+	V2 BP = v2_minus(output->pointB.xy, testEnt->T->pos.xy);
+	isNanErrorV2(BP);
+	    
+	V2 Velocity_A = v2_plus(ent->dP.xy, v2_scale(ent->dA, perp(AP)));
+	isNanErrorV2(Velocity_A);
+	V2 Velocity_B = v2_plus(testEnt->dP.xy, v2_scale(testEnt->dA, perp(BP)));
+	isNanErrorV2(Velocity_B);
 
-// V2 RelVelocity = v2_minus(Velocity_A, Velocity_B);
-// isNanErrorV2(RelVelocity);
+	V2 RelVelocity = v2_minus(Velocity_A, Velocity_B);
+	isNanErrorV2(RelVelocity);
 
-// float R = 1.0f; //NOTE(oliver): CoefficientOfRestitution
+	float R = 1.0f; //NOTE(oliver): CoefficientOfRestitution
 
-// float Inv_BodyA_Mass = ent->inverseWeight;
-// float Inv_BodyB_Mass = testEnt->inverseWeight;
-        
-// float Inv_BodyA_I = ent->inverse_I;
-// float Inv_BodyB_I = testEnt->inverse_I;
-// V2 N = castInfo.normal;
-        
-// float J_Numerator = dotV2(v2_scale(-(1.0f + R), RelVelocity), N);
-// float J_Denominator = dotV2(N, N)*(Inv_BodyA_Mass + Inv_BodyB_Mass) +
-//     (sqr(dotV2(perp(AP), N)) * Inv_BodyA_I) + (sqr(dotV2(perp(BP), N)) * Inv_BodyB_I);
+	float Inv_BodyA_Mass = ent->inverseWeight;
+	float Inv_BodyB_Mass = testEnt->inverseWeight;
+	        
+	float Inv_BodyA_I = ent->inverse_I;
+	float Inv_BodyB_I = testEnt->inverse_I;
+	V2 N = output->normal.xy;
+	        
+	float J_Numerator = dotV2(v2_scale(-(1.0f + R), RelVelocity), N);
+	float J_Denominator = dotV2(N, N)*(Inv_BodyA_Mass + Inv_BodyB_Mass) +
+	    (sqr(dotV2(perp(AP), N)) * Inv_BodyA_I) + (sqr(dotV2(perp(BP), N)) * Inv_BodyB_I);
 
-// float J = J_Numerator / J_Denominator;
-// isNanf(J);
+	float J = J_Numerator / J_Denominator;
+	isNanf(J);
 
-// V2 Impulse = v2_scale(J, N);
-// isNanErrorV2(Impulse);
-    
-// ent->dP.xy = v2_plus(ent->dP.xy, v2_scale(Inv_BodyA_Mass, Impulse));                
-// isNanErrorV2(ent->dP.xy);
-// testEnt->dP.xy = v2_minus(testEnt->dP.xy, v2_scale(Inv_BodyB_Mass, Impulse));
-// isNanErrorV2(testEnt->dP.xy);
-//ent->dA = ent->dA + (dotV2(perp(AP), Impulse)*Inv_BodyA_I);
-//testEnt->dA = testEnt->dA - (dotV2(perp(BP), Impulse)*Inv_BodyB_I);
+	V2 Impulse = v2_scale(J, N);
+	isNanErrorV2(Impulse);
+	    
+	ent->dP.xy = v2_plus(ent->dP.xy, v2_scale(Inv_BodyA_Mass, Impulse));                
+	isNanErrorV2(ent->dP.xy);
+	testEnt->dP.xy = v2_minus(testEnt->dP.xy, v2_scale(Inv_BodyB_Mass, Impulse));
+	isNanErrorV2(testEnt->dP.xy);
+	ent->dA = ent->dA + (dotV2(perp(AP), Impulse)*Inv_BodyA_I);
+	testEnt->dA = testEnt->dA - (dotV2(perp(BP), Impulse)*Inv_BodyB_I);
+}
