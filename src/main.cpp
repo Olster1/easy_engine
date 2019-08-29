@@ -249,9 +249,10 @@ int main(int argc, char *args[]) {
             //Matrix4 m = mat4_angle_aroundZ(1.28);
             //a.T->T = m;
             
-            if(wasPressed(&keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+            if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                printf("%s\n", "wasPressed");
                 V3 screenP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
-                // EasyPhysics_AddRigidBody(&gameObjects, 0.1f, screenP);
+                EasyPhysics_AddRigidBody(&gameObjects, 0.1f, 1, screenP);
 
             }
             physicsTime += appInfo.dt;
