@@ -16,7 +16,7 @@ static char* globalExeBasePath;
 #include "easy_lex.h"
 #include "easy_render.h"
 
-
+#include "easy_perlin.h"
 #include "easy_3d.h"
 #include "easy_utf8.h"
 #include "easy_font.h"
@@ -28,7 +28,7 @@ static char* globalExeBasePath;
 #include "easy_physics.h"
 #include "easy_text_io.h"
 //#include "easy_sdl_joystick.h"
-#include "easy_perlin.h"
+
 #include "easy_tweaks.h"
 #include "easy_particle_effects.h"
 #include "easy_string_compile.h"

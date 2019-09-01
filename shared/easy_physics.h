@@ -185,3 +185,72 @@ void EasyPhysics_ResolveCollisions(EasyRigidBody *ent, EasyRigidBody *testEnt, E
 	ent->dA = ent->dA + (dotV2(perp(AP), Impulse)*Inv_BodyA_I);
 	testEnt->dA = testEnt->dA - (dotV2(perp(BP), Impulse)*Inv_BodyB_I);
 }
+
+void EasyPhysics_AddRigidBody(Array_Dynamic *gameObjects, float inverseWeight, float inverseIntertia, V3 pos) {
+    EasyRigidBody *rb = (EasyRigidBody *)getEmptyElement(gameObjects);
+    
+    EasyTransform *T = pushStruct(&globalLongTermArena, EasyTransform);
+    T->pos = pos;
+
+    rb->T = T;
+    rb->dP = v3(0, 0, 0);
+    rb->inverseWeight = inverseWeight;
+    rb->inverse_I = inverseIntertia;
+    rb->angle = 0; 
+    rb->dA = 0;
+}
+
+void ProcessPhysics(Array_Dynamic *gameObjects, float dt) {
+    // printf("%d\n",  gameObjects->count);
+    for (int i = 0; i < gameObjects->count; ++i)
+    {
+        EasyRigidBody *a = (EasyRigidBody *)getElement(gameObjects, i);
+        if(a) {
+            V3 lastPos = a->T->pos;
+            float lastAngle = a->dA;
+            V3 lastVelocity = a->dP;
+
+            V3 nextPos = v3_plus(v3_scale(dt, a->dP), a->T->pos);
+            float nextAngle = a->dA*dt + a->angle;
+            V3 nextVelocity = v3_plus(v3_scale(dt, v3(0, a->inverseWeight*-9.81f, 0)), a->dP);
+            // printf("%f %f\n", nextVelocity.x, nextVelocity.y);
+            // nextVelocity = v3_minus(nextVelocity, v3_scale(0.1f, nextVelocity));
+
+            a->T->pos = nextPos;
+            a->angle = nextAngle;
+            a->dP = nextVelocity;
+            
+            float smallestDistance = 0.1f;
+            EasyRigidBody *hitEnt = 0;
+            EasyCollisionOutput outputInfo;
+            bool didHit = false;
+            for (int j = 0; j < gameObjects->count; ++j)
+            {
+                if(i != j) {
+                    EasyRigidBody *b = (EasyRigidBody *)getElement(gameObjects, j);
+                    if(b && !(a->inverseWeight == 0 && b->inverseWeight == 0)) {
+                        EasyCollisionOutput out = EasyPhysics_SolveRigidBodies(a, b);
+
+                        // out.pointA.z = -10;
+                        // out.pointB.z = -10;
+                        if(out.distance <= smallestDistance) {
+                            hitEnt = b;
+                            smallestDistance = out.distance;
+                            outputInfo = out;
+                        }
+                        // renderDrawRectCenterDim(out.pointA, v2(0.1, 0.1), COLOR_BLUE, 0, mat4(), perspectiveMatrix);
+                        // renderDrawRectCenterDim(out.pointB, v2(0.1, 0.1), COLOR_BLUE, 0, mat4(), perspectiveMatrix);            
+                    }
+                }
+            }
+
+            if(hitEnt) {
+                EasyPhysics_ResolveCollisions(a, hitEnt, &outputInfo);
+            } else {
+                // printf("%s\n", "hey");
+                //keep at new positions
+            }
+        }
+    }
+
+}

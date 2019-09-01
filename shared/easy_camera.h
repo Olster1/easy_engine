@@ -24,8 +24,12 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	float deltaY = keyStates->mouseP.y - cam->lastMouseP.y;
 	cam->lastMouseP = keyStates->mouseP;
 	
+	printf("deltaY: %f\n", deltaY);
+	printf("sensi: %f\n", sensitivity);
 	cam->heading += deltaX*sensitivity; //degrees
 	cam->pitch += deltaY*sensitivity; //degrees
+
+	printf("pich: %f\n", cam->pitch);
 
 	if(cam->pitch > 89.0f) {
 		cam->pitch = 89.0f;
@@ -35,12 +39,17 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 		cam->pitch = -89.0f;
 	}
 
+	printf("%f\n", cam->pitch);
 	float h = 2*PI32*cam->heading/360.0f; //convert to radians
 	float p = 2*PI32*cam->pitch/360.0f; //convert to radians
 
 	//this was when we were using the graham smit? conversion to cacluate the direction vector
 	// Matrix4 orientation = mat4_xyzAxis(cos(p) * cos(h), sin(p), cos(p) * sin(h));
+	printf("%f\n", h);
+	printf("%f\n", p);
 	cam->orientation = eulerAnglesToQuaternion(h, p, 0);
+
+	printf("quert %f %f %f \n", cam->orientation.r, cam->orientation.i, cam->orientation.j, cam->orientation.k);
 
 	cam->zoom += keyStates->scrollWheelY;
 
@@ -68,6 +77,7 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	}
 
 	Matrix4 camOrientation = quaternionToMatrix(cam->orientation);
+
 	V3 zAxis = normalizeV3(easyMath_getZAxis(camOrientation));
 	V3 xAxis = normalizeV3(easyMath_getXAxis(camOrientation));
 
@@ -78,10 +88,12 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	cam->velocity = v3_minus(cam->velocity, v3_scale(0.8f, cam->velocity));
 	cam->pos = v3_plus(v3_scale(dt, cam->velocity), cam->pos);
 
+
 	// printf("pos: %f %f %f\n", cam->pos.x, cam->pos.y, cam->pos.z);
 }
 
 static inline void easy3d_initCamera(EasyCamera *cam, V3 pos) {
+	memset(cam, 0, sizeof(EasyCamera));
 	cam->orientation = identityQuaternion();
 	cam->zoom = 60.0f;//start at 60 degrees FOV
 	cam->pos = pos;
@@ -96,9 +108,28 @@ static inline Matrix4 easy3d_getViewToWorld(EasyCamera *camera) {
 
 static inline Matrix4 easy3d_getWorldToView(EasyCamera *camera) {
 	Matrix4 result = mat4();
+
+	printf("quert %f %f %f \n", camera->orientation.r, camera->orientation.i, camera->orientation.j, camera->orientation.k);
 	result = quaternionToMatrix(camera->orientation);
+
+	printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
+	printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
+	printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
+	printf("%s\n", "----------------");
+
 	result = mat4_transpose(result);
+
+	printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
+	printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
+	printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
+	printf("%s\n", "----------------");
+	
 	Matrix4 cameraTrans = Matrix4_translate(mat4(), v3_negate(camera->pos));
+	Matrix4 temp = cameraTrans;
+	printf("%f %f %f \n", temp.a.x, temp.a.y, temp.a.z);
+	printf("%f %f %f \n", temp.b.x, temp.b.y, temp.b.z);
+	printf("%f %f %f \n", temp.c.x, temp.c.y, temp.c.z);
+	printf("%s\n", "----------------");
 	result = Mat4Mult(result, cameraTrans);
 
 	return result;

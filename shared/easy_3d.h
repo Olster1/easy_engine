@@ -13,12 +13,12 @@ typedef enum {
     FORWARD_SLASH,
     NUMBER, 
     LETTER, 
-} TokenType;
+} TokenType3dFormat;
 
 typedef struct {
     char *at;
     int length;        
-    TokenType type;
+    TokenType3dFormat type;
 } Token;
 
 bool isNumeric(char *at) {
@@ -414,4 +414,54 @@ void easy3d_imm_renderModel(Mesh *mesh,
 
     glUseProgram(0);
     renderCheckError();
+}
+
+static void generateHeightMap(VaoHandle *floorMesh, u32 perlinWidth, u32 perlinHeight) {
+
+        // float *perlinWordData = pushArray(&globalPerFrameArena, (unsigned int)(perlinHeight*perlinWidth), float);
+        // float perlinWordData[100*100];
+
+        InfiniteAlloc floormeshdata = initInfinteAlloc(Vertex);
+        InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
+
+        for(s32 y = 0; y < perlinHeight; y++) {
+            for(s32 x = 0; x < perlinWidth; x++) {
+                s32 subY = y; //this is so the floor starts in the center of the world i.e. has z negative values - can't have negative values since perlin noise looks into an array!!!!
+                float height = perlin2d(x, subY, 1, 8);
+                // perlinWordData[x + y*perlinWidth] = height;
+                float height1 = perlin2d(x + 1, subY, 1, 8);
+                float height2 = perlin2d(x, subY + 1, 1, 8);
+                V3 p1 = v3(x + 1, height1, subY);
+                V3 p2 = v3(x, height2, subY + 1);
+                V3 p0 = v3(x, height, subY);
+                V3 a = normalizeV3(v3_minus(p1, p0));
+                V3 b = normalizeV3(v3_minus(p2, p0));
+
+                V3 normal = v3_crossProduct(a, b);
+
+                // printf("%f %f %f\n", a.x, a.y, a.z);
+                // printf("%f %f %f\n", b.x, b.y, b.z);
+                // printf("---------\n");
+
+                Vertex v = vertex(p0, normal, v2(0, 0));
+                addElementInifinteAlloc_(&floormeshdata, &v);
+                if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
+
+                    unsigned int index[6] = {
+                        (unsigned int)(x + (perlinWidth*y)), 
+                        (unsigned int)(x + 1 + (perlinWidth*y)),
+                        (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
+                        (unsigned int)(x + (perlinWidth*y)), 
+                        (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
+                        (unsigned int)(x + (perlinWidth*(y+1))) 
+                    };
+                    addElementInifinteAllocWithCount_(&indicesData, &index, 6);
+                }
+                
+            }
+        }
+
+        
+        
+        initVao(floorMesh, (Vertex *)floormeshdata.memory, floormeshdata.count, (unsigned int *)indicesData.memory, indicesData.count);
 }

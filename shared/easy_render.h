@@ -426,7 +426,7 @@ typedef struct {
 } EasySkyBoxImages;
 
 typedef struct {
-    uint gpuHandle;
+    unsigned int gpuHandle;
 } EasySkyBox;
 
 //Cube Maps have been specified to follow the RenderMan specification 
@@ -2023,7 +2023,7 @@ void drawRenderGroup(RenderGroup *group) {
             printf("%s\n", "INIT SKYBOX");
             initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData));
         }
-        // printf("%s\n", "DRAWING SKYBOX");
+        printf("%s\n", "DRAWING SKYBOX");
         drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group);
          // glDepthFunc(GL_LESS);
     }
