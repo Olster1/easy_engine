@@ -121,7 +121,7 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 	globalLongTermArena = createArena(Kilobytes(200));
 	globalPerFrameArena = createArena(Kilobytes(100));
-    assets = (Asset **)pushSize(&globalLongTermArena, 4096*sizeof(Asset *));
+    assets = (Asset **)pushSize(&globalLongTermArena, GLOBAL_ASSET_ARRAY_SIZE*sizeof(Asset *));
 
 	V2 idealResolution = v2(1280, 720); // Not sure if this is the best place for this?? Have to see. 
     

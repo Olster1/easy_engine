@@ -24,12 +24,12 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	float deltaY = keyStates->mouseP.y - cam->lastMouseP.y;
 	cam->lastMouseP = keyStates->mouseP;
 	
-	printf("deltaY: %f\n", deltaY);
-	printf("sensi: %f\n", sensitivity);
+	// printf("deltaY: %f\n", deltaY);
+	// printf("sensi: %f\n", sensitivity);
 	cam->heading += deltaX*sensitivity; //degrees
 	cam->pitch += deltaY*sensitivity; //degrees
 
-	printf("pich: %f\n", cam->pitch);
+	// printf("pich: %f\n", cam->pitch);
 
 	if(cam->pitch > 89.0f) {
 		cam->pitch = 89.0f;
@@ -45,11 +45,11 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 
 	//this was when we were using the graham smit? conversion to cacluate the direction vector
 	// Matrix4 orientation = mat4_xyzAxis(cos(p) * cos(h), sin(p), cos(p) * sin(h));
-	printf("%f\n", h);
-	printf("%f\n", p);
+	// printf("%f\n", h);
+	// printf("%f\n", p);
 	cam->orientation = eulerAnglesToQuaternion(h, p, 0);
 
-	printf("quert %f %f %f \n", cam->orientation.r, cam->orientation.i, cam->orientation.j, cam->orientation.k);
+	// printf("quert %f %f %f \n", cam->orientation.r, cam->orientation.i, cam->orientation.j, cam->orientation.k);
 
 	cam->zoom += keyStates->scrollWheelY;
 
@@ -109,27 +109,27 @@ static inline Matrix4 easy3d_getViewToWorld(EasyCamera *camera) {
 static inline Matrix4 easy3d_getWorldToView(EasyCamera *camera) {
 	Matrix4 result = mat4();
 
-	printf("quert %f %f %f \n", camera->orientation.r, camera->orientation.i, camera->orientation.j, camera->orientation.k);
+	// printf("quert %f %f %f \n", camera->orientation.r, camera->orientation.i, camera->orientation.j, camera->orientation.k);
 	result = quaternionToMatrix(camera->orientation);
 
-	printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
-	printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
-	printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
-	printf("%s\n", "----------------");
+	// printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
+	// printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
+	// printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
+	// printf("%s\n", "----------------");
 
 	result = mat4_transpose(result);
 
-	printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
-	printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
-	printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
-	printf("%s\n", "----------------");
+	// printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
+	// printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
+	// printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
+	// printf("%s\n", "----------------");
 	
 	Matrix4 cameraTrans = Matrix4_translate(mat4(), v3_negate(camera->pos));
-	Matrix4 temp = cameraTrans;
-	printf("%f %f %f \n", temp.a.x, temp.a.y, temp.a.z);
-	printf("%f %f %f \n", temp.b.x, temp.b.y, temp.b.z);
-	printf("%f %f %f \n", temp.c.x, temp.c.y, temp.c.z);
-	printf("%s\n", "----------------");
+	// Matrix4 temp = cameraTrans;
+	// printf("%f %f %f \n", temp.a.x, temp.a.y, temp.a.z);
+	// printf("%f %f %f \n", temp.b.x, temp.b.y, temp.b.z);
+	// printf("%f %f %f \n", temp.c.x, temp.c.y, temp.c.z);
+	// printf("%s\n", "----------------");
 	result = Mat4Mult(result, cameraTrans);
 
 	return result;

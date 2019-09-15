@@ -11,8 +11,6 @@
 // #endif
 
 /*
-    have it so you don't have to have an extra buffer
-    Use matrixes instead of meters per pixels
 
 */
 
@@ -32,6 +30,8 @@ int main(int argc, char *args[]) {
         ////INIT FONTS
         char *fontName = concatInArena(globalExeBasePath, "/fonts/Khand-Regular.ttf", &globalPerFrameArena);
         Font mainFont = initFont(fontName, 88);
+
+        globalDebugFont = mainFont;
         ///
         FrameBuffer mainFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL);
         
@@ -45,16 +45,8 @@ int main(int argc, char *args[]) {
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
         EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
 
-        //
-
-        VaoHandle floorMesh = {};
-        generateHeightMap(&floorMesh, 100, 100);
-
-        // for(s32 y = 0; y < perlinHeight; y++) {
-        //     for(s32 x = 0; x < perlinWidth; x++) {
-        //         perlinWordData[x + y*perlinWidth] = perlin2d(x, y, 0.1, 8);
-        //     }
-        // }
+        // VaoHandle floorMesh = {};
+        // generateHeightMap(&floorMesh, 100, 100);
 
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, -2));
@@ -72,6 +64,14 @@ int main(int argc, char *args[]) {
 
         globalRenderGroup->skybox = skybox;
 
+        easy3d_loadMtl(concatInArena(globalExeBasePath, "models/low_poly_tree_model/tree_mtl.mtl", &globalPerFrameArena));
+        EasyModel treeModel = {};
+        easy3d_loadObj(concatInArena(globalExeBasePath, "models/low_poly_tree_model/tree_obj.obj", &globalPerFrameArena), &treeModel);
+
+        //  easy3d_loadMtl(concatInArena(globalExeBasePath, "models/zombie/Zombie.mtl", &globalPerFrameArena));
+        // EasyModel treeModel = {};
+        // easy3d_loadObj(concatInArena(globalExeBasePath, "models/zombie/Zombie.obj", &globalPerFrameArena), &treeModel);
+
         Array_Dynamic gameObjects;
         initArray(&gameObjects, EasyRigidBody);
 
@@ -85,6 +85,10 @@ int main(int argc, char *args[]) {
         easy_addLight(globalRenderGroup, light);
         float tAt = 0;
         float physicsTime = 0;
+
+        EasyConsole console = {};
+        easyConsole_initConsole(&console, BUTTON_TILDE);
+
         while(running) {
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
             easyOS_beginFrame(resolution, &appInfo);
@@ -100,26 +104,33 @@ int main(int argc, char *args[]) {
 
             tAt += appInfo.dt;
 
-            light->direction.xyz = v3(0.707f, 0.707f, 0);
+
+            Matrix4 lightDir = easy3d_lookAt(v3(10*cos(0.707f), 10*sin(0.707f), 2), v3(0, 0, 0), v3(0, 1, 0));
+           
 
             float zAt = -10;//-2*sin(tAt);
-            V3 eyepos = v3(2*cos(tAt), 0, zAt);
+            // V3 eyepos = v3(2*cos(tAt), 0, zAt);
             // V3 eyepos = v3(0, 0, -10);
             // Matrix4 viewMatrix = easy3d_lookAt(eyepos, v3(0, 0, 0), v3(0, 1, 0));
-            // easy_setEyePosition(globalRenderGroup, eyepos);
+            
 
-            easy3d_updateCamera(&camera, &keyStates, 1, 400.0f, appInfo.dt);
+            easy3d_updateCamera(&camera, &keyStates, 1, 2000.0f, appInfo.dt);
+
+            easy_setEyePosition(globalRenderGroup, camera.pos);
             // update camera first
             Matrix4 viewMatrix = easy3d_getWorldToView(&camera);
             Matrix4 perspectiveMatrix = projectionMatrixFOV(camera.zoom, resolution.x/resolution.y);
-            Matrix4 identity = mat4();//mat4_angle_aroundZ(tAt);
-            //
+            Matrix4 identity = Matrix4_translate(mat4(), v3(2, 0, 2));//mat4_angle_aroundZ(tAt);\
 
+            //
+            //
+            light->direction.xyz = normalizeV3(v3_minus(v3(0, 0, 0), camera.pos));//easyMath_getXAxis(lightDir);//
+            // // printf("%s %f %f %f\n", "color: ", treeModel.meshes[1]->material->defaultAmbient.x, treeModel.meshes[1]->material->defaultAmbient.y, treeModel.meshes[1]->material->defaultAmbient.z);
             // renderDrawRectCenterDim(v3(100, 100, 1), v2(100, 100), COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
             //renderTextureCentreDim(findTextureAsset("front.jpg"), v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
             ///Drawing here
-            // outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, 1, resolution, "hey there", rect2fMinMax(0, 0, 1000, 1000), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-            //What thisis should be...size should be baked into the font. 
+            //outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, 1, resolution, "hey there", rect2fMinMax(0, 0, 1000, 1000), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+            //What this is should be...size should be baked into the font. 
             // outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, -1, "hey there");
             renderSetShader(globalRenderGroup, &phongProgram);
             setModelTransform(globalRenderGroup, identity);
@@ -128,8 +139,27 @@ int main(int argc, char *args[]) {
 
             renderEnableDepthTest(globalRenderGroup);
             renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
-            renderModel(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
+            // renderMesh(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
 
+            setModelTransform(globalRenderGroup, Matrix4_scale(identity, v3(0.1f, 0.1f, 0.1f)));
+            renderModel(globalRenderGroup, &treeModel, COLOR_WHITE);
+
+            static bool godmode = false;
+            if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
+                EasyToken token = easyConsole_getNextToken(&console);
+                if(token.type == TOKEN_WORD) {
+                    if(stringsMatchNullN("godmode", token.at, token.size)) {
+                        godmode = !godmode;
+                    } 
+                } else {
+                    easyConsole_parseDefault(&console);
+                }
+            }
+
+
+            if(godmode) {
+                outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, 1, resolution, "hey there", rect2fMinMax(0, 0, 1000, 1000), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+            }
             //a.T->pos = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
             //Matrix4 m = mat4_angle_aroundZ(1.28);
             //a.T->T = m;

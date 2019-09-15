@@ -150,11 +150,11 @@ internal inline void drawAndUpdateParticleSystem(particle_system *System, float 
         int particlesToCreate = 0;        
 
         Matrix4 screenMatrix;
-        if(System->viewType == PERSPECTIVE_MATRIX) {
-            screenMatrix = projectionMatrixToScreen(resolution.x, resolution.y);
-        } else if(System->viewType == ORTHO_MATRIX) {
+        // if(System->viewType == PERSPECTIVE_MATRIX) {
+        //     screenMatrix = projectionMatrixToScreen(resolution.x, resolution.y);
+        // } else if(System->viewType == ORTHO_MATRIX) {
             screenMatrix = OrthoMatrixToScreen(resolution.x, resolution.y);
-        }
+        // }
 
         if(!System->Set.finished) {
             if(System->Set.type == PARTICLE_SYS_DEFAULT || System->Set.type == PARTICLE_SYS_SCALER) {        

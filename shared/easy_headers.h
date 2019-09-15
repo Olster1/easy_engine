@@ -17,7 +17,7 @@ static char* globalExeBasePath;
 #include "easy_render.h"
 
 #include "easy_perlin.h"
-#include "easy_3d.h"
+
 #include "easy_utf8.h"
 #include "easy_font.h"
 #include "easy_timer.h"
@@ -27,17 +27,21 @@ static char* globalExeBasePath;
 #include "easy_collision.h"
 #include "easy_physics.h"
 #include "easy_text_io.h"
+#include "easy_animation.h"
+#include "easy_assets.h"
+#include "easy_3d.h"
 //#include "easy_sdl_joystick.h"
 
 #include "easy_tweaks.h"
 #include "easy_particle_effects.h"
 #include "easy_string_compile.h"
-#include "easy_animation.h"
-#include "easy_assets.h"
+
+
 #include "easy_os.h"
 #include "easy_camera.h"
 #include "easy_tile.h"
 #include "easy_texture_atlas.h"
 #include "easy_ui.h"
+#include "easy_console.h"
 #include "easy_write.h"
 #include "easy_asset_loader.h"

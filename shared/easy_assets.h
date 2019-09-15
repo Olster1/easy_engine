@@ -2,7 +2,8 @@ typedef enum {
     ASSET_TEXTURE,
     ASSET_SOUND, 
     ASSET_ANIMATION,
-    ASSET_EVENT        
+    ASSET_EVENT,
+    ASSET_MATERIAL        
 } AssetType;
 
 typedef struct
@@ -19,6 +20,8 @@ typedef struct Asset {
 	Asset *next;
 } Asset;
 
+#define GLOBAL_ASSET_ARRAY_SIZE 4096
+//NOTE(ol): This gets allocated in the easy_os when starting up the app
 static Asset **assets = 0;
 
 int getAssetHash(char *at, int maxSize) {
@@ -33,7 +36,7 @@ int getAssetHash(char *at, int maxSize) {
 }
 
 Asset *findAsset(char *fileName) {
-    int hashKey = getAssetHash(fileName, arrayCount(assets));
+    int hashKey = getAssetHash(fileName, GLOBAL_ASSET_ARRAY_SIZE);
     
     Asset *file = assets[hashKey];
     Asset *result = 0;
@@ -57,38 +60,40 @@ Asset *findAsset(char *fileName) {
     return result;
 }
 
+#define findMaterialAsset(fileName) (EasyMaterial *)findAsset(fileName)->file
 #define findTextureAsset(fileName) (Texture *)findAsset(fileName)->file
 #define findSoundAsset(fileName) (WavFile *)findAsset(fileName)->file
 #define findAnimationAsset(fileName) (AnimationParent *)findAsset(fileName)->file
 #define findEventAsset(fileName) (Event *)findAsset(fileName)->file
 
-Texture *getTextureAsset(Asset *assetPtr) {
+
+static Texture *getTextureAsset(Asset *assetPtr) {
     Texture *result = (Texture *)(assetPtr->file);
     assert(result);
     return result;
 }
 
-WavFile *getSoundAsset(Asset *assetPtr) {
+static WavFile *getSoundAsset(Asset *assetPtr) {
     WavFile *result = (WavFile *)(assetPtr->file);
     assert(result);
     return result;
 }
 
-AnimationParent *getAnimationAsset(Asset *assetPtr) {
+static AnimationParent *getAnimationAsset(Asset *assetPtr) {
     AnimationParent *result = (AnimationParent *)(assetPtr->file);
     assert(result);
     return result;
 }
 
-Event *getEventAsset(Asset *assetPtr) {
+static Event *getEventAsset(Asset *assetPtr) {
     Event *result = (Event *)(assetPtr->file);
     assert(result);
     return result;
 }
 
-Asset *addAsset_(char *fileName, void *asset) { 
+static Asset *addAsset_(char *fileName, void *asset) { 
     char *truncName = getFileLastPortion(fileName);
-    int hashKey = getAssetHash(truncName, arrayCount(assets));
+    int hashKey = getAssetHash(truncName, GLOBAL_ASSET_ARRAY_SIZE);
     assert(fileName != truncName);
     Asset **filePtr = assets + hashKey;
     
@@ -123,6 +128,11 @@ Asset *addAssetSound(char *fileName, WavFile *asset) { // we have these for type
 }
 
 Asset *addAssetEvent(char *fileName, Event *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetMaterial(char *fileName, EasyMaterial *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
     return result;
 }

@@ -35,6 +35,8 @@ typedef struct {
     FontSheet *sheets;
 } Font;
 
+static Font globalDebugFont;
+
 // TESTING: static stbtt_bakedchar *gh;
 #define FONT_SIZE 1028 //This matters. We need to pack our own font glyphs in the future, since it's not garunteed to fit!!!
 FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
@@ -47,9 +49,11 @@ FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
     const int bitmapH = FONT_SIZE;
     const int numOfPixels = bitmapH*bitmapW;
     const int bytesPerPixelForMono = 1;
-    u8 *temp_bitmap = (u8 *)calloc(sizeof(u8)*numOfPixels*bytesPerPixelForMono, 1); //bakefontbitmap is one byte per pixel. 
+    u32 sizeOfBitmap = sizeof(u8)*numOfPixels*bytesPerPixelForMono;
+    u8 *temp_bitmap = (u8 *)calloc(sizeOfBitmap, 1); //bakefontbitmap is one byte per pixel. 
+
+    memset(temp_bitmap, 0, sizeOfBitmap);
     
-    //TODO: use platform file io functions instead. 
     FileContents contents = platformReadEntireFile(font->fileName, false);
     
     int numOfChars = (endChar - firstChar - 1);
@@ -70,12 +74,12 @@ FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
     unsigned int *dest = bitmapTexture;
     for(int y = 0; y < bitmapH; ++y) {
         for(int x = 0; x < bitmapW; ++x) {
-            unsigned int alpha = *src++;
+            u8 alpha = *src++;
             *dest = 
                 alpha << 24 |
-                alpha << 16 |
-                alpha << 8 |
-                alpha << 0;
+                0xFF << 16 |
+                0xFF << 8 |
+                0xFF << 0;
             dest++;
         }
     }
@@ -329,7 +333,7 @@ Rect2f my_stbtt_print_(Font *font, float x, float y, float zAt, V2 resolution, c
     }
     
     if(cursorInfo) {
-        renderDrawRectCenterDim(v2ToV3(pos, -1), v2(width, height), cursorInfo->color, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+        renderDrawRectCenterDim(v2ToV3(pos, zAt - 0.1f), v2(16, height), cursorInfo->color, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
     }
 #if 0 //draw idvidual text boxes
     for(int i = 0; i < pC; ++i) {

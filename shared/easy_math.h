@@ -145,6 +145,11 @@ V3 v2ToV3(V2 a, float z) {
     return result;
 }
 
+V4 v3ToV4(V3 a, float w) {
+    V4 result = v4(a.x, a.y, a.z, w);
+    return result;
+}
+
 V2 v2_negate(V2 a) {
     V2 result = v2(-a.x, -a.y);
     return result;
@@ -988,6 +993,23 @@ Matrix4 Mat4Mult(Matrix4 a, Matrix4 b) {
         }
     }
     
+    return result;
+}
+
+inline bool easyMath_mat4AreEqual(Matrix4 *a, Matrix4 *b) {
+    bool result = true;
+    for(int i = 0; i < 4 && result; ++i) {
+        for(int j = 0; j < 4 && result; ++j) {
+            if(a->E[i][j] == b->E[i][j]) {
+
+            } else {
+                result = false;
+                break;
+            }
+        }
+    }
+
+
     return result;
 }
 

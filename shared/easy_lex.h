@@ -127,12 +127,20 @@ typedef struct {
 	int lineNumber;
 	bool parsing;
 	bool eatWhiteSpace;
+	bool parseComments;
 } EasyTokenizer;
 
-EasyTokenizer lexBeginParsing(void *src, bool eatWhiteSpace) {
+typedef enum {
+	EASY_LEX_OPTION_EAT_WHITE_SPACE = 1 << 0,
+	EASY_LEX_DONT_EAT_SLASH_COMMENTS = 1 << 1,
+} EasyLexOptions;
+
+EasyTokenizer lexBeginParsing(void *src, EasyLexOptions options) {
 	EasyTokenizer result = {};
 	result.src = (char *)src;
-	result.eatWhiteSpace = eatWhiteSpace;
+	result.eatWhiteSpace = options & EASY_LEX_OPTION_EAT_WHITE_SPACE;
+	result.parseComments = !(options & EASY_LEX_DONT_EAT_SLASH_COMMENTS);
+	result.parsing = true;
 	return result;
 }
 
@@ -258,25 +266,29 @@ EasyToken lexGetToken_(EasyTokenizer *tokenizer, bool advanceWithToken) {
 		} break;
 		case '/': {
 			token = lexInitToken(TOKEN_FORWARD_SLASH, at, 1);
-			if(lexMatchString(at, "//")) {
-				token.type = TOKEN_COMMENT;
-				at += 2;
-				while(*at && !lexIsNewLine(*at)) {
-					at++;
-				}
-			} else if(lexMatchString(at, "/*")) {
-				token.type = TOKEN_COMMENT;
-				at += 2;
-
-				while(*at && !lexMatchString(at, "*/")) {
-					if(lexIsNewLine(*at)) {
-						*lineNumber = *lineNumber + 1;
+			if(tokenizer->parseComments) {
+				if(lexMatchString(at, "//")) {
+					token.type = TOKEN_COMMENT;
+					at += 2;
+					while(*at && !lexIsNewLine(*at)) {
+						at++;
 					}
-					at++;
+				} else if(lexMatchString(at, "/*")) {
+					token.type = TOKEN_COMMENT;
+					at += 2;
+
+					while(*at && !lexMatchString(at, "*/")) {
+						if(lexIsNewLine(*at)) {
+							*lineNumber = *lineNumber + 1;
+						}
+						at++;
+					}
+					if(*at) at += 2;
 				}
-				if(*at) at += 2;
+				token.size = at - token.at;
+			} else {
+				at++;
 			}
-			token.size = at - token.at;
 		} break;
 		default: {
 			token.at = at;
@@ -287,13 +299,13 @@ EasyToken lexGetToken_(EasyTokenizer *tokenizer, bool advanceWithToken) {
 					at++;
 				}
 				token.size = at - token.at;
-				if(lexMatchString(token.at, "true") && token.size == lexStringLength("true")) { token.type = TOKEN_BOOL; }
-				else if(lexMatchString(token.at, "false") && token.size == lexStringLength("false")) { token.type = TOKEN_BOOL; }
-				else if(lexMatchString(token.at, "b32") && token.size == lexStringLength("b32")) token.type = TOKEN_BOOL_TYPE;
-				else if(lexMatchString(token.at, "u32") && token.size == lexStringLength("u32")) token.type = TOKEN_UINT_TYPE;
-				else if(lexMatchString(token.at, "s32") && token.size == lexStringLength("s32")) token.type = TOKEN_INT_TYPE;
-				else if(lexMatchString(token.at, "r32") && token.size == lexStringLength("r32")) token.type = TOKEN_FLOAT_TYPE;
-				else if(lexMatchString(token.at, "string") && token.size == lexStringLength("string")) token.type = TOKEN_STRING_TYPE;
+				// if(lexMatchString(token.at, "true") && token.size == lexStringLength("true")) { token.type = TOKEN_BOOL; }
+				// else if(lexMatchString(token.at, "false") && token.size == lexStringLength("false")) { token.type = TOKEN_BOOL; }
+				// else if(lexMatchString(token.at, "b32") && token.size == lexStringLength("b32")) token.type = TOKEN_BOOL_TYPE;
+				// else if(lexMatchString(token.at, "u32") && token.size == lexStringLength("u32")) token.type = TOKEN_UINT_TYPE;
+				// else if(lexMatchString(token.at, "s32") && token.size == lexStringLength("s32")) token.type = TOKEN_INT_TYPE;
+				// else if(lexMatchString(token.at, "r32") && token.size == lexStringLength("r32")) token.type = TOKEN_FLOAT_TYPE;
+				// else if(lexMatchString(token.at, "string") && token.size == lexStringLength("string")) token.type = TOKEN_STRING_TYPE;
 
 			} else if(lexIsNumeric(*at) || *at == '-') {
 				token = lexInitToken(TOKEN_INTEGER, at, 1);

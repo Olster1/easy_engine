@@ -305,7 +305,7 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
     
 	FileContents contentsText = getFileContentsNullTerminate(buffer0);
 	
-	EasyTokenizer tokenizer = lexBeginParsing((char *)contentsText.memory, true);
+	EasyTokenizer tokenizer = lexBeginParsing((char *)contentsText.memory, EASY_LEX_OPTION_EAT_WHITE_SPACE);
 	bool parsing = true;
     
 	char imageName[256] = {};

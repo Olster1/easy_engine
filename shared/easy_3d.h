@@ -1,389 +1,326 @@
-typedef struct {
-    int facesCount;
-    RenderProgram *prog;
-    VaoHandle vaoHandle;
+static EasyMesh *easy3d_allocAndInitMesh() {
+    EasyMesh *m = pushStruct(&globalLongTermArena, EasyMesh);
+    m->vertexCount = 0;
+    m->vaoHandle.valid = false;
     
-    //TODO: we store a copy of a material instead of a pointer so a mesh can change the values 
-    EasyMaterial *material;
-} Mesh;
-
-typedef enum {
-    TOKEN_NULL,
-    TOKEN_NOT_HANDLED,
-    FORWARD_SLASH,
-    NUMBER, 
-    LETTER, 
-} TokenType3dFormat;
-
-typedef struct {
-    char *at;
-    int length;        
-    TokenType3dFormat type;
-} Token;
-
-bool isNumeric(char *at) {
-    bool result = false;
-    if((*at >= '0' && *at <= '9') || *at == '.' || *at == '-') {
-        result = true;
-    }
-    return result;
+    m->material = 0;
+    m->vertexData = initInfinteAlloc(Vertex);
+    m->indicesData = initInfinteAlloc(unsigned int);
+    
+    return m;
 }
 
-bool isLetter(char *at) {
-    bool result = false;
-    if((*at >= 'A' && *at <= 'Z') || (*at >= 'a' && *at <= 'z')) {
-        result = true;
-    }
-    return result;
-}
-
-typedef struct {    
-    int arraySize;
-    Vertex *data;
-} VertexInfo;
-
-void resizeVertexInfo(VertexInfo *info, int count) {
-    if(count >= info->arraySize) {
-        int oldArraySize = info->arraySize;
-        info->arraySize += 4000;
-        void *memory = calloc(sizeof(Vertex)*(info->arraySize), 1);
-        memcpy(memory, info->data, sizeof(Vertex)*oldArraySize);
-        free(info->data);
-        info->data = (Vertex *)memory;
-    }
+static void easy3d_addMeshToModel(EasyMesh *mesh, EasyModel *model) {
+    assert(model->meshCount < arrayCount(model->meshes));
+    model->meshes[model->meshCount++] = mesh;
 }
 
 EasyMaterial easyCreateMaterial(Texture *diffuseMap, Texture *normalMap, Texture *specularMap, float constant) {
     EasyMaterial material = {};
-
+    
     material.diffuseMap = diffuseMap;
     material.normalMap = normalMap;
     material.specularMap = specularMap;
     material.specularConstant = constant;
-
+    
     return material;
 } 
 
-
-typedef enum {
-    VERTEX_NULL,
-    VERTEX_POS,
-    VERTEX_NORMAL,
-    VERTEX_TEX_UV,
-    VERTEX_FACES,
-} VertexInfoMode;
-
-typedef struct {
-    unsigned int vertexPos[3];
-    unsigned int vertexNormal[3];
-    unsigned int vertexUV[3];
-} Face;
-
-typedef struct {
-    char *at;
-    Token latestToken;
-    bool parsing;
-    int lineCount;
-} Tokenizer;
-
-Token *getNextToken(Tokenizer *tokenizer) {
-    char *at = tokenizer->at;
-    bool inComment = false;
-    while(*at != '\0' && (*at == ' ' || *at == '\n' || *at == '#' || inComment)) {
-        if(*at == '\n') {
-            inComment = false;
-            tokenizer->lineCount++;
-        }
-        if(*at == '#') {
-            inComment = true;
-        }
-        at++;
-    }
-    
-    Token token = {};
-    if(*at == '/') {
-        token.at = at;
-        token.length = 1;
-        token.type = FORWARD_SLASH;
-        at += 1;
-    } else if(isNumeric(at)) {
-        token.at = at;
-        token.type = NUMBER;
-        while(isNumeric(at)) {
-            at++;
-        }
-        token.length = (int)(at - token.at);
-    } else if(isLetter(at)) {
-        token.at = at;
-        token.type = LETTER;
-        while(isLetter(at) || isNumeric(at)) {
-            at++;
-        }
-        token.length = (int)(at - token.at);
-        
-    } else if(*at == '\0') {
-        token.at = at;
-        token.length = 1;
-        token.type = TOKEN_NULL;
-        tokenizer->parsing = false;
+static float easy3d_getFloat(EasyTokenizer *tokenizer) {
+    float result = 0;
+    EasyToken t = lexGetNextToken(tokenizer); 
+    if(t.type == TOKEN_INTEGER) {
+        char *a = nullTerminate(t.at, t.size);
+        result = atoi(a);
+        free(a);
+    } else if(t.type == TOKEN_FLOAT) {
+        char *a = nullTerminate(t.at, t.size);
+        result = atof(a);
+        free(a);
     } else {
-        token.at = at;
-        token.length = 1;
-        token.type = TOKEN_NOT_HANDLED;
-        at++;
+        assert(false);
     }
-    tokenizer->at = at;
-    tokenizer->latestToken = token;
-    
-    
-    Token *result = &tokenizer->latestToken;
     return result;
 }
 
-Token seeNextToken(Tokenizer *tokenizer) {
-    Tokenizer state = *tokenizer;
-    getNextToken(tokenizer);
-    Token result = tokenizer->latestToken;
-    *tokenizer = state;
+static int easy3d_getInteger(EasyToken token) {
+    char charBuffer[256] = {};
+    nullTerminateBuffer(charBuffer, token.at, token.size);
+
+    return atoi(charBuffer);
+}
+
+static V3 easy3d_makeVector3(EasyTokenizer *tokenizer) {
+    V3 result = v3(0, 0, 0);
+    for(int tIndex = 0; tIndex < 3; ++tIndex) {
+        result.E[tIndex] = easy3d_getFloat(tokenizer);
+    }
     return result;
 }
 
-static inline void addLineData(Tokenizer *tokenizer, Token *token, VertexInfo *info, int *count, int indexBegin, bool isV3) {
-    resizeVertexInfo(info, *count);
-    Vertex *vertex = info->data + *count;
-    *count += 1;
-    
-    char *a = nullTerminate(token->at, token->length);
-    vertex->E[indexBegin + 0] = atof(a);
-    free(a);
-    
-    token = getNextToken(tokenizer);
-    assert(token && token->type == NUMBER);
-    
-    a = nullTerminate(token->at, token->length);
-    vertex->E[indexBegin + 1] = atof(a);
-    free(a);
-    
-    if(isV3) {
-        token = getNextToken(tokenizer);
-        assert(token && token->type == NUMBER);
-        
-        a = nullTerminate(token->at, token->length);
-        vertex->E[indexBegin + 2] = atof(a);
-        free(a);
+static V2 easy3d_makeVector2(EasyTokenizer *tokenizer) {
+    V2 result = v2(0, 0);
+    for(int tIndex = 0; tIndex < 2; ++tIndex) {
+        result.E[tIndex] = easy3d_getFloat(tokenizer);
     }
-}
-void addFaceData(Tokenizer *tokenizer, Token *token, Face *face, int index) {
-    //TODO: use arenas here instead of freeing new strings. 
-    assert(token->type == NUMBER);
-    char *a = nullTerminate(token->at, token->length);
-    face->vertexPos[index] = (atoi(a) - 1);
-    free(a);
-    
-    //Face data comes as the format v/tv/nv or v or v//nv or v/tv
-    //TODO(olllie): this is evidence that a new line should be a concept in the tokenizer, since new lines in this format mean something. ie. end of the face data?
-    int forwardSlashCount = 0; 
-    Token tokenNxt = seeNextToken(tokenizer);
-    while(tokenNxt.type == FORWARD_SLASH){
-        getNextToken(tokenizer); //move to next token after the slash
-        forwardSlashCount++;
-        
-        token = getNextToken(tokenizer);
-        if(token->type == FORWARD_SLASH) {
-            forwardSlashCount++;
-            token = getNextToken(tokenizer);
-        } else {
-            assert(token->type == NUMBER);
-        }
-        assert(token->type == NUMBER);
-        a = nullTerminate(token->at, token->length);
-        if(forwardSlashCount == 1) {
-            face->vertexUV[index] = (atoi(a) - 1);
-        } else if(forwardSlashCount == 2) {
-            face->vertexNormal[index] = (atoi(a) - 1);
-        } else {
-            assert(!"invalid code path");
-        }
-        free(a);
-        tokenNxt = seeNextToken(tokenizer);
-    }
+    return result;
 }
 
-void addVertexData(VertexInfo *info, Face *face, Vertex *vertex, int index) {
-    vertex->E[0] = info->data[face->vertexPos[index]].E[0];
-    vertex->E[1] = info->data[face->vertexPos[index]].E[1];
-    vertex->E[2] = info->data[face->vertexPos[index]].E[2];
+static Texture *easy3d_findTextureWithToken(EasyTokenizer *tokenizer) {
+    EasyToken t = lexGetNextToken(tokenizer); 
+    assert(t.type == TOKEN_WORD);
     
-    vertex->E[3] = info->data[face->vertexNormal[index]].E[3];
-    vertex->E[4] = info->data[face->vertexNormal[index]].E[4];
-    vertex->E[5] = info->data[face->vertexNormal[index]].E[5];
+    char *a = nullTerminate(t.at, t.size);
+    Texture *result = findTextureAsset(a);
+    assert(result);
     
-    vertex->E[6] = info->data[face->vertexUV[index]].E[6];
-    vertex->E[7] = info->data[face->vertexUV[index]].E[7];
+    free(a);
+    return result;
 }
 
-Mesh loadModel(char *fileName, EasyMaterial *material) { 
-    Mesh result = {};
-    result.material = pushStruct(&globalLongTermArena, EasyMaterial);
-    memcpy(result.material, material, sizeof(EasyMaterial));
+static void easy3d_loadMtl(char *fileName) {
+    EasyMaterial *mat = 0; //NOTE(ol): this is the current material. There can be more than one marterial per file
     
     FileContents fileContents = getFileContentsNullTerminate(fileName);
     unsigned char *at = fileContents.memory;
     
-    VertexInfo info = {};
-    info.arraySize = 4096;
-    info.data = (Vertex *)calloc(sizeof(Vertex)*info.arraySize, 1);
     
+    EasyTokenizer tokenizer = lexBeginParsing(at, (EasyLexOptions)(EASY_LEX_OPTION_EAT_WHITE_SPACE | EASY_LEX_DONT_EAT_SLASH_COMMENTS));
+    bool parsing = true;
     
-    VertexInfo finalInfo = {};
-    finalInfo.arraySize = 4096;
-    finalInfo.data = (Vertex *)calloc(sizeof(Vertex)*finalInfo.arraySize, 1);
-    int vertexCount = 0;
-    
-    int vertexPosCount = 0;
-    int vertexNormalCount = 0;
-    int vertexUVCount = 0;
-    
-    int faceArraySize = 4096;
-    Face *faceData = (Face *)calloc(sizeof(Face)*faceArraySize, 1);
-    int faceCount = 0;
-    
-    int indexDataAt = 0;
-    int indexDataArraySize = 4096;
-    unsigned int *indexData = (unsigned int *)calloc(sizeof(unsigned int)*indexDataArraySize, 1);
-    
-    VertexInfoMode mode = VERTEX_NULL;
-    Tokenizer tokenizer = {};
-    tokenizer.at = (char *)at;
-    tokenizer.parsing = true;
-    while(tokenizer.parsing) {
-        
-        Token *token = getNextToken(&tokenizer);
-        
-        switch(token->type) {
-            case NUMBER: {
-                if(mode == VERTEX_POS) {
-                    addLineData(&tokenizer, token, &info, &vertexPosCount, 0, true);
-                } else if(mode == VERTEX_NORMAL) {
-                    addLineData(&tokenizer, token, &info, &vertexNormalCount, 3, true);
-                } else if(mode == VERTEX_TEX_UV) {
-                    addLineData(&tokenizer, token, &info, &vertexUVCount, 6, false);
-                } else if(mode == VERTEX_FACES) {
-                    assert(mode == VERTEX_FACES);
-                    if(faceCount >= faceArraySize) {
-                        //make bigger if neccessary
-                        int oldArraySize = faceArraySize;
-                        faceArraySize += 4000;
-                        void *memory = calloc(sizeof(Face)*(faceArraySize), 1);
-                        memcpy(memory, faceData, sizeof(Face)*oldArraySize);
-                        free(faceData);
-                        faceData = (Face *)memory;
-                    }
-                    Face *face = faceData + faceCount++;
-                    
-                    addFaceData(&tokenizer, token, face, 0);
-                    token = getNextToken(&tokenizer);
-                    addFaceData(&tokenizer, token, face, 1);
-                    token = getNextToken(&tokenizer);
-                    addFaceData(&tokenizer, token, face, 2);
-                    
-                    for(int i = 0; i < 3; ++i) {
-                        //this assumes all the uv data etc. has already been added beforehand
-                        resizeVertexInfo(&finalInfo, (vertexCount));
-                        int vertexAt = vertexCount++;
-                        Vertex *vertex = finalInfo.data + vertexAt;
-                        addVertexData(&info, face, vertex, i);
-                        
-                        if(indexDataAt >= indexDataArraySize) {
-                            int oldArraySize = indexDataArraySize;
-                            indexDataArraySize += 4000;
-                            void *memory = calloc(sizeof(unsigned int)*(indexDataArraySize), 1);
-                            memcpy(memory, indexData, sizeof(unsigned int)*oldArraySize);
-                            free(indexData);
-                            indexData = (unsigned int *)memory;
-                        }
-                        indexData[indexDataAt++] = vertexAt;
-                    }
-                    
-                } else if(mode == VERTEX_NULL) {
-                    // printf("%s\n", "NO VERTEX MODE SELECTED");
+    while(parsing) {
+        char *at = tokenizer.src;
+        EasyToken token = lexGetNextToken(&tokenizer);
+        switch(token.type) {
+            case TOKEN_NULL_TERMINATOR: {
+                parsing = false;
+            } break;
+            case TOKEN_WORD: {
+                // lexPrintToken(&token);
+                if(stringsMatchNullN("newmtl", token.at, token.size)) {
+                    EasyToken t = lexGetNextToken(&tokenizer);
+                    assert(t.type == TOKEN_WORD);
+                    mat = pushStruct(&globalLongTermArena, EasyMaterial);
+                    addAssetMaterial(nullTerminate(t.at, t.size), mat);
+                }
+                if(stringsMatchNullN("Ka", token.at, token.size)) {
+                    assert(mat);
+                    mat->defaultAmbient = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                }
+                if(stringsMatchNullN("Kd", token.at, token.size)) {
+                    assert(mat);
+                    mat->defaultDiffuse = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                }
+                if(stringsMatchNullN("Ks", token.at, token.size)) {
+                    assert(mat);
+                    mat->defaultSpecular = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                }
+                if(stringsMatchNullN("Ns", token.at, token.size)) {
+                    assert(mat);
+                    mat->specularConstant = easy3d_getFloat(&tokenizer);
+                }
+                if(stringsMatchNullN("map_Ka", token.at, token.size)) {
+                    assert(mat);
+                    mat->ambientMap = easy3d_findTextureWithToken(&tokenizer);
+                }
+                if(stringsMatchNullN("map_Kd", token.at, token.size)) {
+                    assert(mat);
+                    mat->diffuseMap = easy3d_findTextureWithToken(&tokenizer);
+                }
+                if(stringsMatchNullN("map_Ks", token.at, token.size)) {
+                    assert(mat);
+                    mat->specularMap = easy3d_findTextureWithToken(&tokenizer);
+                }
+                if(stringsMatchNullN("map_Bump", token.at, token.size)) {
+                    assert(mat);
+                    mat->normalMap = easy3d_findTextureWithToken(&tokenizer);
+                }
+                if(stringsMatchNullN("map_Ns", token.at, token.size)) {
+                    //NOTE(ol): I'm not sure what the ns is 
+                }
+                if(stringsMatchNullN("d", token.at, token.size)) {
+                    float alpha = easy3d_getFloat(&tokenizer);
+                    assert(mat);
+                    mat->defaultAmbient.w = alpha;
+                    mat->defaultDiffuse.w = alpha;
+                    mat->defaultSpecular.w = alpha;
+                }
+                if(stringsMatchNullN("Ts", token.at, token.size)) {
+                    float alpha = 1.0f - easy3d_getFloat(&tokenizer);
+                    assert(mat);
+                    mat->defaultAmbient.w = alpha;
+                    mat->defaultDiffuse.w = alpha;
+                    mat->defaultSpecular.w = alpha;
                 }
             } break;
-            case LETTER: {
-                if(stringsMatchN(token->at, token->length, (char *)"f", 1)) {
-                    mode = VERTEX_FACES;
-                } else if(stringsMatchN(token->at, token->length, (char *)"v", 1)) {
-                    mode = VERTEX_POS; 
-                } else if(stringsMatchN(token->at, token->length, (char *)"vn", 2)) {
-                    mode = VERTEX_NORMAL;
-                } else if(stringsMatchN(token->at, token->length, (char *)"vt", 2)) {
-                    mode = VERTEX_TEX_UV;
-                } else {
-                    // printf("VERTEX MODE NOT SUPPORTED: %.*s\n", token->length, token->at);
-                    mode = VERTEX_NULL;
+            case TOKEN_HASH: {
+                //eat the comments
+                while(*at && !lexIsNewLine(*at)) {
+                    at++;
                 }
             } break;
             default: {
+                //don't mind
+            }
+        }
+    }
+}
+
+static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, InfiniteAlloc *positionData, InfiniteAlloc *normalData, InfiniteAlloc *uvData) {
+    EasyToken token = lexSeeNextToken(tokenizer);
+    if(token.type != TOKEN_NEWLINE) {
+        Vertex vert = {};
+        EasyToken token = lexGetNextToken(tokenizer);
+        if(token.type == TOKEN_INTEGER) {
+            //NOTE(ol): minus 1 since index starts at 1 for .obj files
+            vert.position = *getElementFromAlloc(positionData, easy3d_getInteger(token) - 1, V3);
+            token = lexGetNextToken(tokenizer);
+        } 
+        
+        if(token.type == TOKEN_FORWARD_SLASH) {
+            token = lexGetNextToken(tokenizer);
+            if(token.type == TOKEN_INTEGER) {
+                vert.texUV = *getElementFromAlloc(uvData, easy3d_getInteger(token) - 1, V2);
+                token = lexGetNextToken(tokenizer);
+            }
+            
+            if(token.type == TOKEN_FORWARD_SLASH) {
+                token = lexGetNextToken(tokenizer);
+                assert(token.type == TOKEN_INTEGER);
                 
+                vert.normal = *getElementFromAlloc(normalData, easy3d_getInteger(token) - 1, V3);
+            }
+        }
+
+        addElementInifinteAlloc_(&currentMesh->vertexData, &vert);
+        //NOTE(ol): We just add the indicies buffer incrementally. This is because vertexes might be different. 
+        //For an optimized program we would do something more about this @Speed
+        addElementInifinteAlloc_(&currentMesh->indicesData, &currentMesh->vertexCount);
+        currentMesh->vertexCount++;
+    }      
+}
+
+static void easy3d_loadObj(char *fileName, EasyModel *model) { 
+    FileContents fileContents = getFileContentsNullTerminate(fileName);
+    unsigned char *at = fileContents.memory;
+    
+    //NOTE(ol): These are our 'pools' of information that we can build our final vertex buffers out of 
+    InfiniteAlloc positionData = initInfinteAlloc(V3);
+    InfiniteAlloc normalData = initInfinteAlloc(V3);
+    InfiniteAlloc uvData = initInfinteAlloc(V2);
+    
+   
+    EasyTokenizer tokenizer = lexBeginParsing(at, (EasyLexOptions)(EASY_LEX_DONT_EAT_SLASH_COMMENTS | EASY_LEX_OPTION_EAT_WHITE_SPACE));
+    bool parsing = true;
+    
+    EasyMaterial *mat = 0;
+    EasyMesh *currentMesh = 0;
+    while(parsing) {
+        char *at = tokenizer.src;
+        EasyToken token = lexGetNextToken(&tokenizer);
+        switch(token.type) {
+            case TOKEN_NULL_TERMINATOR: {
+                parsing = false;
+            } break;
+            case TOKEN_WORD: {
+                // lexPrintToken(&token);
+                if(stringsMatchNullN("f", token.at, token.size)) {
+                    if(!currentMesh) { 
+                        //NOTE(ol): This is if newmtl isn't sepcified so we create the mesh without a material
+                        currentMesh = easy3d_allocAndInitMesh(); 
+                        easy3d_addMeshToModel(currentMesh, model);
+                        currentMesh->material = 0;
+                    }
+
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+
+
+                    //NOTE(ol): Testing to see if a bigger shape then a triangle is there
+                    EasyToken peekToken = lexSeeNextToken(&tokenizer);
+                    if(peekToken.type != TOKEN_NEWLINE || peekToken.type != TOKEN_NULL_TERMINATOR) {
+                        if(peekToken.type == TOKEN_INTEGER) {   
+                            int count = currentMesh->vertexCount;
+                            count -= 3;
+                            addElementInifinteAlloc_(&currentMesh->indicesData, &count);
+                            count += 2;
+                            addElementInifinteAlloc_(&currentMesh->indicesData, &count);
+                            easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                        }
+                        // peekToken = lexSeeNextToken(&tokenizer);
+                    }
+                }
+                if(stringsMatchNullN("v", token.at, token.size)) {
+                    V3 pos = easy3d_makeVector3(&tokenizer);
+                    addElementInifinteAlloc_(&positionData, &pos);
+                }
+                if(stringsMatchNullN("vt", token.at, token.size)) {
+                    V2 uvCoord = easy3d_makeVector2(&tokenizer);
+                    addElementInifinteAlloc_(&uvData, &uvCoord);
+                }
+                if(stringsMatchNullN("vn", token.at, token.size)) {
+                    V3 norm = easy3d_makeVector3(&tokenizer);
+                    addElementInifinteAlloc_(&normalData, &norm);
+                }
+                if(stringsMatchNullN("usemtl", token.at, token.size)) {
+                    currentMesh = easy3d_allocAndInitMesh(); 
+                    pushStruct(&globalLongTermArena, EasyMesh);
+                    easy3d_addMeshToModel(currentMesh, model);
+                    
+                    token = lexGetNextToken(&tokenizer);
+                    assert(token.type == TOKEN_WORD);
+                    char *name = nullTerminate(token.at, token.size);
+                    mat = findMaterialAsset(name);
+                    
+                    currentMesh->material = mat;
+                    if(!mat) {
+                        printf("%s %s\n", "couldn't find material:", name);
+                    }
+                    free(name);
+                    
+                }
+                
+            } break;
+            case TOKEN_HASH: {
+                //eat the comments
+                while(*at && !lexIsNewLine(*at)) {
+                    at++;
+                }
+            } break;
+            default: {
+                //don't mind
             }
         }
     }
     
-    glGenVertexArrays(1, &result.vaoHandle.vaoHandle);
-    renderCheckError();
-    glBindVertexArray(result.vaoHandle.vaoHandle);
-    renderCheckError();
 
-    assert(vertexNormalCount == vertexPosCount);
-    
-    GLuint vertices;
-    glGenBuffers(1, &vertices);
-    renderCheckError();
-    glBindBuffer(GL_ARRAY_BUFFER, vertices);
-    renderCheckError();
-    
-    glBufferData(GL_ARRAY_BUFFER, vertexCount*sizeof(Vertex), finalInfo.data, GL_STATIC_DRAW);
-    renderCheckError();
-        
-    GLuint indexes;
-    glGenBuffers(1, &indexes);
-    renderCheckError();
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexes);
-    renderCheckError();
-    
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, vertexCount*sizeof(unsigned int), indexData, GL_STATIC_DRAW);
-    renderCheckError();
-    
-    glBindVertexArray(0);
-    renderCheckError();
-    
-    glDeleteBuffers(1, &vertices);
-    glDeleteBuffers(1, &indexes);
-    
-    result.facesCount = faceCount;
-    return result;
+    for(int meshIndex = 0; meshIndex < model->meshCount; ++meshIndex) {
+        EasyMesh *thisMesh = model->meshes[meshIndex];
+        initVao(&thisMesh->vaoHandle, (Vertex *)thisMesh->vertexData.memory, thisMesh->vertexData.count, (unsigned int *)thisMesh->indicesData.memory, thisMesh->indicesData.count);
+    }
 }
 
-void easy3d_imm_renderModel(Mesh *mesh,
-                 Matrix4 modelMatrix, 
-                 Matrix4 viewMatrix,
-                 Matrix4 perspectiveMatrix, 
-                 RenderProgram *program) {
+void easy3d_imm_renderModel(EasyMesh *mesh,
+                            Matrix4 modelMatrix, 
+                            Matrix4 viewMatrix,
+                            Matrix4 perspectiveMatrix, 
+                            RenderProgram *program) {
     
     glUseProgram(program->glProgram);
     renderCheckError();
-
+    
     assert(mesh->vaoHandle.vaoHandle);
     glBindVertexArray(mesh->vaoHandle.vaoHandle);
     renderCheckError();
-
-    GLuint modelUniform = glGetUniformLocation(program->glProgram, "model");
+    
+    GLuint modelUniform = glGetUniformLocation(program->glProgram, "M");
     assert(modelUniform);
-    GLuint viewUniform = glGetUniformLocation(program->glProgram, "view"); 
+    GLuint viewUniform = glGetUniformLocation(program->glProgram, "V"); 
     assert(viewUniform);
-    GLuint perspectiveUniform = glGetUniformLocation(program->glProgram, "perspective"); 
+    GLuint perspectiveUniform = glGetUniformLocation(program->glProgram, "P"); 
     // assert(perspectiveUniform);
-
+    
     glUniformMatrix4fv(modelUniform, 1, GL_FALSE, modelMatrix.val);
     renderCheckError();
     glUniformMatrix4fv(viewUniform, 1, GL_FALSE, viewMatrix.val);
@@ -395,7 +332,7 @@ void easy3d_imm_renderModel(Mesh *mesh,
     // assert(vertexAttrib);
     // GLuint normalAttrib = getAttribFromProgram(program, "normal").handle; 
     // assert(normalAttrib);
-
+    
     glEnableVertexAttribArray(vertexAttrib);  
     renderCheckError();
     glVertexAttribPointer(vertexAttrib, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), getOffsetForVertex(position)); 
@@ -406,62 +343,62 @@ void easy3d_imm_renderModel(Mesh *mesh,
     // glVertexAttribPointer(normalAttrib, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), getOffsetForVertex(normal));
     // renderCheckError();
     
-    glDrawElements(GL_TRIANGLES, mesh->facesCount*3, GL_UNSIGNED_INT, 0); //this is the number or verticies for the count. 
+    glDrawElements(GL_TRIANGLES, mesh->vaoHandle.indexCount, GL_UNSIGNED_INT, 0); //this is the number or verticies for the count. 
     renderCheckError();
-        
+    
     glBindVertexArray(0);
     renderCheckError();
-
+    
     glUseProgram(0);
     renderCheckError();
 }
 
 static void generateHeightMap(VaoHandle *floorMesh, u32 perlinWidth, u32 perlinHeight) {
-
-        // float *perlinWordData = pushArray(&globalPerFrameArena, (unsigned int)(perlinHeight*perlinWidth), float);
-        // float perlinWordData[100*100];
-
-        InfiniteAlloc floormeshdata = initInfinteAlloc(Vertex);
-        InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
-
-        for(s32 y = 0; y < perlinHeight; y++) {
-            for(s32 x = 0; x < perlinWidth; x++) {
-                s32 subY = y; //this is so the floor starts in the center of the world i.e. has z negative values - can't have negative values since perlin noise looks into an array!!!!
-                float height = perlin2d(x, subY, 1, 8);
-                // perlinWordData[x + y*perlinWidth] = height;
-                float height1 = perlin2d(x + 1, subY, 1, 8);
-                float height2 = perlin2d(x, subY + 1, 1, 8);
-                V3 p1 = v3(x + 1, height1, subY);
-                V3 p2 = v3(x, height2, subY + 1);
-                V3 p0 = v3(x, height, subY);
-                V3 a = normalizeV3(v3_minus(p1, p0));
-                V3 b = normalizeV3(v3_minus(p2, p0));
-
-                V3 normal = v3_crossProduct(a, b);
-
-                // printf("%f %f %f\n", a.x, a.y, a.z);
-                // printf("%f %f %f\n", b.x, b.y, b.z);
-                // printf("---------\n");
-
-                Vertex v = vertex(p0, normal, v2(0, 0));
-                addElementInifinteAlloc_(&floormeshdata, &v);
-                if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
-
-                    unsigned int index[6] = {
-                        (unsigned int)(x + (perlinWidth*y)), 
-                        (unsigned int)(x + 1 + (perlinWidth*y)),
-                        (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
-                        (unsigned int)(x + (perlinWidth*y)), 
-                        (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
-                        (unsigned int)(x + (perlinWidth*(y+1))) 
-                    };
-                    addElementInifinteAllocWithCount_(&indicesData, &index, 6);
-                }
+    
+    // float *perlinWordData = pushArray(&globalPerFrameArena, (unsigned int)(perlinHeight*perlinWidth), float);
+    // float perlinWordData[100*100];
+    
+    InfiniteAlloc floormeshdata = initInfinteAlloc(Vertex);
+    InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
+    
+    for(s32 y = 0; y < perlinHeight; y++) {
+        for(s32 x = 0; x < perlinWidth; x++) {
+            s32 subY = y; //this is so the floor starts in the center of the world i.e. has z negative values - can't have negative values since perlin noise looks into an array!!!!
+            float height = perlin2d(x, subY, 1, 8);
+            // perlinWordData[x + y*perlinWidth] = height;
+            float height1 = perlin2d(x + 1, subY, 1, 8);
+            float height2 = perlin2d(x, subY + 1, 1, 8);
+            V3 p1 = v3(x + 1, height1, subY);
+            V3 p2 = v3(x, height2, subY + 1);
+            V3 p0 = v3(x, height, subY);
+            V3 a = normalizeV3(v3_minus(p1, p0));
+            V3 b = normalizeV3(v3_minus(p2, p0));
+            
+            V3 normal = v3_crossProduct(a, b);
+            
+            // printf("%f %f %f\n", a.x, a.y, a.z);
+            // printf("%f %f %f\n", b.x, b.y, b.z);
+            // printf("---------\n");
+            
+            Vertex v = vertex(p0, normal, v2(0, 0));
+            addElementInifinteAlloc_(&floormeshdata, &v);
+            if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
                 
+                unsigned int index[6] = {
+                    (unsigned int)(x + (perlinWidth*y)), 
+                    (unsigned int)(x + 1 + (perlinWidth*y)),
+                    (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
+                    (unsigned int)(x + (perlinWidth*y)), 
+                    (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
+                    (unsigned int)(x + (perlinWidth*(y+1))) 
+                };
+                addElementInifinteAllocWithCount_(&indicesData, &index, 6);
             }
+            
         }
-
-        
-        
-        initVao(floorMesh, (Vertex *)floormeshdata.memory, floormeshdata.count, (unsigned int *)indicesData.memory, indicesData.count);
+    }
+    
+    
+    
+    initVao(floorMesh, (Vertex *)floormeshdata.memory, floormeshdata.count, (unsigned int *)indicesData.memory, indicesData.count);
 }

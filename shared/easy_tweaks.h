@@ -143,7 +143,7 @@ bool refreshTweakFile(char *fileName, Tweaker *tweaker) {
 		assert(contents.memory);
 		assert(contents.valid);
 
-		EasyTokenizer tokenizer = lexBeginParsing((char *)contents.memory, true);
+		EasyTokenizer tokenizer = lexBeginParsing((char *)contents.memory, EASY_LEX_OPTION_EAT_WHITE_SPACE);
 
 		bool parsing = true;
 		while(parsing) {
