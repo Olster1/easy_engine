@@ -1,7 +1,7 @@
 #define PI32 3.14159265359
 #define RENDER_HANDNESS 1 //positive is left hand handess -> z going into the screen. 
-#define NEAR_CLIP_PLANE 0.1;
-#define FAR_CLIP_PLANE 10000.0f
+#define NEAR_CLIP_PLANE 1.0f
+#define FAR_CLIP_PLANE 100.0f
 
 #define PRINT_NUMBER_DRAW_CALLS 0
 
@@ -23,6 +23,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+static float globalTimeSinceStart = 0.0f;
+
 
 #include "easy_shaders.h"
 
@@ -36,11 +38,15 @@
 #define COLOR_ATTRIB_LOCATION 11
 #define UVATLAS_ATTRIB_LOCATION 12
 
+#define RENDER_MAX_SCISSOR_TESTS 16
+
 #define PROJECTION_TYPE(FUNC) \
 FUNC(PERSPECTIVE_MATRIX) \
 FUNC(ORTHO_MATRIX) \
 
 static bool globalImmediateModeGraphics = false;
+
+static V4 globalSkyColor = v4(0.4f, 0.6f, 1.0f, 1.0f);
 
 typedef enum {
     PROJECTION_TYPE(ENUM)
@@ -78,6 +84,9 @@ typedef struct {
 RenderProgram phongProgram;
 RenderProgram skyboxProgram;
 RenderProgram textureProgram;
+RenderProgram skyQuadProgram;
+RenderProgram terrainProgram;
+RenderProgram toneMappingProgram;
 
 typedef struct {
     V3 pos;
@@ -138,6 +147,9 @@ typedef enum {
     SHAPE_TEXTURE,
     SHAPE_MODEL,
     SHAPE_SKYBOX,
+    SHAPE_SKY_QUAD,
+    SHAPE_TONE_MAP,
+    SHAPE_TERRAIN,
     SHAPE_SHADOW,
     SHAPE_CIRCLE,
     SHAPE_LINE,
@@ -163,15 +175,27 @@ typedef struct {
 
 //just has a dim of 1 by 1 and you can rotate, scale etc. by a model matrix
 static Vertex globalQuadPositionData[4] = {
-    vertex(v3(-0.5f, -0.5f, 0), v3(0, 0, 1), v2(0, 0)),
-    vertex(v3(0.5f, -0.5f, 0), v3(0, 0, 1), v2(1, 0)),
-    vertex(v3(0.5f, 0.5f, 0), v3(0, 0, 1), v2(1, 1)),
-    vertex(v3(-0.5f, 0.5f, 0), v3(0, 0, 1), v2(0, 1))
+    vertex(v3(-0.5f, -0.5f, 0), v3(0, 0, -1), v2(0, 0)),
+    vertex(v3(-0.5f, 0.5f, 0), v3(0, 0, -1), v2(0, 1)),
+    vertex(v3(0.5f, 0.5f, 0), v3(0, 0, -1), v2(1, 1)),
+    vertex(v3(0.5f, -0.5f, 0), v3(0, 0, -1), v2(1, 0))
 };
 
 static unsigned int globalQuadIndicesData[6] = {0, 1, 2, 0, 2, 3};
 
 static VaoHandle globalQuadVaoHandle = {};
+
+//just has a dim of 1 by 1 and you can rotate, scale etc. by a model matrix
+static Vertex globalFullscreenQuadPositionData[4] = {
+    vertex(v3(-1.0f, -1.0f, 1.0f), v3(0, 0, -1), v2(0, 0)),
+    vertex(v3(-1.0f, 1.0f, 1.0f), v3(0, 0, -1), v2(0, 1)),
+    vertex(v3(1.0f, 1.0f, 1.0f), v3(0, 0, -1), v2(1, 1)),
+    vertex(v3(1.0f, -1.0f, 1.0f), v3(0, 0, -1), v2(1, 0))
+};
+
+static unsigned int globalFullscreenQuadIndicesData[6] = {0, 1, 2, 0, 2, 3};
+
+static VaoHandle globalFullscreenQuadVaoHandle = {};
 
 //For a cude
 static Vertex globalCubeVertexData[24] = { //anti-clockwise 
@@ -257,18 +281,29 @@ typedef struct {
     int width;
     int height;
     Rect2f uvCoords;
-    
 } Texture;
 
+static Texture globalWhiteTexture;
+static bool globalWhiteTextureInited;
 
 typedef struct {
     int w;
     int h;
     int comp;
     unsigned char *image;
-} EasyStbImage;
+} EasyImage;
 
-Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderTextureFilter filter) {
+#define renderCheckError() renderCheckError_(__LINE__, (char *)__FILE__)
+void renderCheckError_(int lineNumber, char *fileName) {
+    GLenum err = glGetError();
+    if(err) {
+        printf((char *)"GL error check: %x at %d in %s\n", err, lineNumber, fileName);
+        assert(!err);
+    }
+    
+}
+
+Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderTextureFilter filter, bool hasMipMaps) {
     Texture result = {};
     if(image) {
         
@@ -277,44 +312,62 @@ Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderT
         result.uvCoords = rect2f(0, 0, 1, 1);
         
         glGenTextures(1, &result.id);
+        renderCheckError();
         
         glBindTexture(GL_TEXTURE_2D, result.id);
+        renderCheckError();
         
         GLuint filterVal = GL_LINEAR;
+        GLuint mipMapFilter = GL_LINEAR_MIPMAP_LINEAR;
         if(filter == TEXTURE_FILTER_NEAREST) {
             filterVal = GL_NEAREST;
+            mipMapFilter = GL_NEAREST_MIPMAP_NEAREST;
         } 
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filterVal);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterVal);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         
         if(comp == 3) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, image);
+            renderCheckError();
         } else if(comp == 4) {
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
+            renderCheckError();
         } else {
             assert(!"Channel number not handled!");
         }
+
+        if(hasMipMaps) {
+            glGenerateMipmap(GL_TEXTURE_2D);   
+            renderCheckError(); 
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, 0);
+            renderCheckError();
+        } else {
+            mipMapFilter = filterVal;
+        }
+        
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipMapFilter);
+        renderCheckError();
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filterVal);
+        renderCheckError();
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        renderCheckError();
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        renderCheckError();
         
         glBindTexture(GL_TEXTURE_2D, 0);
+        renderCheckError();
     } 
     
     return result;
 }
 
-static inline EasyStbImage loadImage_(char *fileName) {
-    EasyStbImage result;
+static inline EasyImage loadImage_(char *fileName) {
+    EasyImage result;
     result.comp = 4;
     result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, &result.comp, STBI_rgb_alpha);
     
     if(result.image) {
-        if(result.comp == 3) {
-            stbi_image_free(result.image);
-            result.image = stbi_load(fileName, &result.w, &result.h, &result.comp, STBI_rgb);
-            assert(result.image);
-            assert(result.comp == 3);
-        }
+        // assert(result.comp == 4);
     } else {
         printf("%s\n", fileName);
         assert(!"no image found");
@@ -324,17 +377,17 @@ static inline EasyStbImage loadImage_(char *fileName) {
     return result;
 }
 
-static inline void easy_endStbImage(EasyStbImage *image) {
+static inline void easy_endImage(EasyImage *image) {
     if(image->image) {
         stbi_image_free(image->image);
     }
 }
 
-Texture loadImage(char *fileName, RenderTextureFilter filter) {
-    EasyStbImage image = loadImage_(fileName);
+Texture loadImage(char *fileName, RenderTextureFilter filter, bool hasMipMaps) {
+    EasyImage image = loadImage_(fileName);
     
-    Texture result = createTextureOnGPU(image.image, image.w, image.h, image.comp, filter);
-    easy_endStbImage(&image);
+    Texture result = createTextureOnGPU(image.image, image.w, image.h, image.comp, filter, hasMipMaps);
+    easy_endImage(&image);
     return result;
 }
 
@@ -369,7 +422,6 @@ Texture loadImage(char *fileName, RenderTextureFilter filter) {
 // // } EasyLight;
 
 typedef struct {
-    Texture *ambientMap;
     Texture *diffuseMap;
     Texture *normalMap;
     Texture *specularMap;
@@ -399,8 +451,15 @@ typedef struct {
     //We might want to have a graph for this but makes it harder with our renderer to do batch rendering
     // EasyTransform *parentTransform; 
     int meshCount;
-    EasyMesh *meshes[32];    
+    EasyMesh *meshes[128];    
 } EasyModel;
+
+typedef struct {
+    int textureCount;
+    Texture *textures[4];
+    Texture *blendMap;
+    V3 dim;
+} EasyTerrainDataPacket;
 
 typedef struct {
     Vertex *triangleData;
@@ -424,12 +483,19 @@ typedef struct {
     float zAt;
     
     int id;
+
+    int projectionId;//So we match against if instead of working out if the matrix is equal for batching. 
+    int scissorId;
     
     V4 color;
+
+    void *dataPacket; //Cast later on in the function
     
     int bufferId;
     bool depthTest;
     BlendFuncType blendFuncType;
+
+    bool cullingEnabled;
     
     VaoHandle *bufferHandles;
 } RenderItem;
@@ -450,6 +516,7 @@ typedef struct {
 } EasySkyBoxImages;
 
 typedef struct {
+    //NOTE: This is the handle to the cubemap
     unsigned int gpuHandle;
 } EasySkyBox;
 
@@ -474,13 +541,13 @@ static inline EasySkyBox *easy_makeSkybox(EasySkyBoxImages *images) {
     
     for(int i = 0; i < arrayCount(images->fileNames); ++i) {
         char *fileName = images->fileNames[i];
-        EasyStbImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena));
+        EasyImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena));
 #if OPENGL_BACKEND
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
                     0, GL_RGB, image.w, image.h, 0, GL_RGB, GL_UNSIGNED_BYTE, image.image
                     );
 #endif
-        easy_endStbImage(&image);
+        easy_endImage(&image);
         }
 
 #if OPENGL_BACKEND
@@ -511,23 +578,39 @@ typedef struct {
     // int lastStorageBufferCount;
     // BufferStorage lastBufferStorage[512];
 
-    Texture whiteTexture;
-
     //NOTE: you can do a declaritive style of shaders via SetShader
     RenderProgram *currentShader;
     Matrix4 modelTransform;
     Matrix4 viewTransform;
     Matrix4 projectionTransform;
 
+    bool scissorsEnabled;
+    int scissorId;
+    Rect2f scissorsTests[RENDER_MAX_SCISSOR_TESTS];
+
     V3 eyePos;
+
+    bool cullingEnabled;
 
     EasyLight *lights[EASY_MAX_LIGHT_COUNT];
     EasySkyBox *skybox;
     int lightCount;
 
+    //NOTE: This is for the sky quad
+    float fov;
+    float aspectRatio; 
+    Matrix4 cameraToWorldTransform;
+    //
+
+    void *dataPacket;
+
     bool initied;
     
 } RenderGroup;
+
+static inline void easyRender_disableScissors(RenderGroup *g) {
+    g->scissorsEnabled = false;
+}
 
 static inline EasyLight *easy_makeLight(V4 direction, V3 ambient, V3 diffuse, V3 specular) {
     EasyLight *light = pushStruct(&globalLongTermArena, EasyLight);
@@ -545,7 +628,6 @@ static inline void easy_addLight(RenderGroup *group, EasyLight *light) {
     group->lights[group->lightCount++] = light;
 }
 
-
 void initRenderGroup(RenderGroup *group) {
     assert(!group->initied);
     group->items = initInfinteAlloc(RenderItem);
@@ -560,15 +642,20 @@ void initRenderGroup(RenderGroup *group) {
     group->skybox = 0;
     group->initied = true;
 
-    u32 *imageData = pushArray(&globalPerFrameArena, 512*512, u32);
-    for(int y = 0; y < 512; ++y) {
-        for(int x = 0; x < 512; ++x) {
-            imageData[y*512 + x] = 0xFFFFFFFF;     
+    group->scissorId = 0;
+    group->scissorsEnabled = false;
+
+    if(!globalWhiteTextureInited) {
+        u32 *imageData = pushArray(&globalPerFrameArena, 32*32, u32);
+        for(int y = 0; y < 32; ++y) {
+            for(int x = 0; x < 32; ++x) {
+                imageData[y*32 + x] = 0xFFFFFFFF;     
+            }
         }
-    }
-    
-    group->whiteTexture = createTextureOnGPU((unsigned char *)imageData, 512, 512, 4, TEXTURE_FILTER_LINEAR);
-    
+        
+        globalWhiteTexture = createTextureOnGPU((unsigned char *)imageData, 32, 32, 4, TEXTURE_FILTER_LINEAR, false);
+        globalWhiteTextureInited = true;
+    } 
 }
 
 void renderSetShader(RenderGroup *group, RenderProgram *shader) {
@@ -595,6 +682,15 @@ void setFrameBufferId(RenderGroup *group, int bufferId) {
     group->currentBufferId = bufferId;
     
 }
+
+void renderDisableCulling(RenderGroup *group) {
+    group->cullingEnabled = false;
+}
+
+void renderEnableCulling(RenderGroup *group) {
+    group->cullingEnabled = true;
+}
+
 
 void renderDisableDepthTest(RenderGroup *group) {
     group->currentDepthTest = false;
@@ -634,6 +730,14 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
     info->indexCount = indexCount;
     
     info->id = group->idAt++;
+
+    info->cullingEnabled = group->cullingEnabled;
+
+    info->scissorId = -1;
+    if(group->scissorsEnabled) {
+        assert(group->scissorId > 0);//something pushed on to the stack
+        info->scissorId = group->scissorId - 1;
+    }
     
     info->program = program;
     info->type = type;
@@ -645,7 +749,8 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
         info->program = &textureProgram;
         info->type = SHAPE_TEXTURE; 
         //set the texture so the render item gets assigned the uv data.
-        texture = &group->whiteTexture;
+        assert(globalWhiteTextureInited);
+        texture = &globalWhiteTexture;
     } 
     
     if(texture) {
@@ -659,14 +764,32 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
     info->mMat = mMat;
 }
 
-#define renderCheckError() renderCheckError_(__LINE__, (char *)__FILE__)
-void renderCheckError_(int lineNumber, char *fileName) {
-    GLenum err = glGetError();
-    if(err) {
-        printf((char *)"GL error check: %x at %d in %s\n", err, lineNumber, fileName);
-        assert(!err);
-    }
-    
+void easyRender_pushScissors(RenderGroup *g, Rect2f rect, float zAt, Matrix4 offsetTransform, Matrix4 viewToClipMatrix, V2 viewPort) {
+    Matrix4 modelMatrix = mat4();
+    modelMatrix = Matrix4_translate(modelMatrix, transformPositionV3(v2ToV3(getCenter(rect), zAt), offsetTransform));
+    V2 dim = getDim(rect);
+    Matrix4 toClipSpace = Matrix4_scale(modelMatrix, v3(dim.x, dim.y, 1));
+    toClipSpace = Mat4Mult(viewToClipMatrix, toClipSpace);
+
+    V4 pointA = transformPositionV3ToV4(v3(-0.5f, -0.5f, zAt), toClipSpace);
+    V4 pointB = transformPositionV3ToV4(v3(0.5f, 0.5f, zAt), toClipSpace);
+
+    pointA.x /= pointA.w;
+    pointA.y /= pointA.w;
+
+    pointB.x /= pointB.w;
+    pointB.y /= pointB.w;
+
+    //Now in NDC space
+    pointA.x = ((pointA.x + 1.0f) / 2.0f)*viewPort.x;
+    pointA.y = ((pointA.y + 1.0f) / 2.0f)*viewPort.y;
+
+    pointB.x = ((pointB.x + 1.0f) / 2.0f)*viewPort.x;
+    pointB.y = ((pointB.y + 1.0f) / 2.0f)*viewPort.y;
+
+    assert(g->scissorId < arrayCount(g->scissorsTests));
+    g->scissorsTests[g->scissorId++] = rect2f(pointA.x, pointA.y, pointB.x, pointB.y);
+    g->scissorsEnabled = true;
 }
 
 
@@ -980,12 +1103,15 @@ static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 
 // }
 
 void render_enableCullFace() {
-    // glEnable(GL_CULL_FACE); 
-    // glCullFace(GL_BACK);  
-    // glFrontFace(GL_CCW);  
+    glEnable(GL_CULL_FACE); 
+    glCullFace(GL_BACK);  
+    glFrontFace(GL_CW);  
 
 }
 
+void render_disableCullFace() {
+    glDisable(GL_CULL_FACE);
+}
 // V3 transformScreenPToWorldP(V2 inputA, float zPos, V2 resolution, V2 screenDim, Matrix4 metresToPixels, V3 cameraPos) {
 //     inputA.x /= screenDim.x;
 //     inputA.y /= screenDim.y;
@@ -1030,10 +1156,7 @@ void enableRenderer(int width, int height, Arena *arena) {
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
-    // render_enableCullFace();
-    glDisable(GL_CULL_FACE); 
-    // glCullFace(GL_BACK);  
-    // glFrontFace(GL_CCW);  
+    render_enableCullFace();
     //SRGB TEXTURE???
     // glEnable(GL_SAMPLE_ALPHA_TO_ONE);
     // glEnable(GL_DEBUG_OUTPUT);
@@ -1043,36 +1166,6 @@ void enableRenderer(int width, int height, Arena *arena) {
     glEnable(GL_MULTISAMPLE);
 #endif
     
-    char *append = concat(globalExeBasePath, (char *)"shaders/");
-    
-    // char *vertShaderLine = concat(append, (char *)"vertex_shader_line.glsl");
-    // //printf("%s\n", vertShaderLine);
-    // char *fragShaderLine = concat(append, (char *)"frag_shader_line.glsl");
-    
-    // char *vertShaderTex = concat(append, (char *)"vertex_shader_texture.c");
-    // char *vertShaderRect = concat(append, (char *)"vertex_shader_rectangle.c");
-    // char *fragShaderRect = concat(append, (char *)"fragment_shader_rectangle.glsl");
-    // char *fragShaderTex = concat(append, (char *)"fragment_shader_texture.c");
-    // char *fragShaderCirle = concat(append, (char *)"fragment_shader_circle.glsl");
-    // char *fragShaderRectNoGrad = concat(append, (char *)"fragment_shader_rectangle_noGrad.glsl");
-    // char *fragShaderFilter = concat(append, (char *)"fragment_shader_texture_filter.glsl");
-    // char *fragShaderLight = concat(append, (char *)"fragment_shader_point_light.glsl");
-    // char *fragShaderRing = concat(append, (char *)"frag_shader_ring.c");
-    // char *fragShaderShadow = concat(append, (char *)"frag_shader_shadow.c");
-    // char *fragShaderBlur = concat(append, (char *)"fragment_shader_blur.c");
-    
-    // char *vertPhong = concat(append, (char *)"vertex_model.c");
-    // char *fragPhong = concat(append, (char *)"frag_model.c");
-    
-    // rectangleNoGradProgram  = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderRectNoGrad);
-    // renderCheckError();
-    
-    // lineProgram = createProgramFromFile(vertShaderLine, fragShaderLine);
-    // renderCheckError();
-    
-    // rectangleProgram = createProgramFromFile(vertex_shader_rectangle_attrib_shader, fragment_shader_rectangle_shader, false);
-    // renderCheckError();
-
     phongProgram = createProgramFromFile(vertex_model_shader, frag_model_shader, false);
     renderCheckError();
 
@@ -1081,25 +1174,16 @@ void enableRenderer(int width, int height, Arena *arena) {
     
     textureProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, fragment_shader_texture_shader, false);
     renderCheckError();
+
+    skyQuadProgram = createProgramFromFile(vertex_sky_quad_shader, frag_sky_quad_shader, false);
+    renderCheckError();
+
+    terrainProgram = createProgramFromFile(vertex_terrain_shader, frag_terrain_shader, false);
+    renderCheckError();
+
+    toneMappingProgram = createProgramFromFile(vertex_fullscreen_quad_shader, frag_tone_map_shader, false);
+    renderCheckError();
     
-    // filterProgram = createProgramFromFile(vertShaderTex, fragShaderFilter);
-    // renderCheckError();
-    
-    // circleProgram = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderCirle);
-    // renderCheckError();
-    
-    // lightProgram = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderLight);
-    // renderCheckError();
-    
-    // ringProgram = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderRing);
-    // renderCheckError();
-    
-    // shadowProgram = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderShadow);
-    // renderCheckError();
-    
-    // blurProgram = createProgramFromFile(vertex_shader_rectangle_shader, fragShaderBlur);
-    // renderCheckError();
-    // free(append);
 #endif
 
     //Init global Render Group
@@ -1119,8 +1203,13 @@ static inline V4 hexARGBTo01Color(unsigned int color) {
     return result;
 }
 
+typedef enum {
+    RENDER_TEXTURE_DEFAULT,
+    RENDER_TEXTURE_HDR,
+} RenderTextureFlag;
 
-GLuint renderLoadTexture(int width, int height, void *imageData) {
+
+GLuint renderLoadTexture(int width, int height, void *imageData, RenderTextureFlag flags) {
 #if RENDER_BACKEND == OPENGL_BACKEND
     GLuint resultId;
     glGenTextures(1, &resultId);
@@ -1134,7 +1223,14 @@ GLuint renderLoadTexture(int width, int height, void *imageData) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     renderCheckError();
     
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+    GLenum pixelType = GL_UNSIGNED_BYTE;
+    GLenum internalFormat = GL_RGBA8;
+    if(flags & RENDER_TEXTURE_HDR) {
+        pixelType = GL_FLOAT; //NOTE: I'm not this does anything since we normally aren't passing in any iamge data for this function
+        internalFormat = GL_RGBA16F; //NOTE: Out HDR buffer
+    } 
+
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, pixelType, imageData);
     renderCheckError();
     
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -1143,10 +1239,23 @@ GLuint renderLoadTexture(int width, int height, void *imageData) {
     return resultId;
 }
 
+#define RENDER_MAX_COLOR_ATTACHMENTS 3
+
+
+typedef enum {
+    FRAMEBUFFER_COLOR = 1 << 0, //default everyone has color. Just to refer with later
+    FRAMEBUFFER_DEPTH = 1 << 1,
+    FRAMEBUFFER_STENCIL = 1 << 2,
+    FRAMEBUFFER_HDR = 1 << 3,
+
+} FrameBufferFlag;
+
 typedef struct {
+    int colorBufferCount;
     GLuint bufferId;
-    GLuint textureId;
+    GLuint textureIds[RENDER_MAX_COLOR_ATTACHMENTS];
     GLuint depthId;
+    int flags;
 } FrameBuffer;
 
 
@@ -1178,19 +1287,17 @@ void deleteFrameBuffer(FrameBuffer *frameBuffer) {
     if(frameBuffer->depthId != -1) {
         renderDeleteTextures(1, &frameBuffer->depthId);
     }
-    renderDeleteTextures(1, &frameBuffer->textureId);
-    renderDeleteFramebuffers(1, &frameBuffer->bufferId);
     
+    renderDeleteFramebuffers(1, &frameBuffer->bufferId);
+    for(int i = 0; i < frameBuffer->colorBufferCount; ++i) {
+        renderDeleteTextures(1, &frameBuffer->textureIds[i]);
+       
+    }
 }
 
-typedef enum {
-    FRAMEBUFFER_DEPTH = 1 << 0,
-    FRAMEBUFFER_STENCIL = 1 << 1,
-} FrameBufferFlag;
 
-FrameBuffer createFrameBuffer(int width, int height, int flags) {
-    GLuint mainTexture = renderLoadTexture(width, height, 0);
-    
+FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuffers) {   
+    assert(numColorBuffers <= RENDER_MAX_COLOR_ATTACHMENTS);
     GLuint frameBufferHandle = 1;
     glGenFramebuffers(1, &frameBufferHandle);
     renderCheckError();
@@ -1198,8 +1305,22 @@ FrameBuffer createFrameBuffer(int width, int height, int flags) {
     renderCheckError();
     
     GLuint depthId = -1;
+
+    FrameBuffer result = {};
+    result.flags = flags;
     
-    if(flags) {
+    RenderTextureFlag textureType = (flags & FRAMEBUFFER_HDR) ? RENDER_TEXTURE_HDR : RENDER_TEXTURE_DEFAULT;
+    for(int cIndex = 0; cIndex < numColorBuffers; ++cIndex) {
+        assert(result.colorBufferCount < RENDER_MAX_COLOR_ATTACHMENTS);
+        
+        result.textureIds[result.colorBufferCount++] = renderLoadTexture(width, height, 0, textureType);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + cIndex, GL_TEXTURE_2D, result.textureIds[cIndex], 0);
+        renderCheckError();
+        // glBindFramebuffer(GL_FRAMEBUFFER, frameBufferHandle);
+        // renderCheckError();
+    }
+    
+    if(flags & FRAMEBUFFER_DEPTH) {
         glGenTextures(1, &depthId);
         renderCheckError();
         
@@ -1221,19 +1342,8 @@ FrameBuffer createFrameBuffer(int width, int height, int flags) {
             renderCheckError();    
         } 
     }
-    
-    
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 
-                           mainTexture, 0);
-    renderCheckError();
-    
-    glBindFramebuffer(GL_FRAMEBUFFER, frameBufferHandle);
-    renderCheckError();
-    
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
     
-    FrameBuffer result = {};
-    result.textureId = mainTexture;
     result.bufferId = frameBufferHandle;
     result.depthId = depthId; 
     
@@ -1245,9 +1355,12 @@ FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int s
 #if !DESKTOP
     FrameBuffer result = createFrameBuffer(width, height, flags);
 #else
+
+    FrameBuffer result = {};
     GLuint textureId;
     glGenTextures(1, &textureId);
     renderCheckError();
+    result.flags = flags;
     
     glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, textureId);
     renderCheckError();
@@ -1262,17 +1375,16 @@ FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int s
     renderCheckError();
     
     if(flags) {
-        GLuint resultId;
-        glGenTextures(1, &resultId);
+        glGenTextures(1, &result.depthId);
         renderCheckError();
         
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, resultId);
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, result.depthId);
         renderCheckError();
         
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, sampleCount, GL_DEPTH24_STENCIL8, width, height, GL_FALSE);
         renderCheckError();
         
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, resultId, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, result.depthId, 0);
         renderCheckError();
         
     }
@@ -1283,24 +1395,39 @@ FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int s
     
     assert(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE);
     
-    FrameBuffer result = {};
-    result.textureId = textureId;
+    result.textureIds[result.colorBufferCount++] = textureId;
     result.bufferId = frameBufferHandle;
 #endif    
     return result;
 }
 
-void clearBufferAndBind(u32 bufferHandle, V4 color) {
-    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)bufferHandle); 
+static inline void clearBufferAndBind(GLuint frameBufferId, V4 color, int flags, RenderGroup *g) {
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)frameBufferId); 
     
-    setFrameBufferId(globalRenderGroup, bufferHandle);
+    if(g) {
+        setFrameBufferId(g, frameBufferId);
+    }
     
     glClearColor(color.x, color.y, color.z, color.w);
-    glStencilFunc(GL_ALWAYS, 1, 0xFF);
-    glStencilMask(0xFF);
-    glClearDepthf(1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT); 
-    GLenum err = glGetError();
+    renderCheckError();
+
+    GLenum clearFlags = GL_COLOR_BUFFER_BIT;
+    if(flags & FRAMEBUFFER_STENCIL) {
+        glStencilFunc(GL_ALWAYS, 1, 0xFF);
+        renderCheckError();
+        glStencilMask(0xFF);
+        renderCheckError();
+        clearFlags |= GL_STENCIL_BUFFER_BIT;
+    }
+
+     if(flags & FRAMEBUFFER_DEPTH) {
+        glClearDepthf(1.0f);
+        renderCheckError();
+        clearFlags |= GL_DEPTH_BUFFER_BIT;
+    }
+   
+    glClear(clearFlags); 
+    renderCheckError();
 }
 
 typedef enum {
@@ -1344,6 +1471,10 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
 
 static inline void renderMesh(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {  
     pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+}
+
+static inline void renderTerrain(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {
+    pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, &terrainProgram, SHAPE_TERRAIN, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
 }
 
 static inline void renderModel(RenderGroup *group, EasyModel *model, V4 colorTint) {  
@@ -1477,7 +1608,7 @@ void easy_BindTexture(char *uniformName, int slotId, GLint textureId, RenderProg
 }
 
 static V2 globalBlurDir = {};
-void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, DrawCallType drawCallType, int instanceCount, EasyMaterial *material, RenderGroup *group, Matrix4 *projectionTransform) {
+void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, DrawCallType drawCallType, int instanceCount, EasyMaterial *material, RenderGroup *group, Matrix4 *projectionTransform, void *dataPacket) {
     
     assert(bufferHandles);
     assert(bufferHandles->valid);
@@ -1492,6 +1623,61 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     glBindBuffer(GL_ARRAY_BUFFER, bufferHandles->vboHandle);
     renderCheckError();
 #endif
+
+    if(type == SHAPE_TERRAIN) {
+        EasyTerrainDataPacket *packet = (EasyTerrainDataPacket *)dataPacket;
+
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
+        renderCheckError();
+
+        // glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, group->projectionTransform.E_);
+        // renderCheckError();
+        // glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "view"), 1, GL_FALSE, group->viewTransform.E_);
+        // renderCheckError();
+        // glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "model"), 1, GL_FALSE, group->modelTransform.E_);
+        // renderCheckError();
+
+        for(int i = 0; i < packet->textureCount; ++i) {
+            Texture *t = packet->textures[i];
+            char buffer[64];
+            sprintf(buffer, "%s%d", "tex", i);
+            easy_BindTexture(buffer, i, t->id, program);
+        }
+
+        easy_BindTexture("blendMap", 5, packet->blendMap->id, program);
+
+        glUniform2f(glGetUniformLocation(program->glProgram, "dim"),  packet->dim.x, packet->dim.y);
+        renderCheckError();
+    }
+
+    if(type == SHAPE_SKY_QUAD) {
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "camera_to_world_transform"), 1, GL_FALSE, group->cameraToWorldTransform.E_);
+        renderCheckError();
+
+        glUniform4f(glGetUniformLocation(program->glProgram, "skyColor"),  globalSkyColor.x, globalSkyColor.y, globalSkyColor.z, globalSkyColor.w);
+        renderCheckError();
+
+        glUniform3f(glGetUniformLocation(program->glProgram, "eyePos"),  group->eyePos.x, group->eyePos.y, group->eyePos.z);
+        renderCheckError();
+
+        glUniform3f(glGetUniformLocation(program->glProgram, "sunDirection"),  group->lights[0]->direction.x, group->lights[0]->direction.y, group->lights[0]->direction.z);//group->eyePos.x, group->eyePos.y, group->eyePos.z);
+        renderCheckError();
+
+        glUniform1f(glGetUniformLocation(program->glProgram, "fov"),  group->fov/360.0f*PI32);
+        renderCheckError();
+
+        glUniform1f(glGetUniformLocation(program->glProgram, "aspectRatio"),  group->aspectRatio);
+        renderCheckError();
+
+        glUniform1f(glGetUniformLocation(program->glProgram, "nearZ"),  (float)NEAR_CLIP_PLANE);
+        renderCheckError();
+
+        glUniform1f(glGetUniformLocation(program->glProgram, "timeScale"),  globalTimeSinceStart);
+        renderCheckError();
+
+
+
+    }
 
     if(type == SHAPE_SKYBOX) {
         GLint texUniform = glGetUniformLocation(program->glProgram, "skybox"); 
@@ -1513,38 +1699,41 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         // printf("%f %f %f \n", result.d.x, result.d.y, result.d.z);
         // printf("%s\n", "----------------");
 
-        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, group->projectionTransform.E_);
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
         renderCheckError();
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "view"), 1, GL_FALSE, result.E_);
         renderCheckError();
+    }
 
+    if(type == SHAPE_TONE_MAP) {
 
+        GLint exposureConstant = glGetUniformLocation(program->glProgram, "exposure"); 
+        renderCheckError();
+        glUniform1f(exposureConstant, 1.0f);
+        renderCheckError();
+
+        easy_BindTexture("tex", 1, textureId, program);
+        renderCheckError();
     }
 
     if(type == SHAPE_MODEL) {
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
         renderCheckError();
         assert(material);
-        GLint defaultLoc = glGetUniformLocation(program->glProgram, "material.useDefault");
-        renderCheckError();
-        if(material->diffuseMap) {
-            easy_BindTexture("material.diffuse", 1, material->diffuseMap->id, program);
-            renderCheckError();
-            glUniform1i(defaultLoc, 0);
-            renderCheckError();
-        } else {
-            glUniform1i(defaultLoc, 1);
-            renderCheckError();
-        }
-        
-        glUniform3f(glGetUniformLocation(program->glProgram, "material.ambientDefault"),  material->defaultAmbient.x, material->defaultAmbient.y, material->defaultAmbient.z);
-        glUniform3f(glGetUniformLocation(program->glProgram, "material.diffuseDefault"),  material->defaultDiffuse.x, material->defaultDiffuse.y, material->defaultDiffuse.z);
-        glUniform3f(glGetUniformLocation(program->glProgram, "material.specularDefault"),  material->defaultSpecular.x, material->defaultSpecular.y, material->defaultSpecular.z);
-            // printf("%s %f %f %f\n", material->defaultSpecular.x, material->defaultSpecular.y, material->defaultSpecular.z);
-       if(material->specularMap) {
-            easy_BindTexture("material.specular", 2, material->specularMap->id, program);
 
-       }
+        //NOTE: Always have a texture available but default it to white
+        assert(material->diffuseMap);
+        assert(material->specularMap);
+
+        easy_BindTexture("material.diffuse", 1, material->diffuseMap->id, program);
+        renderCheckError();
+        
+        glUniform4f(glGetUniformLocation(program->glProgram, "material.ambientDefault"),  material->defaultAmbient.x, material->defaultAmbient.y, material->defaultAmbient.z, material->defaultAmbient.w);
+        glUniform4f(glGetUniformLocation(program->glProgram, "material.diffuseDefault"),  material->defaultDiffuse.x, material->defaultDiffuse.y, material->defaultDiffuse.z, material->defaultDiffuse.w);
+        glUniform4f(glGetUniformLocation(program->glProgram, "material.specularDefault"),  material->defaultSpecular.x, material->defaultSpecular.y, material->defaultSpecular.z, material->defaultSpecular.w);
+            // printf("%s %f %f %f\n", material->defaultSpecular.x, material->defaultSpecular.y, material->defaultSpecular.z);
+        easy_BindTexture("material.specular", 2, material->specularMap->id, program);
+
         //NOTE(ol): Normal map stuff here
         // if(getUniformFromProgram(program, "material.normalMap").valid) {
         //     if(material->normal) {
@@ -1559,7 +1748,7 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         GLint specularConstant = glGetUniformLocation(program->glProgram, "material.specularConstant"); 
         renderCheckError();
         glUniform1f(specularConstant, material->specularConstant);
-        printf("%f\n", material->specularConstant);
+        // printf("%f\n", material->specularConstant);
         renderCheckError();
 
         GLint eyepos = glGetUniformLocation(program->glProgram, "eye_worldspace"); 
@@ -1584,21 +1773,21 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
             // GLint amb = getUniformFromProgram(program, str).handle;
             GLint amb = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform3f(amb, light->ambient.x, light->ambient.y, light->ambient.z);
+            glUniform4f(amb, light->ambient.x, light->ambient.y, light->ambient.z, 1);
             renderCheckError();
 
             sprintf(str, "lights[%d].diffuse", i);
             // GLint diff = getUniformFromProgram(program, str).handle;
             GLint diff = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform3f(diff, light->diffuse.x, light->diffuse.y, light->diffuse.z);
+            glUniform4f(diff, light->diffuse.x, light->diffuse.y, light->diffuse.z, 1);
             renderCheckError();
 
             sprintf(str, "lights[%d].specular", i);
             // GLint spec = getUniformFromProgram(program, str).handle;
             GLint spec = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform3f(spec, light->specular.x, light->specular.y, light->specular.z);
+            glUniform4f(spec, light->specular.x, light->specular.y, light->specular.z, 1);
             renderCheckError();
             
         }
@@ -1679,6 +1868,22 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
 
 void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
     pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+}
+
+void renderBlitQuad(RenderGroup *group, u32 textureId) {
+    Texture onStack = {};
+    onStack.id = textureId;
+    pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, SHAPE_TONE_MAP, &onStack, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0);
+}
+
+void renderDrawBillBoardQuad(RenderGroup *group, EasyMaterial *material, V4 colorTint, V3 scale, V3 upAxis, V3 pos, V3 eyePos) {
+    V3 direction = v3_minus(eyePos, pos);
+    //NOTE: Things are faceing the camera (front face is CW), when the z axis is pointing away from the camera, i.e. z = 1 or identity matrix
+    V3 rightVec = normalizeV3(v3_crossProduct(direction, upAxis));
+    V3 zAxis = normalizeV3(v3_crossProduct(rightVec, upAxis));
+
+    Matrix4 mT = mat4_xyzwAxis(v3_scale(scale.x, rightVec), v3_scale(scale.y, upAxis), v3_scale(scale.z, zAxis), pos);
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_MODEL, 0, mT, group->viewTransform, group->projectionTransform, colorTint, pos.z, material);
 }
 
 #define renderDrawRectOutlineCenterDim(center, dim, color, rot, offsetTransform, projectionMatrix) renderDrawRectOutlineCenterDim_(center, dim, color, rot, offsetTransform, projectionMatrix, 0.1f)
@@ -1869,7 +2074,15 @@ int cmpRenderItemFunc (const void * a, const void * b) {
             if(itemA->bufferHandles == itemB->bufferHandles) {
                 if(itemA->program == itemB->program) {
                     if(itemA->material == itemB->material) {
-                        result = false;
+                        if(itemA->scissorId == itemB->scissorId) {
+                            if(itemA->cullingEnabled == itemB->cullingEnabled) {
+                                result = false;    
+                            } else {
+                                result = itemA->cullingEnabled != itemB->cullingEnabled;
+                            }
+                        } else {
+                             result = itemA->scissorId > itemB->scissorId;
+                        }
                     } else {
                         result = (intptr_t)itemA->material < (intptr_t)itemB->material;
                     }
@@ -1884,7 +2097,7 @@ int cmpRenderItemFunc (const void * a, const void * b) {
             result = (intptr_t)itemA->textureHandle > (intptr_t)itemB->textureHandle;    
         }
     } else {
-        result = itemA->zAt > itemB->zAt;
+        result = itemA->zAt < itemB->zAt;
     }
     
     return result;
@@ -1939,26 +2152,50 @@ void drawRenderGroup(RenderGroup *group) {
     
     int drawCallCount = 0;
 
-    // render_enableCullFace();
+    render_enableCullFace();
     
     // printf("Render Items count: %d\n", group->items.count);
     // int instanceIndexAt = 0;
     for(int i = 0; i < group->items.count; ++i) {
         RenderItem *info = (RenderItem *)getElementFromAlloc_(&group->items, i);
         glBindFramebuffer(GL_FRAMEBUFFER, info->bufferId);
+        renderCheckError();
         
         if(info->depthTest) {
             glEnable(GL_DEPTH_TEST);
+            renderCheckError();
         } else {
             glDisable(GL_DEPTH_TEST);
+            renderCheckError();
+        }
+
+        if(info->cullingEnabled) {
+            render_enableCullFace();
+        } else {
+            render_disableCullFace();
+        }
+
+        if(info->scissorId >= 0) {
+            assert(info->scissorId < group->scissorId);
+            Rect2f scRect = group->scissorsTests[info->scissorId];
+            V2 d = getDim(scRect);
+            glEnable(GL_SCISSOR_TEST);
+            renderCheckError();
+            glScissor(scRect.minX, scRect.minY, d.x, d.y); 
+            renderCheckError();
+        } else {
+            glDisable(GL_SCISSOR_TEST);
+            renderCheckError();
         }
         
         switch(info->blendFuncType) {
             case BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA: {
                 glBlendFuncSeparate(GL_ZERO, GL_ONE, GL_ZERO, GL_ONE_MINUS_SRC_ALPHA);
+                renderCheckError();
             } break;
             case BLEND_FUNC_STANDARD: {
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+                renderCheckError();
             } break;
             default: {
                 assert(!"case not handled");
@@ -1989,7 +2226,7 @@ void drawRenderGroup(RenderGroup *group) {
             RenderItem *nextItem = getRenderItem(group, i + 1);
             if(nextItem) {
                 
-                if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program && info->material == nextItem->material && easyMath_mat4AreEqual(&info->pMat, &nextItem->pMat)) {
+                if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program && info->material == nextItem->material && easyMath_mat4AreEqual(&info->pMat, &nextItem->pMat) && info->scissorId == nextItem->scissorId && info->cullingEnabled == nextItem->cullingEnabled) {
                     
                     assert(info->blendFuncType == nextItem->blendFuncType);
                     assert(info->depthTest == nextItem->depthTest);
@@ -2028,25 +2265,35 @@ void drawRenderGroup(RenderGroup *group) {
 
         //if(info->program == &rectangleProgram) //Debug: just draw rectangles
         {
-            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, instanceCount, info->material, group, &info->pMat);
+            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, instanceCount, info->material, group, &info->pMat, group->dataPacket);
             drawCallCount++;
         }
         
         releaseInfiniteAlloc(&allInstanceData);
     }
 
-    // glEnable(GL_CULL_FACE); 
-    // glCullFace(GL_FRONT);  
-    // glFrontFace(GL_CCW);  
+    glDisable(GL_SCISSOR_TEST);
+
+    glEnable(GL_CULL_FACE); 
+    glCullFace(GL_FRONT);  
+    glFrontFace(GL_CCW);  
 
     if(group->skybox) {
          glDepthFunc(GL_LEQUAL);
+#if USE_SKY_BOX
         if(!globalCubeMapVaoHandle.valid) {
             initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData));
         }
-        drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group, &group->projectionTransform);
-         glDepthFunc(GL_LESS);
+        drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group, &group->projectionTransform, 0);
+#else
+        if(!globalFullscreenQuadVaoHandle.valid) {
+            initVao(&globalFullscreenQuadVaoHandle, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData));
+        }
+        drawVao(&globalFullscreenQuadVaoHandle, &skyQuadProgram, SHAPE_SKY_QUAD, 0, DRAWCALL_INSTANCED, 1, 0, group, &group->projectionTransform, 0);
+#endif
+        glDepthFunc(GL_LESS);
     }
+
     // releaseInfiniteAlloc(&group->items);
     memset(group->items.memory, 0, group->items.totalCount*group->items.sizeOfMember);
     group->items.count = 0;
@@ -2055,4 +2302,6 @@ void drawRenderGroup(RenderGroup *group) {
     printf("NUMBER OF DRAW CALLS: %d\n", drawCallCount);
 #endif
     group->idAt = 0;
+    group->scissorId = 0;
+    group->scissorsEnabled = false;
 }

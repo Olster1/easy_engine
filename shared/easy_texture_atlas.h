@@ -189,10 +189,10 @@ static inline void easyAtlas_drawAtlas(char *folderName, Arena *memoryArena, Inf
 		}
         
 		V2 bufferDim = v2(size, size);
-		FrameBuffer atlasBuffer = createFrameBuffer(bufferDim.x, bufferDim.y, 0);
+		FrameBuffer atlasBuffer = createFrameBuffer(bufferDim.x, bufferDim.y, FRAMEBUFFER_COLOR, 1);
 		initRenderGroup(globalRenderGroup);
+		clearBufferAndBind(atlasBuffer.bufferId, COLOR_NULL, atlasBuffer.flags, globalRenderGroup);
 		setFrameBufferId(globalRenderGroup, atlasBuffer.bufferId);
-		clearBufferAndBind(atlasBuffer.bufferId, COLOR_NULL);
         
 		//draw all the rects into the frame buffer
 		easyAtlas_addBin(rect2f(0, 0, bufferDim.x, bufferDim.y), &state);
@@ -215,7 +215,8 @@ static inline void easyAtlas_drawAtlas(char *folderName, Arena *memoryArena, Inf
 						// renderDrawRectOutlineCenterDim_(v2ToV3(getCenter(bin->rect), -0.5f), getDim(bin->rect), COLOR_RED, 0, mat4(), OrthoMatrixToScreen_BottomLeft(bufferDim.x, bufferDim.y), 4); 
                         
 						texOnStack.uvCoords = rect2f(texAsRect.minX / bufferDim.x, texAsRect.minY / bufferDim.y, texAsRect.maxX / bufferDim.x, texAsRect.maxY / bufferDim.y);
-					    texOnStack.id = atlasBuffer.textureId;
+					    assert(atlasBuffer.colorBufferCount != 0);
+					    texOnStack.id = atlasBuffer.textureIds[0];
 					    
                         
 					    char *startBr = "{";
@@ -301,7 +302,7 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	char buffer1[512] = {};
 	sprintf(buffer1, "%s.png", fileName);
 	
-	Texture atlasTex = loadImage(buffer1, filter);
+	Texture atlasTex = loadImage(buffer1, filter, true);
     
 	FileContents contentsText = getFileContentsNullTerminate(buffer0);
 	
@@ -380,7 +381,7 @@ static inline void easyAtlas_createTextureAtlas(char *idName, char *folderName, 
             
         	Easy_AtlasElm elm = {};
         	elm.shortName = shortName;
-        	elm.tex = loadImage(fullName, filter);
+        	elm.tex = loadImage(fullName, filter, true);
         	free(fullName);
             
         	addElementInifinteAllocWithCount_(&atlasElms, &elm, 1);

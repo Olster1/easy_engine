@@ -29,6 +29,8 @@ float min(float a, float b) {
 }
 
 
+
+
 #ifdef _WIN32
 //printf doens't print to the console annoyingly!!
 #define printf(...) {char str[256]; sprintf_s(str, __VA_ARGS__); OutputDebugString(str); }
@@ -79,6 +81,7 @@ float min(float a, float b) {
 
 #define zeroStruct(memory, type) zeroSize(memory, sizeof(type))
 #define zeroArray(array) zeroSize(array, sizeof(array))
+
 
 void zeroSize(void *memory, size_t bytes) {
     char *at = (char *)memory;
@@ -262,6 +265,7 @@ char *nullTerminateBuffer(char *result, char *string, int length) {
 }
 
 #define nullTerminate(string, length) nullTerminateBuffer((char *)malloc(length + 1), string, length)
+#define nullTerminateArena(string, length, arena) nullTerminateBuffer((char *)pushArray(arena, length + 1, char), string, length)
 
 #define concat(a, b) concat_(a, b, 0)
 #define concatInArena(a, b, arena) concat_(a, b, arena)

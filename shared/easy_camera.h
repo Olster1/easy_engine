@@ -12,8 +12,14 @@ typedef struct {
 	bool lastP_isSet;
 } EasyCamera;
 
+typedef enum {
+	EASY_CAMERA_MOVE_NULL = 0,
+	EASY_CAMERA_ROTATE = 1 << 0,
+	EASY_CAMERA_MOVE = 1 << 1,
+	EASY_CAMERA_ZOOM = 1 << 2,
+} EasyCamera_MoveType;
 
-static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates, float sensitivity, float movePower, float dt) {
+static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates, float sensitivity, float movePower, float dt, EasyCamera_MoveType moveType) {
 	//update view direction
 	if(!cam->lastP_isSet) {
 		cam->lastMouseP = keyStates->mouseP;
@@ -26,54 +32,59 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	
 	// printf("deltaY: %f\n", deltaY);
 	// printf("sensi: %f\n", sensitivity);
-	cam->heading += deltaX*sensitivity; //degrees
-	cam->pitch += deltaY*sensitivity; //degrees
+	if(moveType & EASY_CAMERA_ROTATE) {
+		cam->heading += deltaX*sensitivity; //degrees
+		cam->pitch += deltaY*sensitivity; //degrees
 
-	// printf("pich: %f\n", cam->pitch);
+		if(cam->pitch > 89.0f) {
+			cam->pitch = 89.0f;
+		}
 
-	if(cam->pitch > 89.0f) {
-		cam->pitch = 89.0f;
+		if(cam->pitch < -89.0f) {
+			cam->pitch = -89.0f;
+		}
+
+		float h = 2*PI32*cam->heading/360.0f; //convert to radians
+		float p = 2*PI32*cam->pitch/360.0f; //convert to radians
+
+		//this was when we were using the graham smit? conversion to cacluate the direction vector
+		// Matrix4 orientation = mat4_xyzAxis(cos(p) * cos(h), sin(p), cos(p) * sin(h));
+		// printf("%f\n", h);
+		// printf("%f\n", p);
+
+		//NOTE: Heading first (rotate about y-axis), Pitch second (rotate about x-axis)
+		cam->orientation = eulerAnglesToQuaternion(h, p, 0);
 	}
-
-	if(cam->pitch < -89.0f) {
-		cam->pitch = -89.0f;
-	}
-
-	printf("%f\n", cam->pitch);
-	float h = 2*PI32*cam->heading/360.0f; //convert to radians
-	float p = 2*PI32*cam->pitch/360.0f; //convert to radians
-
-	//this was when we were using the graham smit? conversion to cacluate the direction vector
-	// Matrix4 orientation = mat4_xyzAxis(cos(p) * cos(h), sin(p), cos(p) * sin(h));
-	// printf("%f\n", h);
-	// printf("%f\n", p);
-	cam->orientation = eulerAnglesToQuaternion(h, p, 0);
 
 	// printf("quert %f %f %f \n", cam->orientation.r, cam->orientation.i, cam->orientation.j, cam->orientation.k);
 
-	cam->zoom += keyStates->scrollWheelY;
+	if(moveType & EASY_CAMERA_ZOOM) {
+		cam->zoom += keyStates->scrollWheelY;
 
-	if(cam->zoom > 89.0f) {
-		cam->zoom = 89.0f;
-	}
-	if(cam->zoom < 20.0f) {
-		cam->zoom = 20.0f;
+		if(cam->zoom > 89.0f) {
+			cam->zoom = 89.0f;
+		}
+		if(cam->zoom < 20.0f) {
+			cam->zoom = 20.0f;
+		}
 	}
 	
 	float xPower = 0;
 	float zPower = 0;
 	float power = movePower;
-	if(isDown(keyStates->gameButtons, BUTTON_RIGHT)) {
-		xPower = power;
-	}
-	if(isDown(keyStates->gameButtons, BUTTON_LEFT)) {
-		xPower = -power;
-	}
-	if(isDown(keyStates->gameButtons, BUTTON_UP)) {
-		zPower = power;
-	}
-	if(isDown(keyStates->gameButtons, BUTTON_DOWN)) {
-		zPower = -power;
+	if(moveType & EASY_CAMERA_MOVE) {
+		if(isDown(keyStates->gameButtons, BUTTON_RIGHT)) {
+			xPower = power;
+		}
+		if(isDown(keyStates->gameButtons, BUTTON_LEFT)) {
+			xPower = -power;
+		}
+		if(isDown(keyStates->gameButtons, BUTTON_UP)) {
+			zPower = power;
+		}
+		if(isDown(keyStates->gameButtons, BUTTON_DOWN)) {
+			zPower = -power;
+		}
 	}
 
 	Matrix4 camOrientation = quaternionToMatrix(cam->orientation);
@@ -87,7 +98,6 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 
 	cam->velocity = v3_minus(cam->velocity, v3_scale(0.8f, cam->velocity));
 	cam->pos = v3_plus(v3_scale(dt, cam->velocity), cam->pos);
-
 
 	// printf("pos: %f %f %f\n", cam->pos.x, cam->pos.y, cam->pos.z);
 }

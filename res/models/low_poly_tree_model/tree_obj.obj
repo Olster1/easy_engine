@@ -991,7 +991,7 @@ vt 0.65883 0.412179
 vt 0.544646 0.412179
 vt 0.715921 0.408093
 vt 0.487555 0.408093
-mtllib Lowpoly_tree_sample.mtl
+mtllib tree_mtl.mtl
 usemtl Bark
 g Default
 f 7/1/1 8/2/1 14/3/1 13/4/1

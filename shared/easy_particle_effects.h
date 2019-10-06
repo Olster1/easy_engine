@@ -1,9 +1,4 @@
-float randomBetween(float a, float b) { // including a and b
-    float result = ((float)rand() / (float)RAND_MAX);
-    assert(result >= 0 && result <= 1.0f);
-    result = lerp(a, result, b);
-    return result;
-}
+
 
 #define PART_SYS_TYPE(FUNC) \
 FUNC(PARTICLE_SYS_DEFAULT) \

@@ -93,7 +93,7 @@ FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
     sprintf(nameBuf, "./fontBitmap%d.png", firstChar);
     int writeResult = stbi_write_png(concat(globalExeBasePath, nameBuf), bitmapW, bitmapH, 4, bitmapTexture, stride_in_bytes);
 #endif
-    sheet->handle = renderLoadTexture(FONT_SIZE, FONT_SIZE, bitmapTexture);
+    sheet->handle = renderLoadTexture(FONT_SIZE, FONT_SIZE, bitmapTexture, RENDER_TEXTURE_DEFAULT);
     assert(sheet->handle);
     free(bitmapTexture);
     free(temp_bitmap);
@@ -183,6 +183,8 @@ Rect2f my_stbtt_print_(Font *font, float x, float y, float zAt, V2 resolution, c
     Rect2f bounds = InverseInfinityRect2f();
     size *= resolutionDiffScale;
     if(x < margin.min.x) { x = margin.min.x; }
+
+    easyRender_pushScissors(globalRenderGroup, margin, zAt, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y), resolution);
 
     //if(bounds.min.y > y) { y = bounds.min.x; }
     float width = 0; 
@@ -301,6 +303,11 @@ Rect2f my_stbtt_print_(Font *font, float x, float y, float zAt, V2 resolution, c
 
                     renderTextureCentreDim(&tempTex, v2ToV3(getCenter(b), zAt), getDim(b), color, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));            
 
+                    // tempTex.id = glyph->textureHandle;
+                    // tempTex.uvCoords = rect2f(0, 0, 1, 1);
+
+                    // renderTextureCentreDim(&tempTex, v2ToV3(getCenter(b), zAt), getDim(b), color, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));            
+
                 }
                 if(cursorInfo && (glyph->index == cursorInfo->index)) {
                     width = q.x1 - q.x0;
@@ -354,6 +361,8 @@ Rect2f my_stbtt_print_(Font *font, float x, float y, float zAt, V2 resolution, c
     if(text == text_) { //there wasn't any text
         bounds = rect2f(0, 0, 0, 0);
     }
+
+    easyRender_disableScissors(globalRenderGroup);
     
     return bounds;
     

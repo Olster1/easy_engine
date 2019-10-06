@@ -103,6 +103,12 @@ typedef struct {
 	Quaternion Q;
 } EasyTransform;
 
+static inline void easyTransform_init(EasyTransform *t, V3 pos) {
+		t->T = mat4();
+		t->pos = pos;
+
+}
+
 
 typedef struct {
 	EasyTransform *T;

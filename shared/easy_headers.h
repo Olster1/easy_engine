@@ -30,6 +30,7 @@ static char* globalExeBasePath;
 #include "easy_animation.h"
 #include "easy_assets.h"
 #include "easy_3d.h"
+#include "easy_terrain.h"
 //#include "easy_sdl_joystick.h"
 
 #include "easy_tweaks.h"

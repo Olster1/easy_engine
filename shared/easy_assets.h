@@ -138,7 +138,7 @@ Asset *addAssetMaterial(char *fileName, EasyMaterial *asset) { // we have these 
 }
 
 Asset *loadImageAsset(char *fileName) {
-    Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR);
+    Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR, true);
     Texture *tex = (Texture *)calloc(sizeof(Texture), 1);
     memcpy(tex, &texOnStack, sizeof(Texture));
     Asset *result = addAssetTexture(fileName, tex);

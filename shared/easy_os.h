@@ -1,5 +1,5 @@
 #define PRINT_FRAME_RATE 0
-#define WRITE_SHADERS 0
+static bool globalDebugWriteShaders = false;
 
 typedef struct {
 	unsigned int frameBackBufferId;
@@ -151,11 +151,11 @@ void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
     //
     
 #if DEVELOPER_MODE
-#if WRITE_SHADERS
-    char *fileTypes[]= {"glsl", "c"};
-    compileFiles("shaders/", fileTypes, arrayCount(fileTypes));
-    exit(0);
-#endif
+	if(globalDebugWriteShaders) {
+	    char *fileTypes[]= {"glsl", "c"};
+	    compileFiles("shaders/", fileTypes, arrayCount(fileTypes));
+	    exit(0);
+	}
 #endif
     
     //////////SETUP AUDIO/////
@@ -238,10 +238,12 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
     
 	////Resolve Frame
 	glViewport(0, 0, screenDim.x, screenDim.y);
+	renderCheckError();
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, backBufferId);
 	renderCheckError();
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, compositedFrameBufferId); 
 	renderCheckError();
+
 	if(blackBars) {
 		glBlitFramebuffer(0, 0, resolution.x, resolution.y, wResidue, yResidue, screenDim.x - wResidue, screenDim.y - yResidue, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 	} else {
@@ -249,7 +251,8 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
 	}
 	renderCheckError();                    
 	///////
-    glViewport(0, 0, screenDim.x, screenDim.y);
+
+
     updateChannelVolumes(dt);
 #if !DESKTOP
     glBindRenderbuffer(GL_RENDERBUFFER, renderbufferId);
@@ -278,6 +281,9 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
         }
     }
     dt = appInfo->dt = newRate; //set the actual dt
+
+    globalTimeSinceStart += dt;
+
 #if PRINT_FRAME_RATE
     printf("%f\n", 1.0f / (dt)); 
 #endif
@@ -472,10 +478,10 @@ static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V
 	
 	const Uint8* keystates = SDL_GetKeyboardState(NULL);
     
-	bool leftArrowIsDown = keystates[SDL_SCANCODE_LEFT];
-	bool rightArrowIsDown = keystates[SDL_SCANCODE_RIGHT];
-	bool upArrowIsDown = keystates[SDL_SCANCODE_UP];
-	bool downArrowIsDown = keystates[SDL_SCANCODE_DOWN];
+	bool leftArrowIsDown = keystates[SDL_SCANCODE_LEFT] || keystates[SDL_SCANCODE_A];
+	bool rightArrowIsDown = keystates[SDL_SCANCODE_RIGHT] || keystates[SDL_SCANCODE_D];
+	bool upArrowIsDown = keystates[SDL_SCANCODE_UP] || keystates[SDL_SCANCODE_W];
+	bool downArrowIsDown = keystates[SDL_SCANCODE_DOWN] || keystates[SDL_SCANCODE_S];
     
 	bool shiftIsDown = keystates[SDL_SCANCODE_LSHIFT];
 	bool commandIsDown = keystates[SDL_SCANCODE_LGUI];

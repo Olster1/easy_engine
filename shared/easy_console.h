@@ -17,6 +17,10 @@ typedef struct {
 
 	char lastString[INPUT_BUFFER_SIZE];
 
+	int streamSize;
+	int streamAt;
+	char *bufferStream; //allocated
+
 	EasyTokenizer tokenizer;
 } EasyConsole;
 
@@ -31,11 +35,59 @@ inline void easyConsole_initConsole(EasyConsole *c, ButtonType hotkey) {
 
 	c->tokenizer.parsing = false;
 
+	c->streamAt = 0;
+	c->streamSize = 10000;
+	c->bufferStream = pushArray(&globalLongTermArena, c->streamSize, char);
+	c->bufferStream[0] = '\0';
+}
 
+inline void easyConsole_addToStream(EasyConsole *c, char *toAdd) {
+	char *at = toAdd;
+
+	bool readyToBreak = false;
+	bool copying = true;
+	while(copying) {
+		if(c->streamAt >= c->streamSize) {
+			assert(c->streamAt == c->streamSize);
+			// @Speed
+			int baseIndex = 0;
+			int offset = 2048;
+			for(int i = offset; i < c->streamAt; ++i) {
+			    c->bufferStream[baseIndex++] = c->bufferStream[i]; 
+			}
+			c->bufferStream[baseIndex++] = '\0';
+			assert(baseIndex <= c->streamSize);
+			c->streamAt -= offset;
+		}
+		if(readyToBreak) {
+			assert(c->streamAt < c->streamSize);
+			c->bufferStream[c->streamAt++] = '\n';
+			copying = false;
+			break;
+		}
+
+		assert(*at != '\0');
+		if(copying) {
+			assert(c->streamAt < c->streamSize);
+			c->bufferStream[c->streamAt++] =  *at;
+			at++;
+
+			if(*at == '\0') {
+				readyToBreak = true;
+			}
+		}
+
+		
+	}
 }
 
 inline void easyConsole_setHotKey(EasyConsole *c, ButtonType hotkey) {
 	c->hotkey = hotkey;
+}
+
+inline bool easyConsole_isOpen(EasyConsole *c) {
+	return (c->state != EASY_CONSOLE_CLOSED);
+	
 }
 
 inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt, V2 resolution, float relativeSize) {
@@ -86,19 +138,20 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 				splice(&c->buffer, "1", false);
 			}
 
-			if(wasPressed(keyStates->gameButtons, BUTTON_LEFT) && c->buffer.cursorAt > 0) {
+			if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_LEFT) && c->buffer.cursorAt > 0) {
 				c->buffer.cursorAt--;
 			}
-			if(wasPressed(keyStates->gameButtons, BUTTON_RIGHT) && c->buffer.cursorAt < c->buffer.length) {
+			if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_RIGHT) && c->buffer.cursorAt < c->buffer.length) {
 				c->buffer.cursorAt++;
 			}
 		}
 		// renderEnableDepthTest(RenderGroup *group);
-		renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, 1), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-	 	outputText_with_cursor(&globalDebugFont, 0, height, 0.5f, resolution, c->buffer.chars, rect2fMinMax(0, 0, 1000, 1000), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
-	 }
-	 // outputText(&globalDebugFont, 0, height, -1, "hey there");
-
+		renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, 2), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+	 	outputText_with_cursor(&globalDebugFont, 0, height, 1.5f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont.fontHeight, resolution.x, height + 0.4f*globalDebugFont.fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
+		
+		V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, resolution.x, height - globalDebugFont.fontHeight), &globalDebugFont, 1, resolution, relativeSize);
+		outputText(&globalDebugFont, 0, height - globalDebugFont.fontHeight - bounds.y, 1.5f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
+	}
 
 	if(result) {
 		nullTerminateBuffer(c->lastString, c->buffer.chars, c->buffer.length);
@@ -114,7 +167,11 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 inline EasyToken easyConsole_getNextToken(EasyConsole *console) {
 	return lexGetNextToken(&console->tokenizer);
 }
-inline void easyConsole_parseDefault(EasyConsole *c) {
 
+inline EasyToken easyConsole_seeNextToken(EasyConsole *console) {
+	return lexSeeNextToken(&console->tokenizer);
+}
+inline void easyConsole_parseDefault(EasyConsole *c) {
+	easyConsole_addToStream(c, "parameter not understood");
 }
 

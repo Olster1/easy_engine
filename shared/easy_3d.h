@@ -22,9 +22,24 @@ EasyMaterial easyCreateMaterial(Texture *diffuseMap, Texture *normalMap, Texture
     material.normalMap = normalMap;
     material.specularMap = specularMap;
     material.specularConstant = constant;
-    
+
+    material.defaultAmbient = v4(1, 1, 1, 1);
+    material.defaultDiffuse = v4(1, 1, 1, 1);
+    material.defaultSpecular = v4(1, 1, 1, 1);
+
     return material;
 } 
+
+static void easy3d_initMaterial(EasyMaterial *mat) {
+    mat->defaultAmbient = v4(1, 1, 1, 1);
+    mat->defaultDiffuse = v4(1, 1, 1, 1);
+    mat->defaultSpecular = v4(1, 1, 1, 1);
+    mat->specularConstant = 16;
+
+    mat->diffuseMap = &globalWhiteTexture;
+    mat->normalMap = &globalWhiteTexture;
+    mat->specularMap = &globalWhiteTexture;
+}
 
 static float easy3d_getFloat(EasyTokenizer *tokenizer) {
     float result = 0;
@@ -79,6 +94,8 @@ static Texture *easy3d_findTextureWithToken(EasyTokenizer *tokenizer) {
 }
 
 static void easy3d_loadMtl(char *fileName) {
+
+    fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     EasyMaterial *mat = 0; //NOTE(ol): this is the current material. There can be more than one marterial per file
     
     FileContents fileContents = getFileContentsNullTerminate(fileName);
@@ -88,6 +105,19 @@ static void easy3d_loadMtl(char *fileName) {
     EasyTokenizer tokenizer = lexBeginParsing(at, (EasyLexOptions)(EASY_LEX_OPTION_EAT_WHITE_SPACE | EASY_LEX_DONT_EAT_SLASH_COMMENTS));
     bool parsing = true;
     
+    bool hadKa = false;
+    bool hadKd = false;
+    bool hadKs = false;
+
+    bool hadKaMap = false;
+    bool hadKdMap = false;
+    bool hadKsMap = false;
+
+    // @Robustness
+    //NOTE: Reference in obj file, and used to create unique material. Note: It may not be unique still
+    //Will be unique only if all files are in the same directory!!
+    char *materialFileName = getFileLastPortionWithArena(fileName, &globalPerFrameArena);
+
     while(parsing) {
         char *at = tokenizer.src;
         EasyToken token = lexGetNextToken(&tokenizer);
@@ -101,19 +131,38 @@ static void easy3d_loadMtl(char *fileName) {
                     EasyToken t = lexGetNextToken(&tokenizer);
                     assert(t.type == TOKEN_WORD);
                     mat = pushStruct(&globalLongTermArena, EasyMaterial);
-                    addAssetMaterial(nullTerminate(t.at, t.size), mat);
+                    easy3d_initMaterial(mat);
+
+                    //NOTE: Reset 
+                    hadKd = false;
+
+                    hadKdMap = false;
+                    hadKsMap = false;
+                    //
+
+                    //TODO: Add folder prefix for unique names 
+                    char *materialName = nullTerminateArena(t.at, t.size, &globalPerFrameArena);
+                    char *uniqueName = concatInArena(materialFileName, materialName, &globalLongTermArena);
+                    addAssetMaterial(uniqueName, mat);
                 }
                 if(stringsMatchNullN("Ka", token.at, token.size)) {
-                    assert(mat);
-                    mat->defaultAmbient = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                    // if(!hadKdMap && !hadKd) {
+                        assert(mat);
+                        mat->defaultAmbient.xyz = easy3d_makeVector3(&tokenizer);
+                    // }
                 }
                 if(stringsMatchNullN("Kd", token.at, token.size)) {
-                    assert(mat);
-                    mat->defaultDiffuse = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                    if(!hadKdMap) {
+                        hadKd = true;
+                        assert(mat);
+                        mat->defaultDiffuse.xyz = easy3d_makeVector3(&tokenizer);
+                    }
                 }
                 if(stringsMatchNullN("Ks", token.at, token.size)) {
-                    assert(mat);
-                    mat->defaultSpecular = v3ToV4(easy3d_makeVector3(&tokenizer), 1);
+                    if(!hadKsMap) {
+                        assert(mat);
+                        mat->defaultSpecular.xyz = easy3d_makeVector3(&tokenizer);
+                    }
                 }
                 if(stringsMatchNullN("Ns", token.at, token.size)) {
                     assert(mat);
@@ -121,36 +170,43 @@ static void easy3d_loadMtl(char *fileName) {
                 }
                 if(stringsMatchNullN("map_Ka", token.at, token.size)) {
                     assert(mat);
-                    mat->ambientMap = easy3d_findTextureWithToken(&tokenizer);
+                    printf("%s\n", "Has ambient map, but engine only supports using diffuse maps as ambient maps");
+                    // mat->ambientMap = easy3d_findTextureWithToken(&tokenizer);
+                    // if(hadKa) {
+                    //     mat->defaultAmbient.xyz = v3(1, 1, 1);
+                    // }
                 }
                 if(stringsMatchNullN("map_Kd", token.at, token.size)) {
                     assert(mat);
                     mat->diffuseMap = easy3d_findTextureWithToken(&tokenizer);
+                    mat->defaultAmbient.xyz = mat->defaultDiffuse.xyz = v3(1, 1, 1);
+                    hadKdMap = true;
                 }
                 if(stringsMatchNullN("map_Ks", token.at, token.size)) {
                     assert(mat);
                     mat->specularMap = easy3d_findTextureWithToken(&tokenizer);
+                    mat->defaultSpecular.xyz = v3(1, 1, 1);
+                    hadKsMap = true;
                 }
                 if(stringsMatchNullN("map_Bump", token.at, token.size)) {
                     assert(mat);
                     mat->normalMap = easy3d_findTextureWithToken(&tokenizer);
                 }
                 if(stringsMatchNullN("map_Ns", token.at, token.size)) {
-                    //NOTE(ol): I'm not sure what the ns is 
+                    //NOTE(ol): This is a shiniess map instad of using the specular constant
+                    //@Support: NOT SUPPORTING AT THE MOMENT 
                 }
                 if(stringsMatchNullN("d", token.at, token.size)) {
                     float alpha = easy3d_getFloat(&tokenizer);
                     assert(mat);
                     mat->defaultAmbient.w = alpha;
                     mat->defaultDiffuse.w = alpha;
-                    mat->defaultSpecular.w = alpha;
                 }
                 if(stringsMatchNullN("Ts", token.at, token.size)) {
                     float alpha = 1.0f - easy3d_getFloat(&tokenizer);
                     assert(mat);
                     mat->defaultAmbient.w = alpha;
                     mat->defaultDiffuse.w = alpha;
-                    mat->defaultSpecular.w = alpha;
                 }
             } break;
             case TOKEN_HASH: {
@@ -168,28 +224,36 @@ static void easy3d_loadMtl(char *fileName) {
 
 static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, InfiniteAlloc *positionData, InfiniteAlloc *normalData, InfiniteAlloc *uvData) {
     EasyToken token = lexSeeNextToken(tokenizer);
-    if(token.type != TOKEN_NEWLINE) {
+    if(token.type == TOKEN_INTEGER || token.type == TOKEN_FORWARD_SLASH) {
         Vertex vert = {};
-        EasyToken token = lexGetNextToken(tokenizer);
         if(token.type == TOKEN_INTEGER) {
+            token = lexGetNextToken(tokenizer);
             //NOTE(ol): minus 1 since index starts at 1 for .obj files
             vert.position = *getElementFromAlloc(positionData, easy3d_getInteger(token) - 1, V3);
-            token = lexGetNextToken(tokenizer);
+            token = lexSeeNextToken(tokenizer);
         } 
         
         if(token.type == TOKEN_FORWARD_SLASH) {
             token = lexGetNextToken(tokenizer);
+
+            token = lexSeeNextToken(tokenizer);
             if(token.type == TOKEN_INTEGER) {
-                vert.texUV = *getElementFromAlloc(uvData, easy3d_getInteger(token) - 1, V2);
                 token = lexGetNextToken(tokenizer);
+                vert.texUV = *getElementFromAlloc(uvData, easy3d_getInteger(token) - 1, V2);
+                token = lexSeeNextToken(tokenizer);
             }
             
             if(token.type == TOKEN_FORWARD_SLASH) {
+                token = lexGetNextToken(tokenizer);
                 token = lexGetNextToken(tokenizer);
                 assert(token.type == TOKEN_INTEGER);
                 
                 vert.normal = *getElementFromAlloc(normalData, easy3d_getInteger(token) - 1, V3);
             }
+        } else {
+            //just to see if there are any just vertex faces. 
+
+            assert(false);
         }
 
         addElementInifinteAlloc_(&currentMesh->vertexData, &vert);
@@ -201,6 +265,7 @@ static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, 
 }
 
 static void easy3d_loadObj(char *fileName, EasyModel *model) { 
+    fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     FileContents fileContents = getFileContentsNullTerminate(fileName);
     unsigned char *at = fileContents.memory;
     
@@ -215,10 +280,11 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
     
     EasyMaterial *mat = 0;
     EasyMesh *currentMesh = 0;
+    char *mtlFileName = "";
     while(parsing) {
         char *at = tokenizer.src;
         EasyToken token = lexGetNextToken(&tokenizer);
-        switch(token.type) {
+         switch(token.type) {
             case TOKEN_NULL_TERMINATOR: {
                 parsing = false;
             } break;
@@ -239,31 +305,32 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
 
                     //NOTE(ol): Testing to see if a bigger shape then a triangle is there
                     EasyToken peekToken = lexSeeNextToken(&tokenizer);
-                    if(peekToken.type != TOKEN_NEWLINE || peekToken.type != TOKEN_NULL_TERMINATOR) {
-                        if(peekToken.type == TOKEN_INTEGER) {   
-                            int count = currentMesh->vertexCount;
-                            count -= 3;
-                            addElementInifinteAlloc_(&currentMesh->indicesData, &count);
-                            count += 2;
-                            addElementInifinteAlloc_(&currentMesh->indicesData, &count);
-                            easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
-                        }
-                        // peekToken = lexSeeNextToken(&tokenizer);
+                    int beginCount = currentMesh->vertexCount - 3;
+
+                    while(peekToken.type == TOKEN_INTEGER) {   
+                        
+                        addElementInifinteAlloc_(&currentMesh->indicesData, &beginCount);
+                        int count =  currentMesh->vertexCount - 1;
+                        addElementInifinteAlloc_(&currentMesh->indicesData, &count);
+                        easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                        peekToken = lexSeeNextToken(&tokenizer);
+                        //assert(peekToken.type != TOKEN_INTEGER);
                     }
-                }
-                if(stringsMatchNullN("v", token.at, token.size)) {
+                    // peekToken = lexSeeNextToken(&tokenizer);
+                } else if(stringsMatchNullN("v", token.at, token.size)) {
                     V3 pos = easy3d_makeVector3(&tokenizer);
                     addElementInifinteAlloc_(&positionData, &pos);
-                }
-                if(stringsMatchNullN("vt", token.at, token.size)) {
+                } else if(stringsMatchNullN("vt", token.at, token.size)) {
                     V2 uvCoord = easy3d_makeVector2(&tokenizer);
                     addElementInifinteAlloc_(&uvData, &uvCoord);
-                }
-                if(stringsMatchNullN("vn", token.at, token.size)) {
+                } else if(stringsMatchNullN("vn", token.at, token.size)) {
                     V3 norm = easy3d_makeVector3(&tokenizer);
                     addElementInifinteAlloc_(&normalData, &norm);
-                }
-                if(stringsMatchNullN("usemtl", token.at, token.size)) {
+                } else if(stringsMatchNullN("mtllib", token.at, token.size)) {
+                    token = lexGetNextToken(&tokenizer);
+                    assert(token.type == TOKEN_WORD);
+                    mtlFileName = nullTerminateArena(token.at, token.size, &globalPerFrameArena);
+                } else if(stringsMatchNullN("usemtl", token.at, token.size)) {
                     currentMesh = easy3d_allocAndInitMesh(); 
                     pushStruct(&globalLongTermArena, EasyMesh);
                     easy3d_addMeshToModel(currentMesh, model);
@@ -271,7 +338,7 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
                     token = lexGetNextToken(&tokenizer);
                     assert(token.type == TOKEN_WORD);
                     char *name = nullTerminate(token.at, token.size);
-                    mat = findMaterialAsset(name);
+                    mat = findMaterialAsset(concatInArena(mtlFileName, name, &globalPerFrameArena));
                     
                     currentMesh->material = mat;
                     if(!mat) {
@@ -351,54 +418,4 @@ void easy3d_imm_renderModel(EasyMesh *mesh,
     
     glUseProgram(0);
     renderCheckError();
-}
-
-static void generateHeightMap(VaoHandle *floorMesh, u32 perlinWidth, u32 perlinHeight) {
-    
-    // float *perlinWordData = pushArray(&globalPerFrameArena, (unsigned int)(perlinHeight*perlinWidth), float);
-    // float perlinWordData[100*100];
-    
-    InfiniteAlloc floormeshdata = initInfinteAlloc(Vertex);
-    InfiniteAlloc indicesData = initInfinteAlloc(unsigned int);
-    
-    for(s32 y = 0; y < perlinHeight; y++) {
-        for(s32 x = 0; x < perlinWidth; x++) {
-            s32 subY = y; //this is so the floor starts in the center of the world i.e. has z negative values - can't have negative values since perlin noise looks into an array!!!!
-            float height = perlin2d(x, subY, 1, 8);
-            // perlinWordData[x + y*perlinWidth] = height;
-            float height1 = perlin2d(x + 1, subY, 1, 8);
-            float height2 = perlin2d(x, subY + 1, 1, 8);
-            V3 p1 = v3(x + 1, height1, subY);
-            V3 p2 = v3(x, height2, subY + 1);
-            V3 p0 = v3(x, height, subY);
-            V3 a = normalizeV3(v3_minus(p1, p0));
-            V3 b = normalizeV3(v3_minus(p2, p0));
-            
-            V3 normal = v3_crossProduct(a, b);
-            
-            // printf("%f %f %f\n", a.x, a.y, a.z);
-            // printf("%f %f %f\n", b.x, b.y, b.z);
-            // printf("---------\n");
-            
-            Vertex v = vertex(p0, normal, v2(0, 0));
-            addElementInifinteAlloc_(&floormeshdata, &v);
-            if(y < (perlinHeight - 1) && x < (perlinWidth - 1)) { //not on edge
-                
-                unsigned int index[6] = {
-                    (unsigned int)(x + (perlinWidth*y)), 
-                    (unsigned int)(x + 1 + (perlinWidth*y)),
-                    (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
-                    (unsigned int)(x + (perlinWidth*y)), 
-                    (unsigned int)(x + 1 + (perlinWidth*(y+1))), 
-                    (unsigned int)(x + (perlinWidth*(y+1))) 
-                };
-                addElementInifinteAllocWithCount_(&indicesData, &index, 6);
-            }
-            
-        }
-    }
-    
-    
-    
-    initVao(floorMesh, (Vertex *)floormeshdata.memory, floormeshdata.count, (unsigned int *)indicesData.memory, indicesData.count);
 }

@@ -87,6 +87,15 @@ typedef struct {
 	EasyTokenType type;
 	char *at;
 	int size;
+
+	union {
+		struct {
+			int intVal;
+		};
+		struct {
+			float floatVal;
+		};
+	};
 } EasyToken;
 
 char *lexEatWhiteSpace(char *at) {
@@ -294,35 +303,76 @@ EasyToken lexGetToken_(EasyTokenizer *tokenizer, bool advanceWithToken) {
 			token.at = at;
 			if(lexIsAlphaNumeric(*at)) {
 				token = lexInitToken(TOKEN_WORD, at, 1);
-
-				while(*at && (lexIsAlphaNumeric(*at) || lexIsNumeric(*at) || lexInnerAlphaNumericCharacter(*at))) {
+				at++;
+				bool hadDot = false;
+				while(*at && (lexIsAlphaNumeric(*at) || lexIsNumeric(*at) || lexInnerAlphaNumericCharacter(*at) || (*at == '.' && !hadDot))) {
+					if(*at == '.') {
+						hadDot = true;
+					}
 					at++;
 				}
 				token.size = at - token.at;
-				// if(lexMatchString(token.at, "true") && token.size == lexStringLength("true")) { token.type = TOKEN_BOOL; }
-				// else if(lexMatchString(token.at, "false") && token.size == lexStringLength("false")) { token.type = TOKEN_BOOL; }
-				// else if(lexMatchString(token.at, "b32") && token.size == lexStringLength("b32")) token.type = TOKEN_BOOL_TYPE;
-				// else if(lexMatchString(token.at, "u32") && token.size == lexStringLength("u32")) token.type = TOKEN_UINT_TYPE;
-				// else if(lexMatchString(token.at, "s32") && token.size == lexStringLength("s32")) token.type = TOKEN_INT_TYPE;
-				// else if(lexMatchString(token.at, "r32") && token.size == lexStringLength("r32")) token.type = TOKEN_FLOAT_TYPE;
-				// else if(lexMatchString(token.at, "string") && token.size == lexStringLength("string")) token.type = TOKEN_STRING_TYPE;
 
 			} else if(lexIsNumeric(*at) || *at == '-') {
 				token = lexInitToken(TOKEN_INTEGER, at, 1);
 				int numberOfDecimal = 0;
+				bool hadENotation = false;
 				at++; //move past the first number
-				while(*at && (lexIsNumeric(*at) || *at == '.')) {
+				while(!hadENotation && *at && (lexIsNumeric(*at) || *at == '.' || *at == 'E' || *at == 'e')) {
 					if(*at == '.') {
 						numberOfDecimal++;
 						if(numberOfDecimal > 1) {
 							printf("found more than one colon in number at lineNumber: %d", *lineNumber);
+							assert(false);
 							break;
 						}
 					}
+
+					if(*at == 'E' || *at == 'e') {
+						assert(!hadENotation);
+						token.type = TOKEN_FLOAT;
+						char *a = nullTerminateArena(token.at, (at - token.at), &globalPerFrameArena);
+						token.floatVal = atof(a);
+
+						char *beginExponent = ++at;
+						int exponentSize = 0;
+						float isNegative = 1;
+
+						if(*(at) == '-') {
+							isNegative = -1;
+							at++;
+							exponentSize++;
+						}
+
+						
+						while(*at && lexIsNumeric(*at)) {
+							exponentSize++;
+							at++;
+						}
+
+						char *exponentStr = nullTerminateArena(beginExponent, exponentSize, &globalPerFrameArena);
+						int exponent = atoi(exponentStr);
+
+						token.floatVal = token.floatVal*powf(10, exponent);
+
+						hadENotation = true;
+					} else {
+						at++;
+					}
 					
-					at++;
+					
 				}
-				if(numberOfDecimal > 0) token.type = TOKEN_FLOAT;
+
+				if(!hadENotation) {
+					char *a = nullTerminateArena(token.at, (at - token.at), &globalPerFrameArena);
+					if(numberOfDecimal > 0) {
+						token.type = TOKEN_FLOAT;
+						token.floatVal = atof(a);
+					} else {
+						token.intVal = atoi(a);
+					}
+				}
+				
 				token.size = at - token.at;
 			} else {
 #if PRINT_UNKNOWN_CHARACTERS

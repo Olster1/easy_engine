@@ -38,7 +38,7 @@ char *getFileExtension(char *fileName) {
     return result;
 }
 
-char *getFileLastPortion_(char *buffer, int bufferLen, char *at) {
+char *getFileLastPortion_(char *buffer, int bufferLen, char *at, Arena *arena) {
     char *recent = at;
     while(*at) {
         if(*at == '/' && at[1] != '\0') { 
@@ -50,7 +50,12 @@ char *getFileLastPortion_(char *buffer, int bufferLen, char *at) {
     char *result = buffer;
     int length = (int)(at - recent) + 1; //for null termination
     if(!result) {
-        result = (char *)calloc(length, 1);    
+        if(arena) {
+            result = (char *)pushArray(arena, length, char);
+        } else {
+            result = (char *)calloc(length, 1);    
+        }
+        
     } else {
         assert(bufferLen >= length);
         buffer[length] = '\0'; //null terminate. 
@@ -61,8 +66,9 @@ char *getFileLastPortion_(char *buffer, int bufferLen, char *at) {
     
     return result;
 }
-#define getFileLastPortion(at) getFileLastPortion_(0, 0, at)
-#define getFileLastPortionWithBuffer(buffer, bufferLen, at) getFileLastPortion_(buffer, bufferLen, at)
+#define getFileLastPortion(at) getFileLastPortion_(0, 0, at, 0)
+#define getFileLastPortionWithBuffer(buffer, bufferLen, at) getFileLastPortion_(buffer, bufferLen, at, 0)
+#define getFileLastPortionWithArena(at, arena) getFileLastPortion_(0, 0, at, arena)
 
 char *getFileLastPortionWithoutExtension(char *name) {
     char *lastPortion = getFileLastPortion(name);

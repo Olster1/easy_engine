@@ -817,6 +817,16 @@ Matrix4 mat4_xyzAxis(V3 xAxis, V3 yAxis, V3 zAxis) {
     return result;
 }
 
+Matrix4 mat4_xyzwAxis(V3 xAxis, V3 yAxis, V3 zAxis, V3 wAxis) {
+    Matrix4 result = {{
+            xAxis.x, xAxis.y, xAxis.z, 0,
+            yAxis.x, yAxis.y, yAxis.z, 0,
+            zAxis.x, zAxis.y, zAxis.z, 0,
+            wAxis.x, wAxis.y, wAxis.z, 1
+        }};
+    return result;
+}
+
 bool mat4_inverse(float m[16], float invOut[16]) {
         double inv[16], det;
         int i;
@@ -1050,6 +1060,14 @@ float lerp(float a, float t, float b) {
     float value = a + t*(b - a);
     return value;
 }
+
+float randomBetween(float a, float b) { // including a and b
+    float result = ((float)rand() / (float)RAND_MAX);
+    assert(result >= 0 && result <= 1.0f);
+    result = lerp(a, result, b);
+    return result;
+}
+
 
 float lerp_bounded(float a, float t, float b) {
     float value = a + t*(b - a);

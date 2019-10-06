@@ -16,6 +16,7 @@ out vec4 color_frag;
 out vec3 normal_frag;
 out vec2 uv_frag;
 out vec3 fragPos;
+out vec3 fragPosInViewSpace;
 
 void main() {
     
@@ -24,4 +25,5 @@ void main() {
     normal_frag = mat3(transpose(inverse(M))) * normal; //transpose(inverse(M))
     uv_frag = texUV;
     fragPos = vec3(M * vec4(vertex, 1));
+    fragPosInViewSpace = vec3(V*M * vec4(vertex, 1));
 }
