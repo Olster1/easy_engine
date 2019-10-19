@@ -131,7 +131,7 @@ static inline void easyTerrain_AddTexture(EasyTerrain *t, Texture *tex) {
 	assert(t->textureCount < arrayCount(t->textures));
 	t->textures[t->textureCount++] = tex;
 }	
-static inline void easyTerrain_plantGrass(EasyTerrainChunk *c) {
+static inline void easyTerrain_plantGrass(EasyTerrain *t, EasyTerrainChunk *c) {
 		for(int i = 0; i < 1000; ++i) {
 			V2 localP = v2(randomBetween(0, 1.0f), randomBetween(0, 1.0f));
 
@@ -140,8 +140,11 @@ static inline void easyTerrain_plantGrass(EasyTerrainChunk *c) {
 			V3 pos = v3_plus(c->startP, v3(localP.x*c->dim.x, height, localP.y*c->dim.y));
 
 			EasyTerrainModel model = {};//pushStruct(&globalLongTermArena, EasyTerrainModel);
-			easyTransform_init(&model.T, pos);
-			model.modelIndex = randomBetween();
+			easyTransform_initTransform(&model.T, pos);
+			model.modelIndex = (int)randomBetween(0, t->modelCount);
+			if(model.modelIndex == t->modelCount) {
+				model.modelIndex--;
+			}
 			addElementInifinteAllocWithCount_(&c->placements, &model, 1);
 		}
 }
@@ -165,7 +168,7 @@ static inline void easyTerrain_addChunk(EasyTerrain *t, char *heightMapFileName,
 	c->blendMap = blendImg;
 
 	easyTerrain_generateHeightMap(&c->mesh, dim, &heightImg);
-	easyTerrain_plantGrass(c);
+	easyTerrain_plantGrass(t, c);
 }
 
 static inline void easyTerrain_AddModel(EasyTerrain *t, EasyModel *m) {
@@ -193,7 +196,7 @@ static inline void easyTerrain_renderTerrain(EasyTerrain *t, RenderGroup *g, Eas
 			assert(m->modelIndex < t->modelCount
 				);
 
-			setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), m->T.pos));
+			setModelTransform(globalRenderGroup, Matrix4_translate(Matrix4_scale(mat4(), v3(0.3f, 0.3f, 0.3f)), m->T.pos));
 			renderModel(g, t->models[m->modelIndex], COLOR_WHITE);
 		}
 
@@ -203,7 +206,7 @@ static inline void easyTerrain_renderTerrain(EasyTerrain *t, RenderGroup *g, Eas
 		// drawVao(&c->mesh, &terrainProgram, SHAPE_TERRAIN, 0, DRAWCALL_INSTANCED, 1, 0, g, &g->projectionTransform, packet);
 		g->dataPacket = packet;
 
-		setModelTransform(globalRenderGroup, Matrix4_translate(Matrix4_scale(mat4(), v3(0.1, 0.1, 0.1)), c->startP));
+		setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), c->startP));
 		renderSetShader(globalRenderGroup, &terrainProgram);
 		renderTerrain(g, &c->mesh, COLOR_WHITE, ma);
 	}

@@ -138,7 +138,10 @@ int main(int argc, char *args[]) {
         lowerHalfP = screenSpaceToWorldSpace(projectionMatrixFOV(camera.zoom, resolution.x/resolution.y), v2(0.5f*screenDim.x, 0.8f*screenDim.y), resolution, -10, mat4());
         EasyPhysics_AddRigidBody(&gameObjects, 0.1, 1, lowerHalfP);
 
-        EasyLight *light = easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
+        EasyTransform sunTransform;
+        easyTransform_initTransform(&sunTransform, v3(0, 10, 0));
+
+        EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 0));//easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
         easy_addLight(globalRenderGroup, light);
         float tAt = 0;
         float physicsTime = 0;
@@ -180,10 +183,20 @@ int main(int argc, char *args[]) {
         easyTerrain_AddTexture(terrain, findTextureAsset("path.png")); 
         easyTerrain_AddTexture(terrain, findTextureAsset("grassy3.png")); 
 
-        // easyTerrain_AddModel(terrain, &fern);
+        easyTerrain_AddModel(terrain, &fern);
         easyTerrain_AddModel(terrain, &grass);
 
         easyTerrain_addChunk(terrain, "/img/terrain_data/heightMap.png", "/img/terrain_data/blendMap.png", v3(0, 0, 0), v3(100, 100, 10));
+
+
+        EasyEditor *editor = pushStruct(&globalLongTermArena, EasyEditor);
+        easyEditor_initEditor(editor, globalRenderGroup, &globalDebugFont, OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y), resolution, appInfo.screenRelativeSize, &keyStates);
+
+        EasyTransform T;
+        easyTransform_initTransform(&T, v3(0, 0, 0));
+
+        bool inEditor = false;
+
 
         while(running) {
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
@@ -210,13 +223,17 @@ int main(int argc, char *args[]) {
             // V3 eyepos = v3(0, 0, -10);
             // Matrix4 viewMatrix = easy3d_lookAt(eyepos, v3(0, 0, 0), v3(0, 1, 0));
             
+            if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
+                inEditor = !inEditor;
+            }
+
 
             EasyCamera_MoveType camMove = EASY_CAMERA_MOVE_NULL;
-            if(debug_IsFlyMode && !easyConsole_isOpen(&console)) {
-                camMove = EASY_CAMERA_MOVE;
+            if(debug_IsFlyMode && !easyConsole_isOpen(&console) && !easyEditor_isInteracting(editor) && !inEditor) {
+                camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
             }
              
-            easy3d_updateCamera(&camera, &keyStates, 1, cameraMovePower, appInfo.dt, (EasyCamera_MoveType)(EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM | camMove));
+            easy3d_updateCamera(&camera, &keyStates, 1, cameraMovePower, appInfo.dt, camMove);
 
             easy_setEyePosition(globalRenderGroup, camera.pos);
             // update camera first
@@ -242,7 +259,7 @@ int main(int argc, char *args[]) {
             // light->direction.xyz = normalizeV3(easyMath_getZAxis(easy3d_getViewToWorld(&camera)));//
             // // printf("%s %f %f %f\n", "color: ", treeModel.meshes[1]->material->defaultAmbient.x, treeModel.meshes[1]->material->defaultAmbient.y, treeModel.meshes[1]->material->defaultAmbient.z);
             // renderDrawRectCenterDim(v3(100, 100, 1), v2(100, 100), COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-            renderTextureCentreDim(findTextureAsset("path.png"), v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+            // renderTextureCentreDim(findTextureAsset("path.png"), v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
             ///Drawing here
             //outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, 1, resolution, "hey there", rect2fMinMax(0, 0, 1000, 1000), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
             //What this is should be...size should be baked into the font. 
@@ -269,8 +286,24 @@ int main(int argc, char *args[]) {
             setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(1, -1, 1)));
             renderModel(globalRenderGroup, &grass, COLOR_WHITE);
             setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(1, 1, 1)));
+
+            static float tAT = 0;
+            tAT += 0.1f;
+            Matrix4 m = mat4_axisAngle(v3(0, 1, 1), tAT);
+            setModelTransform(globalRenderGroup,  easyTransform_getTransform(&T));
             renderModel(globalRenderGroup, &fern, COLOR_WHITE);
 
+            // float hitT = 0;
+            // V3 hitP = {};
+            // V3 direction = easyMath_getZAxis(easy3d_getViewToWorld(&camera));
+            // EasyRay r = {};
+            // r.origin = camera.pos;
+            // r.direction = direction;
+            // r = EasyMath_transformRay(r, mat4_transpose(m));
+            // bool h = easyMath_rayVsAABB3f(r.origin, r.direction, fern.bounds, &hitP, &hitT);
+            // if(h) {
+            //     renderDrawCubeOutline(globalRenderGroup, fern.bounds, COLOR_WHITE);
+            // }
             easyTerrain_renderTerrain(terrain, globalRenderGroup, &emptyMaterial);
 
             renderEnableCulling(globalRenderGroup);
@@ -329,20 +362,48 @@ int main(int argc, char *args[]) {
                     } else if(stringsMatchNullN("wireframe", token.at, token.size)) {
                         token = easyConsole_getNextToken(&console);
                         if(stringsMatchNullN("on", token.at, token.size)) {
-                            glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+                            DEBUG_drawWireFrame = true;
                         } else if(stringsMatchNullN("off", token.at, token.size)) {
-                            glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
+                            DEBUG_drawWireFrame = false;
                         } else {
                             easyConsole_addToStream(&console, "parameter not understood");
                         }
                     } else if(stringsMatchNullN("fly", token.at, token.size)) {
                         debug_IsFlyMode = !debug_IsFlyMode;
+                    } else if(stringsMatchNullN("bounds", token.at, token.size)) {
+                        DEBUG_drawBounds = !DEBUG_drawBounds;
                     } else {
                         easyConsole_parseDefault(&console);
                     }
                 } else {
                     easyConsole_parseDefault(&console);
                 }
+            }
+
+
+            if(inEditor) {
+                easyEditor_startWindow(editor, "Lister Panel");
+                
+                static V3 v = {};
+                easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
+                easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
+                easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
+
+                static bool saveLevel = false;
+                if(easyEditor_pushButton(editor, "Save Level")) {
+                    saveLevel = !saveLevel;
+                }
+
+                if(saveLevel) {
+                    easyEditor_pushFloat1(editor, "", &v.x);
+                    easyEditor_pushFloat2(editor, "", &v.x, &v.y);
+                    easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
+                }
+
+                easyEditor_endWindow(editor); //might not actuall need this
+                
+
+                easyEditor_endEditorForFrame(editor);
             }
 
 

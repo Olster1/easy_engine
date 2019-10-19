@@ -38,8 +38,6 @@ static float globalTimeSinceStart = 0.0f;
 #define COLOR_ATTRIB_LOCATION 11
 #define UVATLAS_ATTRIB_LOCATION 12
 
-#define RENDER_MAX_SCISSOR_TESTS 16
-
 #define PROJECTION_TYPE(FUNC) \
 FUNC(PERSPECTIVE_MATRIX) \
 FUNC(ORTHO_MATRIX) \
@@ -48,18 +46,44 @@ static bool globalImmediateModeGraphics = false;
 
 static V4 globalSkyColor = v4(0.4f, 0.6f, 1.0f, 1.0f);
 
+
+#if DEVELOPER_MODE
+static bool DEBUG_drawWireFrame = false;
+static bool DEBUG_drawBounds = false;
+#endif
+
 typedef enum {
     PROJECTION_TYPE(ENUM)
 } ProjectionType;
 
 static char *ProjectionTypeStrings[] = { PROJECTION_TYPE(STRING) };
 
+typedef enum {
+    EASY_LIGHT_DIRECTIONAL,
+    EASY_LIGHT_POINT,
+    EASY_LIGHT_FLASH_LIGHT,
+} EasyLightType;
+
 typedef struct {
-    V4 direction; //or position w component == 1 for points lights, w == 0 for directional lights
+    // V4 direction; //or position w component == 1 for points lights, w == 0 for directional lights
     
-    V3 ambient;
-    V3 diffuse;
-    V3 specular;
+    // V3 ambient;
+    // V3 diffuse;
+    // V3 specular;
+
+    EasyTransform *T; //for drawing model & direction of light, could also effect rdius??
+
+    EasyLightType type;
+    float brightness;
+    V3 color;
+
+    union {
+        struct {
+            //point lights
+            float innerRadius; 
+            float outerRadius;
+        };
+    };
 } EasyLight;
 
 typedef struct {
@@ -433,6 +457,8 @@ typedef struct {
     float specularConstant;
 } EasyMaterial;
 
+static EasyMaterial globalWhiteMaterial;
+
 typedef struct {
     int vertexCount;
     VaoHandle vaoHandle;
@@ -444,6 +470,8 @@ typedef struct {
     
     //TODO: store a copy of a material instead of a pointer so a mesh can change the values?
     EasyMaterial *material;
+
+    Rect3f bounds;
 } EasyMesh;
 
 typedef struct {
@@ -452,7 +480,39 @@ typedef struct {
     // EasyTransform *parentTransform; 
     int meshCount;
     EasyMesh *meshes[128];    
+
+    Rect3f bounds;
+    V4 colorTint;
+
+    EasyTransform *T;
 } EasyModel;
+
+
+EasyMaterial easyCreateMaterial(Texture *diffuseMap, Texture *normalMap, Texture *specularMap, float constant) {
+    EasyMaterial material = {};
+    
+    material.diffuseMap = diffuseMap;
+    material.normalMap = normalMap;
+    material.specularMap = specularMap;
+    material.specularConstant = constant;
+
+    material.defaultAmbient = v4(1, 1, 1, 1);
+    material.defaultDiffuse = v4(1, 1, 1, 1);
+    material.defaultSpecular = v4(1, 1, 1, 1);
+
+    return material;
+} 
+
+static void easy3d_initMaterial(EasyMaterial *mat) {
+    mat->defaultAmbient = v4(1, 1, 1, 1);
+    mat->defaultDiffuse = v4(1, 1, 1, 1);
+    mat->defaultSpecular = v4(1, 1, 1, 1);
+    mat->specularConstant = 16;
+
+    mat->diffuseMap = &globalWhiteTexture;
+    mat->normalMap = &globalWhiteTexture;
+    mat->specularMap = &globalWhiteTexture;
+}
 
 typedef struct {
     int textureCount;
@@ -565,6 +625,35 @@ static inline EasySkyBox *easy_makeSkybox(EasySkyBoxImages *images) {
 
 }
 
+typedef struct EasyRenderBatch EasyRenderBatch;
+
+typedef struct EasyRenderBatch {
+    InfiniteAlloc items; //type RenderItem
+
+    EasyRenderBatch *next;
+
+} EasyRenderBatch;
+
+typedef struct {
+    RenderProgram *program; 
+    ShapeType type; 
+    
+    s32 textureHandle;
+    
+    EasyMaterial *material;
+
+    int scissorId;
+    
+    int bufferId;
+    bool depthTest;
+    BlendFuncType blendFuncType;
+
+    bool cullingEnabled;
+    
+    VaoHandle *bufferHandles;
+} EasyRender_BatchQuery;
+
+#define RENDER_BATCH_HASH_COUNT 4096
 
 typedef struct {
     int currentBufferId;
@@ -573,7 +662,7 @@ typedef struct {
     BlendFuncType blendFuncType;
     
     int idAt; 
-    InfiniteAlloc items; //type: RenderItem
+    EasyRenderBatch *batches[RENDER_BATCH_HASH_COUNT];
     
     // int lastStorageBufferCount;
     // BufferStorage lastBufferStorage[512];
@@ -585,8 +674,7 @@ typedef struct {
     Matrix4 projectionTransform;
 
     bool scissorsEnabled;
-    int scissorId;
-    Rect2f scissorsTests[RENDER_MAX_SCISSOR_TESTS];
+    InfiniteAlloc scissorsTests;
 
     V3 eyePos;
 
@@ -608,17 +696,97 @@ typedef struct {
     
 } RenderGroup;
 
+
+
+
+
+static inline u64 easyRender_getBatchKey(EasyRender_BatchQuery *i) {
+    u64 result = 0;
+    result += 19*(intptr_t)i->textureHandle;
+    result += 23*(intptr_t)i->bufferHandles;
+    result += 29*(intptr_t)i->program;
+    result += 31*(intptr_t)i->material;
+    result += 31*(int)i->type;
+    result += 3*i->scissorId;
+    result += 7*i->cullingEnabled;
+    result += 3*i->bufferId;
+    result += 3*i->depthTest;
+    result += 11*i->blendFuncType;
+
+    result %= RENDER_BATCH_HASH_COUNT;
+    
+    return result;
+} 
+
+static inline bool easyRender_canItemBeBatched(RenderItem *i, EasyRender_BatchQuery *j) {
+    bool result = (
+        i->textureHandle == j->textureHandle && 
+        i->bufferHandles == j->bufferHandles && 
+        i->program == j->program && 
+        i->material == j->material && 
+        i->scissorId == j->scissorId && 
+        i->cullingEnabled == j->cullingEnabled && 
+        i->type == j->type && 
+        i->bufferId == j->bufferId &&
+        i->depthTest == j->depthTest &&
+        i->blendFuncType == j->blendFuncType);
+
+    return result;
+
+}   
+
+static inline RenderItem *EasyRender_getRenderItem(RenderGroup *g, EasyRender_BatchQuery *i) {
+    u64 key = easyRender_getBatchKey(i);
+    EasyRenderBatch *batch = g->batches[key];
+
+    bool looking = true;
+    while(batch && looking) {
+        if(batch->items.count > 0) {
+            RenderItem *testItem = getElementFromAlloc(&batch->items, 0, RenderItem);
+            if(easyRender_canItemBeBatched(testItem, i)) {
+                looking = false;
+                break;
+            } else {
+                batch = batch->next;
+            }
+        } else {
+            looking = false;
+            break;
+        }
+    } 
+
+    if(!batch) {
+        batch = pushStruct(&globalLongTermArena, EasyRenderBatch);
+        zeroStruct(batch, EasyRenderBatch);
+        //NOTE: put at start of linked list
+        batch->next = g->batches[key];
+        g->batches[key] = batch;
+    }
+
+    assert(batch);
+
+    if(batch->items.count == 0 && batch->items.sizeOfMember == 0) {
+        batch->items = initInfinteAlloc(RenderItem);
+    }
+
+    RenderItem *result = (RenderItem *)addElementInifinteAlloc_(&batch->items, 0);
+    return result;
+}
+
+
+
 static inline void easyRender_disableScissors(RenderGroup *g) {
     g->scissorsEnabled = false;
 }
-
-static inline EasyLight *easy_makeLight(V4 direction, V3 ambient, V3 diffuse, V3 specular) {
+    
+static inline EasyLight *easy_makeLight(EasyTransform *T, EasyLightType type, float brightness, V3 color) {
     EasyLight *light = pushStruct(&globalLongTermArena, EasyLight);
 
-    light->direction = direction;
-    light->ambient = ambient;
-    light->diffuse = diffuse;
-    light->specular = specular;
+    light->T = T; //for drawing model & direction of light, could also effect rdius??
+
+    light->type = type;
+    light->brightness = brightness;
+    light->color = color;
 
     return light;
 }
@@ -630,7 +798,6 @@ static inline void easy_addLight(RenderGroup *group, EasyLight *light) {
 
 void initRenderGroup(RenderGroup *group) {
     assert(!group->initied);
-    group->items = initInfinteAlloc(RenderItem);
     group->currentDepthTest = true;
     group->blendFuncType = BLEND_FUNC_STANDARD;
     
@@ -642,8 +809,10 @@ void initRenderGroup(RenderGroup *group) {
     group->skybox = 0;
     group->initied = true;
 
-    group->scissorId = 0;
     group->scissorsEnabled = false;
+    group->scissorsTests = initInfinteAlloc(Rect2f);
+
+    zeroSize(&group->batches, sizeof(EasyRenderBatch *)*RENDER_BATCH_HASH_COUNT);
 
     if(!globalWhiteTextureInited) {
         u32 *imageData = pushArray(&globalPerFrameArena, 32*32, u32);
@@ -655,6 +824,8 @@ void initRenderGroup(RenderGroup *group) {
         
         globalWhiteTexture = createTextureOnGPU((unsigned char *)imageData, 32, 32, 4, TEXTURE_FILTER_LINEAR, false);
         globalWhiteTextureInited = true;
+
+        easy3d_initMaterial(&globalWhiteMaterial);
     } 
 }
 
@@ -712,8 +883,31 @@ void renderSetViewPort(float x0, float y0, float x1, float y1) {
 
 void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material) {
     assert(group->initied);
-    
-    RenderItem *info = (RenderItem *)addElementInifinteAlloc_(&group->items, 0);
+        
+    int scissorId = -1;
+    if(group->scissorsEnabled) {
+        assert(group->scissorsTests.count > 0);//something pushed on to the stack
+        scissorId = group->scissorsTests.count - 1;
+    }
+
+    EasyRender_BatchQuery query;
+    query.program = program; 
+    query.type = type;
+    if(texture) {
+        query.textureHandle = texture->id;    
+    } else {
+        query.textureHandle = 0; //no Texture
+    }
+    query.material = material;
+    query.scissorId = scissorId;
+    query.bufferId = group->currentBufferId;
+    query.depthTest = group->currentDepthTest;
+    query.blendFuncType = group->blendFuncType;
+    query.cullingEnabled = group->cullingEnabled;
+    query.bufferHandles = handles;
+
+    RenderItem *info = EasyRender_getRenderItem(group, &query);
+
     assert(info);
     info->bufferId = group->currentBufferId;
     info->depthTest = group->currentDepthTest;
@@ -735,8 +929,8 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
 
     info->scissorId = -1;
     if(group->scissorsEnabled) {
-        assert(group->scissorId > 0);//something pushed on to the stack
-        info->scissorId = group->scissorId - 1;
+        assert(group->scissorsTests.count > 0);//something pushed on to the stack
+        info->scissorId = group->scissorsTests.count - 1;
     }
     
     info->program = program;
@@ -787,8 +981,8 @@ void easyRender_pushScissors(RenderGroup *g, Rect2f rect, float zAt, Matrix4 off
     pointB.x = ((pointB.x + 1.0f) / 2.0f)*viewPort.x;
     pointB.y = ((pointB.y + 1.0f) / 2.0f)*viewPort.y;
 
-    assert(g->scissorId < arrayCount(g->scissorsTests));
-    g->scissorsTests[g->scissorId++] = rect2f(pointA.x, pointA.y, pointB.x, pointB.y);
+    Rect2f *scissors = (Rect2f *)addElementInifinteAlloc_(&g->scissorsTests, 0);
+    *scissors = rect2f(pointA.x, pointA.y, pointB.x, pointB.y);
     g->scissorsEnabled = true;
 }
 
@@ -1469,8 +1663,87 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
     }
 }
 
-static inline void renderMesh(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {  
-    pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
+    pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+}
+
+#if DEVELOPER_MODE
+static inline void renderDrawCubeOutline(RenderGroup *g, Rect3f b, V4 color) {
+    V3 dim = getDimRect3f(b);
+
+    V3 c = getCenterRect3f(b);
+
+    Matrix4 tempModelMat = g->modelTransform; //take snapshot of model matrix to restore at end
+    float lineSize = 0.2f;
+    //NOTE: rotate & scale
+    Matrix4 scalex = Matrix4_scale(mat4(), v3(dim.x, lineSize, lineSize));
+    Matrix4 scaley = Matrix4_scale(mat4(), v3(lineSize, dim.y, lineSize));
+    Matrix4 scalez = Matrix4_scale(mat4(), v3(lineSize, lineSize, dim.z));
+    
+    Matrix4 m = g->modelTransform;
+    float hx = b.min.x;
+    float hy = b.min.y;
+    float hz = b.min.z;
+    float h1x = b.max.x;
+    float h1y = b.max.y;
+    float h1z = b.max.z;
+    Matrix4 l0 = Mat4Mult(m, Matrix4_translate(scalez, v3(hx, hy, c.z))); 
+    Matrix4 l1 = Mat4Mult(m, Matrix4_translate(scalez, v3(h1x, hy, c.z))); 
+    Matrix4 l2 = Mat4Mult(m, Matrix4_translate(scalex, v3(c.x, hy, hz))); 
+    Matrix4 l3 = Mat4Mult(m, Matrix4_translate(scalex, v3(c.x, hy, h1z))); 
+
+    Matrix4 l4 = Mat4Mult(m, Matrix4_translate(scalez, v3(hx, h1y, c.z))); 
+    Matrix4 l5 = Mat4Mult(m, Matrix4_translate(scalez, v3(h1x, h1y, c.z))); 
+    Matrix4 l6 = Mat4Mult(m, Matrix4_translate(scalex, v3(c.x, h1y, hz))); 
+    Matrix4 l7 = Mat4Mult(m, Matrix4_translate(scalex, v3(c.x, h1y, h1z))); 
+
+    Matrix4 l8 = Mat4Mult(m, Matrix4_translate(scaley, v3(hx, c.y, hz))); 
+    Matrix4 l9 = Mat4Mult(m, Matrix4_translate(scaley, v3(h1x, c.y, hz))); 
+    Matrix4 l10 = Mat4Mult(m, Matrix4_translate(scaley, v3(hx, c.y, h1z))); 
+    Matrix4 l11 = Mat4Mult(m, Matrix4_translate(scaley, v3(h1x, c.y, h1z))); 
+
+    setModelTransform(g, l0);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_BLUE);
+    setModelTransform(g, l1);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_BLUE);
+    setModelTransform(g, l2);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_BLUE);
+    setModelTransform(g, l3);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_BLUE);
+
+    setModelTransform(g, l4);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_RED);
+    setModelTransform(g, l5);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_RED);
+    setModelTransform(g, l6);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_RED);
+    setModelTransform(g, l7);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_RED);
+
+    setModelTransform(g, l8);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_YELLOW);
+    setModelTransform(g, l9);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_YELLOW);
+    setModelTransform(g, l10);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_YELLOW);
+    setModelTransform(g, l11);
+    renderDrawCube(g, &globalWhiteMaterial, COLOR_YELLOW);
+
+    //restore state
+    g->modelTransform = tempModelMat;
+
+
+}
+#endif
+
+static inline void renderMesh(RenderGroup *group, EasyMesh *mesh, V4 colorTint, EasyMaterial *material) {  
+    pushRenderItem(&mesh->vaoHandle, group, 0, 0, 0, mesh->vaoHandle.indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+#if DEVELOPER_MODE
+    if(DEBUG_drawBounds) {
+        renderDrawCubeOutline(group, mesh->bounds, COLOR_PINK);  
+    }
+#endif
+
 }
 
 static inline void renderTerrain(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {
@@ -1482,7 +1755,18 @@ static inline void renderModel(RenderGroup *group, EasyModel *model, V4 colorTin
         EasyMesh *thisMesh = model->meshes[meshIndex];
         VaoHandle *bufferHandle = &thisMesh->vaoHandle;
         pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], thisMesh->material);
+#if DEVELOPER_MODE
+        if(DEBUG_drawBounds) {
+            renderDrawCubeOutline(group, thisMesh->bounds, COLOR_PINK);  
+        }
+#endif
     }
+
+#if DEVELOPER_MODE
+    if(DEBUG_drawBounds) {
+        renderDrawCubeOutline(group, model->bounds, COLOR_PINK);  
+    }
+#endif
    
 }
 
@@ -1660,7 +1944,8 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         glUniform3f(glGetUniformLocation(program->glProgram, "eyePos"),  group->eyePos.x, group->eyePos.y, group->eyePos.z);
         renderCheckError();
 
-        glUniform3f(glGetUniformLocation(program->glProgram, "sunDirection"),  group->lights[0]->direction.x, group->lights[0]->direction.y, group->lights[0]->direction.z);//group->eyePos.x, group->eyePos.y, group->eyePos.z);
+        V3 direction = easyTransform_getZAxis(group->lights[0]->T);
+        glUniform3f(glGetUniformLocation(program->glProgram, "sunDirection"),  direction.x, direction.y, direction.z);//group->eyePos.x, group->eyePos.y, group->eyePos.z);
         renderCheckError();
 
         glUniform1f(glGetUniformLocation(program->glProgram, "fov"),  group->fov/360.0f*PI32);
@@ -1766,28 +2051,30 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
             // GLint lightDir = getUniformFromProgram(program, str).handle;
             GLint lightDir = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform4f(lightDir, light->direction.x, light->direction.y, light->direction.z, light->direction.w);
+            V3 direction = easyTransform_getZAxis(light->T);
+            float pointOfDirectional = (light->type != EASY_LIGHT_DIRECTIONAL) ? 1.0f : 0.0f; //For homogenous coordinates
+            glUniform4f(lightDir, direction.x, direction.y, direction.z, pointOfDirectional);
             renderCheckError();
 
             sprintf(str, "lights[%d].ambient", i);
             // GLint amb = getUniformFromProgram(program, str).handle;
             GLint amb = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform4f(amb, light->ambient.x, light->ambient.y, light->ambient.z, 1);
+            glUniform4f(amb, light->color.x, light->color.y, light->color.z, 1);
             renderCheckError();
 
             sprintf(str, "lights[%d].diffuse", i);
             // GLint diff = getUniformFromProgram(program, str).handle;
             GLint diff = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform4f(diff, light->diffuse.x, light->diffuse.y, light->diffuse.z, 1);
+            glUniform4f(diff, light->color.x, light->color.y, light->color.z, 1);
             renderCheckError();
 
             sprintf(str, "lights[%d].specular", i);
             // GLint spec = getUniformFromProgram(program, str).handle;
             GLint spec = glGetUniformLocation(program->glProgram, str); 
             renderCheckError();
-            glUniform4f(spec, light->specular.x, light->specular.y, light->specular.z, 1);
+            glUniform4f(spec, light->color.x, light->color.y, light->color.z, 1);
             renderCheckError();
             
         }
@@ -1854,8 +2141,17 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         // if(program == &rectangleProgram) {
             // printf("%s\n", "isQuad");
         // }
+        
         glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
         renderCheckError();
+#if DEVELOPER_MODE
+        if(DEBUG_drawWireFrame) {
+            glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
+            glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
+            renderCheckError();
+            glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );    
+        }
+#endif
     }
     
     glBindVertexArray(0);
@@ -1864,10 +2160,6 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     glUseProgram(0);
     renderCheckError();
     
-}
-
-void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
-    pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
 }
 
 void renderBlitQuad(RenderGroup *group, u32 textureId) {
@@ -2000,14 +2292,6 @@ void renderDeleteVaoHandle(VaoHandle *handles) {
     handles->valid = false;
 }
 
-RenderItem *getRenderItem(RenderGroup *group, int index) {
-    RenderItem *info = 0;
-    if(index < group->items.count) {
-        info = (RenderItem *)getElementFromAlloc_(&group->items, index);
-    }
-    return info;
-}
-
 BufferStorage createBufferStorage(InfiniteAlloc *array) {
     BufferStorage result = {};
     glGenBuffers(1, &result.tbo);
@@ -2069,7 +2353,7 @@ int cmpRenderItemFunc (const void * a, const void * b) {
     RenderItem *itemB = (RenderItem *)b;
     bool result = true;
     
-    if(itemA->zAt == itemB->zAt) {
+    //if(itemA->zAt == itemB->zAt) {
         if(itemA->textureHandle == itemB->textureHandle) {
             if(itemA->bufferHandles == itemB->bufferHandles) {
                 if(itemA->program == itemB->program) {
@@ -2096,21 +2380,21 @@ int cmpRenderItemFunc (const void * a, const void * b) {
         } else {
             result = (intptr_t)itemA->textureHandle > (intptr_t)itemB->textureHandle;    
         }
-    } else {
-        result = itemA->zAt < itemB->zAt;
-    }
+    // } else {
+    //     result = itemA->zAt < itemB->zAt;
+    // }
     
     return result;
 }
 
-void sortItems(RenderGroup *group) {
+void sortItems(InfiniteAlloc *items) {
     //this is a bubble sort. I think this is typically a bit slow. 
     bool sorted = false;
-    int max = (group->items.count - 1);
+    int max = (items->count - 1);
     for (int index = 0; index < max;) {
         bool incrementIndex = true;
-        RenderItem *infoA = (RenderItem *)getElementFromAlloc_(&group->items, index);
-        RenderItem *infoB = (RenderItem *)getElementFromAlloc_(&group->items, index + 1);
+        RenderItem *infoA = (RenderItem *)getElementFromAlloc_(items, index);
+        RenderItem *infoB = (RenderItem *)getElementFromAlloc_(items, index + 1);
         assert(infoA && infoB);
         bool swap = cmpRenderItemFunc(infoA, infoB);
         if(swap) {
@@ -2135,29 +2419,11 @@ void beginRenderGroupForFrame(RenderGroup *group) {
     
 }
 
-void drawRenderGroup(RenderGroup *group) {
-    sortItems(group);
-    
-    // for(int i = 0; i < group->items.count; ++i) {
-    //     RenderItem *info = (RenderItem *)getElementFromAlloc_(&group->items, i);
-    //     VaoHandle *handle = info->bufferHandles;
-    //     if(handle) {
-    //         if(handle->refresh) {
-    //             renderDeleteVaoHandle(handle);
-    //             assert(!handle->refresh);
-    //             assert(!handle->valid);
-    //         }
-    //     }
-    // }
-    
+static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items) {
     int drawCallCount = 0;
-
-    render_enableCullFace();
-    
-    // printf("Render Items count: %d\n", group->items.count);
-    // int instanceIndexAt = 0;
-    for(int i = 0; i < group->items.count; ++i) {
-        RenderItem *info = (RenderItem *)getElementFromAlloc_(&group->items, i);
+    if(items->count > 0) {
+        
+        RenderItem *info = (RenderItem *)getElementFromAlloc_(items, 0);
         glBindFramebuffer(GL_FRAMEBUFFER, info->bufferId);
         renderCheckError();
         
@@ -2176,8 +2442,8 @@ void drawRenderGroup(RenderGroup *group) {
         }
 
         if(info->scissorId >= 0) {
-            assert(info->scissorId < group->scissorId);
-            Rect2f scRect = group->scissorsTests[info->scissorId];
+            assert(info->scissorId < group->scissorsTests.count);
+            Rect2f scRect = *getElementFromAlloc(&group->scissorsTests, info->scissorId, Rect2f);
             V2 d = getDim(scRect);
             glEnable(GL_SCISSOR_TEST);
             renderCheckError();
@@ -2203,74 +2469,73 @@ void drawRenderGroup(RenderGroup *group) {
         }
         InfiniteAlloc allInstanceData = initInfinteAlloc(float);        
         
-        addElementInifinteAllocWithCount_(&allInstanceData, info->mMat.val, 16);
-
-        addElementInifinteAllocWithCount_(&allInstanceData, info->vMat.val, 16);
-
-        // addElementInifinteAllocWithCount_(&allInstanceData, info->pMat.val, 16);
-        
-        addElementInifinteAllocWithCount_(&allInstanceData, info->color.E, 4);
-        if(info->textureHandle != 0) {
-            addElementInifinteAllocWithCount_(&allInstanceData, info->textureUVs.E, 4);
-        } else {
-            //We do this to keep the spacing correct for the struct.
-            float nullData[4] = {};
-            addElementInifinteAllocWithCount_(&allInstanceData, nullData, 4);
-        }
-        
-        
-        
-        int instanceCount = 1;
-        bool collecting = true;
-        while(collecting) {
-            RenderItem *nextItem = getRenderItem(group, i + 1);
+        for(int i = 0; i < items->count; ++i) {
+            RenderItem *nextItem = (RenderItem *)getElementFromAlloc_(items, i);
             if(nextItem) {
+                // if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program && info->material == nextItem->material && easyMath_mat4AreEqual(&info->pMat, &nextItem->pMat) && info->scissorId == nextItem->scissorId && info->cullingEnabled == nextItem->cullingEnabled) {
+                assert(info->blendFuncType == nextItem->blendFuncType);
+                assert(info->depthTest == nextItem->depthTest);
+                //collect data
+                addElementInifinteAllocWithCount_(&allInstanceData, nextItem->mMat.val, 16);
+
+                addElementInifinteAllocWithCount_(&allInstanceData, nextItem->vMat.val, 16);
+
+                // addElementInifinteAllocWithCount_(&allInstanceData, nextItem->pMat.val, 16);
                 
-                if(info->bufferHandles == nextItem->bufferHandles && info->textureHandle == nextItem->textureHandle && info->program == nextItem->program && info->material == nextItem->material && easyMath_mat4AreEqual(&info->pMat, &nextItem->pMat) && info->scissorId == nextItem->scissorId && info->cullingEnabled == nextItem->cullingEnabled) {
-                    
-                    assert(info->blendFuncType == nextItem->blendFuncType);
-                    assert(info->depthTest == nextItem->depthTest);
-                    //collect data
-                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->mMat.val, 16);
-
-                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->vMat.val, 16);
-
-                    // addElementInifinteAllocWithCount_(&allInstanceData, nextItem->pMat.val, 16);
-                    
-                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->color.E, 4);
-                    
-                    if(nextItem->textureHandle) {
-                        addElementInifinteAllocWithCount_(&allInstanceData, nextItem->textureUVs.E, 4);
-                    } else {
-                        //We do this to keep the spacing correct for the struct.
-                        float nullData[4] = {};
-                        addElementInifinteAllocWithCount_(&allInstanceData, nullData, 4);
-                    }
-                    
-                    instanceCount++;
-                    //
-                    i++;
+                addElementInifinteAllocWithCount_(&allInstanceData, nextItem->color.E, 4);
+                
+                if(nextItem->textureHandle) {
+                    addElementInifinteAllocWithCount_(&allInstanceData, nextItem->textureUVs.E, 4);
                 } else {
-                    collecting = false;
+                    //We do this to keep the spacing correct for the struct.
+                    float nullData[4] = {};
+                    addElementInifinteAllocWithCount_(&allInstanceData, nullData, 4);
                 }
-            } else {
-                collecting = false;
-            }
+                // } 
+            } 
         }
-        
-        
+            
+            
         initVao(info->bufferHandles, info->triangleData, info->triCount, info->indicesData, info->indexCount);
     
         createBufferStorage2(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
 
-        //if(info->program == &rectangleProgram) //Debug: just draw rectangles
         {
-            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, instanceCount, info->material, group, &info->pMat, group->dataPacket);
+            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, items->count, info->material, group, &info->pMat, group->dataPacket);
             drawCallCount++;
+            
         }
         
         releaseInfiniteAlloc(&allInstanceData);
     }
+    return drawCallCount;
+}
+
+static inline void easyRender_EndBatch(EasyRenderBatch *b) {
+    assert(b->items.sizeOfMember > 0);
+    memset(b->items.memory, 0, b->items.totalCount*b->items.sizeOfMember);
+    b->items.count = 0;
+}
+
+void drawRenderGroup(RenderGroup *group) {
+    // sortItems(group);
+
+    int drawCallCount = 0;
+
+    render_enableCullFace();
+    
+    for(int i = 0; i < RENDER_BATCH_HASH_COUNT; ++i) {
+        if(group->batches[i]) {
+            EasyRenderBatch *b = group->batches[i];
+            while(b) {
+                drawCallCount += easyRender_DrawBatch(group, &b->items);
+                easyRender_EndBatch(b);
+                
+                b = b->next;    
+            }
+        }
+    }
+    
 
     glDisable(GL_SCISSOR_TEST);
 
@@ -2294,14 +2559,11 @@ void drawRenderGroup(RenderGroup *group) {
         glDepthFunc(GL_LESS);
     }
 
-    // releaseInfiniteAlloc(&group->items);
-    memset(group->items.memory, 0, group->items.totalCount*group->items.sizeOfMember);
-    group->items.count = 0;
-
+    
 #if PRINT_NUMBER_DRAW_CALLS
     printf("NUMBER OF DRAW CALLS: %d\n", drawCallCount);
 #endif
     group->idAt = 0;
-    group->scissorId = 0;
+    group->scissorsTests.count = 0;
     group->scissorsEnabled = false;
 }

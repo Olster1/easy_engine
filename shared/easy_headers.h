@@ -14,6 +14,7 @@ static char* globalExeBasePath;
 #include "easy_array.h"
 #include "sdl_audio.h"
 #include "easy_lex.h"
+#include "easy_transform.h"
 #include "easy_render.h"
 
 #include "easy_perlin.h"
@@ -24,6 +25,7 @@ static char* globalExeBasePath;
 
 #define GJK_IMPLEMENTATION 
 #include "easy_gjk.h"
+
 #include "easy_collision.h"
 #include "easy_physics.h"
 #include "easy_text_io.h"
@@ -31,6 +33,7 @@ static char* globalExeBasePath;
 #include "easy_assets.h"
 #include "easy_3d.h"
 #include "easy_terrain.h"
+
 //#include "easy_sdl_joystick.h"
 
 #include "easy_tweaks.h"
@@ -39,6 +42,7 @@ static char* globalExeBasePath;
 
 
 #include "easy_os.h"
+#include "easy_editor.h"
 #include "easy_camera.h"
 #include "easy_tile.h"
 #include "easy_texture_atlas.h"

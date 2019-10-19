@@ -67,7 +67,7 @@ void main (void) {
     tempColor.w = min(1, tempColor.w);
 
     float tAt = min(fragPosInViewSpace.z/100.0f, 1.0f);
-    color = mix(tempColor, vec4(0.4f, 0.6f, 1.0f, 1.0f), pow(tAt, 3.0f));
+    color = tempColor;//mix(tempColor, vec4(0.4f, 0.6f, 1.0f, 1.0f), pow(tAt, 3.0f));
 
     // color = pow(color, vec4(1.0/gamma));
 }

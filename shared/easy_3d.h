@@ -2,6 +2,7 @@ static EasyMesh *easy3d_allocAndInitMesh() {
     EasyMesh *m = pushStruct(&globalLongTermArena, EasyMesh);
     m->vertexCount = 0;
     m->vaoHandle.valid = false;
+    m->bounds = InverseInfinityRect3f();
     
     m->material = 0;
     m->vertexData = initInfinteAlloc(Vertex);
@@ -15,31 +16,6 @@ static void easy3d_addMeshToModel(EasyMesh *mesh, EasyModel *model) {
     model->meshes[model->meshCount++] = mesh;
 }
 
-EasyMaterial easyCreateMaterial(Texture *diffuseMap, Texture *normalMap, Texture *specularMap, float constant) {
-    EasyMaterial material = {};
-    
-    material.diffuseMap = diffuseMap;
-    material.normalMap = normalMap;
-    material.specularMap = specularMap;
-    material.specularConstant = constant;
-
-    material.defaultAmbient = v4(1, 1, 1, 1);
-    material.defaultDiffuse = v4(1, 1, 1, 1);
-    material.defaultSpecular = v4(1, 1, 1, 1);
-
-    return material;
-} 
-
-static void easy3d_initMaterial(EasyMaterial *mat) {
-    mat->defaultAmbient = v4(1, 1, 1, 1);
-    mat->defaultDiffuse = v4(1, 1, 1, 1);
-    mat->defaultSpecular = v4(1, 1, 1, 1);
-    mat->specularConstant = 16;
-
-    mat->diffuseMap = &globalWhiteTexture;
-    mat->normalMap = &globalWhiteTexture;
-    mat->specularMap = &globalWhiteTexture;
-}
 
 static float easy3d_getFloat(EasyTokenizer *tokenizer) {
     float result = 0;
@@ -230,6 +206,7 @@ static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, 
             token = lexGetNextToken(tokenizer);
             //NOTE(ol): minus 1 since index starts at 1 for .obj files
             vert.position = *getElementFromAlloc(positionData, easy3d_getInteger(token) - 1, V3);
+            currentMesh->bounds = unionRect3f(currentMesh->bounds, v3_to_rect3f(vert.position));
             token = lexSeeNextToken(tokenizer);
         } 
         
@@ -268,6 +245,8 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
     fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     FileContents fileContents = getFileContentsNullTerminate(fileName);
     unsigned char *at = fileContents.memory;
+
+    model->bounds = InverseInfinityRect3f();
     
     //NOTE(ol): These are our 'pools' of information that we can build our final vertex buffers out of 
     InfiniteAlloc positionData = initInfinteAlloc(V3);
@@ -307,7 +286,7 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
                     EasyToken peekToken = lexSeeNextToken(&tokenizer);
                     int beginCount = currentMesh->vertexCount - 3;
 
-                    while(peekToken.type == TOKEN_INTEGER) {   
+                    while(peekToken.type == TOKEN_INTEGER) {  //More than 3 verticies 
                         
                         addElementInifinteAlloc_(&currentMesh->indicesData, &beginCount);
                         int count =  currentMesh->vertexCount - 1;
@@ -319,6 +298,8 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
                     // peekToken = lexSeeNextToken(&tokenizer);
                 } else if(stringsMatchNullN("v", token.at, token.size)) {
                     V3 pos = easy3d_makeVector3(&tokenizer);
+
+                    model->bounds = unionRect3f(model->bounds, v3_to_rect3f(pos));
                     addElementInifinteAlloc_(&positionData, &pos);
                 } else if(stringsMatchNullN("vt", token.at, token.size)) {
                     V2 uvCoord = easy3d_makeVector2(&tokenizer);
@@ -332,7 +313,6 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
                     mtlFileName = nullTerminateArena(token.at, token.size, &globalPerFrameArena);
                 } else if(stringsMatchNullN("usemtl", token.at, token.size)) {
                     currentMesh = easy3d_allocAndInitMesh(); 
-                    pushStruct(&globalLongTermArena, EasyMesh);
                     easy3d_addMeshToModel(currentMesh, model);
                     
                     token = lexGetNextToken(&tokenizer);

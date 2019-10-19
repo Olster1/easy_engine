@@ -102,7 +102,7 @@ FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
 }
 
 FontSheet *findFontSheet(Font *font, unsigned int character) {
-
+    assert(font);
     FontSheet *sheet = font->sheets;
     FontSheet *result = 0;
     while(sheet) {
@@ -114,7 +114,7 @@ FontSheet *findFontSheet(Font *font, unsigned int character) {
     }
 
     if(!result) {
-        printf("%s\n", "Creating sheet");
+        // printf("%s\n", "Creating sheet");
         unsigned int interval = 256;
         unsigned int firstUnicode = ((int)(character / interval)) * interval;
         result = sheet = createFontSheet(font, firstUnicode, firstUnicode + interval);

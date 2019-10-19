@@ -355,6 +355,54 @@ Rect3f rect3fNull() {
     return result;
 }
 
+#define INFINITY_VALUE 1000000
+    
+
+
+Rect3f InverseInfinityRect3f() {
+    Rect3f result = {};
+    
+    result.minX = INFINITY_VALUE;
+    result.maxX = -INFINITY_VALUE;
+    result.minY = INFINITY_VALUE;
+    result.maxY = -INFINITY_VALUE;
+    result.minZ = INFINITY_VALUE;
+    result.maxZ = -INFINITY_VALUE;
+    
+    return result;
+}
+
+static inline Rect3f v3_to_rect3f(V3 a) {
+    Rect3f result = rect3f(a.x, a.y, a.z, a.x, a.y, a.z);
+    return result;
+}
+
+V3 getDimRect3f(Rect3f b) {
+    V3 res = v3(b.maxX - b.minX, b.maxY - b.minY, b.maxZ - b.minZ);
+    return res;
+}
+
+V3 getCenterRect3f(Rect3f b) {
+    V3 res = v3(b.minX + 0.5f*(b.maxX - b.minX), b.minY + 0.5f*(b.maxY - b.minY), b.minZ + 0.5f*(b.maxZ - b.minZ));
+    return res;
+}
+
+Rect3f unionRect3f(Rect3f a, Rect3f b) {
+    Rect3f result = {};
+    
+    result.minX = (a.minX > b.minX) ? b.minX : a.minX;
+    result.minY = (a.minY > b.minY) ? b.minY : a.minY;
+    result.minZ = (a.minZ > b.minZ) ? b.minZ : a.minZ;
+
+    result.maxX = (a.maxX < b.maxX) ? b.maxX : a.maxX;
+    result.maxY = (a.maxY < b.maxY) ? b.maxY : a.maxY;
+    result.maxZ = (a.maxZ < b.maxZ) ? b.maxZ : a.maxZ;
+
+    
+    return result;
+    
+}
+
 Rect3f rect3fMinDim(float minX, 
                     float minY,
                     float minZ, 
@@ -468,6 +516,18 @@ Rect2f rect2f(float minX,
     
 }
 
+    
+Rect2f InfinityRect2f() {
+    Rect2f result = {};
+    
+    result.minX = 0;
+    result.maxX = INFINITY_VALUE;
+    result.minY = 0;
+    result.maxY = INFINITY_VALUE;
+    
+    return result;
+}
+
 Rect2f rect2fNull() {
     Rect2f result = {};
     return result;
@@ -548,8 +608,6 @@ Rect2f reevalRect2f(Rect2f rect) {
 }
 
 
-
-#define INFINITY_VALUE 1000000
 Rect2f InverseInfinityRect2f() {
     Rect2f result = {};
     
@@ -720,7 +778,7 @@ Quaternion quaternion(float r, float i, float j, float k) {
 }
 
 //the arguments are in order of math operation ie. q1*q2 -> have q2 rotation and rotating by q1
-Quaternion quaternion_mult(Quaternion q, Quaternion q2){
+Quaternion quaternion_mult(Quaternion q, Quaternion q2) {
     Quaternion result = {};
     
     result.r = q.r*q2.r - q.i*q2.i -
@@ -956,7 +1014,7 @@ bool mat4_inverse(float m[16], float invOut[16]) {
         return true;
 }
 
-/*
+
 Matrix4 mat4_axisAngle(V3 axis, float angle) {
     //NOTE: this is around the wrong way I think, should be transposed
     axis = normalizeV3(axis);
@@ -964,14 +1022,14 @@ Matrix4 mat4_axisAngle(V3 axis, float angle) {
     float y = axis.y;
     float z = axis.z;
     Matrix4 result = {{
-            1 + (1-cos(angle))*(x*x-1), -z*sin(angle)+(1-cos(angle))*x*y, y*sin(angle)+(1-cos(angle))*x*z, 0,
-            z*sin(angle)+(1-cos(angle))*x*y, 1 + (1-cos(angle))*(y*y-1),  -x*sin(angle)+(1-cos(angle))*y*z, 0,
-            -y*sin(angle)+(1-cos(angle))*x*z, x*sin(angle)+(1-cos(angle))*y*z, 1 + (1-cos(angle))*(z*z-1), 0,
+            1 + (1-(float)cos(angle))*(x*x-1), -z*(float)sin(angle)+(1-(float)cos(angle))*x*y, y*(float)sin(angle)+(1-(float)cos(angle))*x*z, 0,
+            z*(float)sin(angle)+(1-(float)cos(angle))*x*y, 1 + (1-(float)cos(angle))*(y*y-1),  -x*(float)sin(angle)+(1-(float)cos(angle))*y*z, 0,
+            -y*(float)sin(angle)+(1-(float)cos(angle))*x*z, x*(float)sin(angle)+(1-(float)cos(angle))*y*z, 1 + (1-(float)cos(angle))*(z*z-1), 0,
             0, 0, 0, 1
         }};
     return result;
 }
-*/
+
 Matrix4 Matrix4_translate(Matrix4 a, V3 b) {
     a.d.x += b.x;
     a.d.y += b.y;
@@ -980,9 +1038,9 @@ Matrix4 Matrix4_translate(Matrix4 a, V3 b) {
 }
 
 Matrix4 Matrix4_scale(Matrix4 a, V3 b) {
-    a.a.x *= b.x;
-    a.b.y *= b.y;
-    a.c.z *= b.z;
+    a.a.xyz = v3_scale(b.x, a.a.xyz);
+    a.b.xyz = v3_scale(b.y, a.b.xyz);
+    a.c.xyz = v3_scale(b.z, a.c.xyz);
     return a;
 }
 
@@ -1312,6 +1370,82 @@ void transformRectangleToSides(V2 *points, V2 position , V2 dim, Matrix4 rotatio
     points[1] = v2_plus(transformPosition(v2(rectA.minX, rectA.maxY), rotationMatrix), position); 
     points[2] = v2_plus(transformPosition(v2(rectA.maxX, rectA.maxY), rotationMatrix), position); 
     points[3] = v2_plus(transformPosition(v2(rectA.maxX, rectA.minY), rotationMatrix), position);
+}
+
+typedef struct {
+    V3 origin;
+    V3 direction;
+} EasyRay;
+
+static inline EasyRay EasyMath_transformRay(EasyRay r, Matrix4 m) {
+    r.origin =  V4MultMat4(v4(r.origin.x, r.origin.y, r.origin.z, 0), m).xyz;
+    r.direction  =  V4MultMat4(v4(r.direction.x, r.direction.y, r.direction.z, 0), m).xyz;
+    return r;
+}
+
+#define NUMDIM  3
+#define RIGHT   0
+#define LEFT    1
+#define MIDDLE  2
+
+static inline bool easyMath_rayVsAABB3f(V3 origin, V3 dir, Rect3f b, V3 *hitPoint, float *tAt) {
+    bool inside = true;
+    int quadrant[NUMDIM];
+    int i;
+    int whichPlane;
+    double maxT[NUMDIM];
+    double candidatePlane[NUMDIM];
+
+    dir = normalizeV3(dir);
+
+    /* Find candidate planes; this loop can be avoided if
+    rays cast all from the eye(assume perpsective view) */
+    for (i=0; i<NUMDIM; i++)
+        if(origin.E[i] < b.min.E[i]) {
+            quadrant[i] = LEFT;
+            candidatePlane[i] = b.min.E[i];
+            inside = false;
+        }else if (origin.E[i] > b.max.E[i]) {
+            quadrant[i] = RIGHT;
+            candidatePlane[i] = b.max.E[i];
+            inside = false;
+        }else   {
+            quadrant[i] = MIDDLE;
+        }
+
+    /* Ray origin inside bounding box */
+    if(inside)  {
+        *hitPoint = origin;
+        return (TRUE);
+    }
+
+
+    /* Calculate T distances to candidate planes */
+    for (i = 0; i < NUMDIM; i++)
+        if (quadrant[i] != MIDDLE && dir.E[i] !=0.) //not in the middle & no parrallel
+            maxT[i] = (candidatePlane[i]-origin.E[i]) / dir.E[i];
+        else
+            maxT[i] = -1.;
+
+    /* Get largest of the maxT's for final choice of intersection */
+    whichPlane = 0;
+    for (i = 1; i < NUMDIM; i++) {
+        if (maxT[whichPlane] < maxT[i]) {
+            whichPlane = i;
+        }
+    }
+    *tAt = maxT[whichPlane];
+    /* Check final candidate actually inside box */
+    if (maxT[whichPlane] < 0.) return (false); //behind the ray
+    for (i = 0; i < NUMDIM; i++)
+        if (whichPlane != i) {
+            hitPoint->E[i] = origin.E[i] + maxT[whichPlane] *dir.E[i]; //our lerp
+            if (hitPoint->E[i] < b.min.E[i] || hitPoint->E[i] > b.max.E[i]) //outside of the AABB
+                return false;
+        } else {
+            hitPoint->E[i] = candidatePlane[i];
+        }
+    return true;              /* ray hits box */
 }
 
 #define EASY_MATH_H 1

@@ -96,18 +96,7 @@ RayCastInfo easy_phys_castRay(V2 startP, V2 ray, V2 *points, int count) {
 	return result;
 }
 
-typedef struct {
-	Matrix4 T;
-	V3 pos;
-	V3 scale;
-	Quaternion Q;
-} EasyTransform;
 
-static inline void easyTransform_init(EasyTransform *t, V3 pos) {
-		t->T = mat4();
-		t->pos = pos;
-
-}
 
 
 typedef struct {
@@ -119,6 +108,36 @@ typedef struct {
 	float inverse_I;
 	// float inertia;
 } EasyRigidBody;
+
+
+typedef enum {
+	EASY_COLLIDER_SPHERE,
+	EASY_COLLIDER_CYLINDER,
+	EASY_COLLIDER_BOX,
+	EASY_COLLIDER_CAPSULE,
+	EASY_COLLIDER_CONVEX_HULL,
+} EasyColliderType;
+
+typedef struct {
+	EasyTransform *T;
+	EasyRigidBody *rb;
+
+	EasyColliderType type;
+
+	union {
+		struct {
+			float radius;
+		};
+		struct {
+			float capsuleRadius;
+			float capsuleLength;
+		};
+		struct {
+			V3 dim;
+		};
+	};
+} EasyCollider;
+
 	
 static inline EasyCollisionOutput EasyPhysics_SolveRigidBodies(EasyRigidBody *a_, EasyRigidBody *b_) {
 	EasyCollisionPolygon a = {};
