@@ -202,13 +202,9 @@ static inline void easyTerrain_renderTerrain(EasyTerrain *t, RenderGroup *g, Eas
 
 		packet->dim = c->dim;
 
-		//NOTE: This is immediate. Doesn't go into a Render Group. I don't know if this is a good thing???
-		// drawVao(&c->mesh, &terrainProgram, SHAPE_TERRAIN, 0, DRAWCALL_INSTANCED, 1, 0, g, &g->projectionTransform, packet);
-		g->dataPacket = packet;
-
 		setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), c->startP));
 		renderSetShader(globalRenderGroup, &terrainProgram);
-		renderTerrain(g, &c->mesh, COLOR_WHITE, ma);
+		renderTerrain(g, &c->mesh, COLOR_WHITE, ma, packet);
 	}
 }
 

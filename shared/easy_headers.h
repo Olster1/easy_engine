@@ -39,6 +39,8 @@ static char* globalExeBasePath;
 #include "easy_tweaks.h"
 #include "easy_particle_effects.h"
 #include "easy_string_compile.h"
+// #include "easy_skeleton.h"
+
 
 
 #include "easy_os.h"
@@ -48,5 +50,7 @@ static char* globalExeBasePath;
 #include "easy_texture_atlas.h"
 #include "easy_ui.h"
 #include "easy_console.h"
+#include "easy_flash_text.h"
+
 #include "easy_write.h"
 #include "easy_asset_loader.h"

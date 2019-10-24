@@ -134,6 +134,14 @@ static inline EasySkeleton_AnimationState *easySkeleton_pushState(EasySkeleton_C
 	return newState;
 }
 
+static inline easySkeleton_isAnimationFinished(EasySkeleton_AnimationState *state) {
+	bool result = state->tAt >= state->clip->duration;
+	if(state->playbackSpeed < 0.0f) {
+		result = state->tAt < 0.0f;
+	} 
+	return result;
+}
+
 static inline EasySkeleton_MatrixPalette easySkeleton_buildSkinningPalette(EasySkeleton_Controller *contoller, float dt) {
 	EasySkeleton *s = contoller->skeleton;
 
@@ -218,12 +226,12 @@ static inline EasySkeleton_MatrixPalette easySkeleton_buildSkinningPalette(EasyS
 		//update animation states. Do we want this in a seperate function? Probably
 		EasySkeleton_AnimationState *state = contoller->states;
 		while(state) {
-			state->tAt += dt;
-			if(state->tAt >= state->clip->duration) {
+			state->tAt += state->playbackSpeed*dt;
+			if(easySkeleton_isAnimationFinished(state)) { //have this for negative playback speeds
 
 				if(state->loop) {
 					//go back to start
-					state->tAt = state->tAt - state->clip->duration;
+					state->tAt = state->tAt - signOf(state->playbackSpeed)*state->clip->duration;
 				} else {
 					assert(state->activeStateCount > 0);
 					state->activeStateCount--;

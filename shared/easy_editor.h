@@ -23,6 +23,7 @@ while(running) {
 
 */
 
+
 #define EASY_EDITOR_MARGIN 10
 #define EASY_EDITOR_MIN_TEXT_FIELD_WIDTH 100
 
@@ -48,8 +49,26 @@ typedef struct {
 	InputBuffer buffer;
 } EasyEditorTextField;
 
+
+typedef struct {
+	EasyEditorId id;	
+	
+	V2 coord;
+	float value; //side bar of black to white
+} EasyEditorColorSelection;
+
+typedef enum  {
+		EASY_EDITOR_INTERACT_NULL,
+		EASY_EDITOR_INTERACT_WINDOW,
+		EASY_EDITOR_INTERACT_TEXT_FIELD,
+		EASY_EDITOR_INTERACT_COLOR_WHEEL,
+		EASY_EDITOR_INTERACT_BUTTON,
+} EasyEditorInteractType;
+
 typedef struct {
 	EasyEditorId id;
+
+	EasyEditorInteractType type;
 	void *item;
 	bool visitedThisFrame;
 
@@ -66,6 +85,9 @@ typedef struct {
 
 	int textFieldCount;
 	EasyEditorTextField textFields[64];
+
+	int colorSelectionCount;
+	EasyEditorColorSelection colorSelections[16];
 
 	Font *font;
 
@@ -98,7 +120,15 @@ static inline EasyEditorId easyEditor_getNullId() {
 }
 
 static inline void easyEditor_stopInteracting(EasyEditor *e) {
+
+	if(e->interactingWith.type == EASY_EDITOR_INTERACT_TEXT_FIELD) {
+		EasyEditorTextField *field = (EasyEditorTextField *)e->interactingWith.item;
+
+		field->buffer.length = 0;
+		field->buffer.cursorAt = 0;
+	}
 	e->interactingWith.item = 0;
+	e->interactingWith.type = EASY_EDITOR_INTERACT_NULL;
 	e->interactingWith.id = easyEditor_getNullId();
 }
 
@@ -123,12 +153,13 @@ static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Font
 
 
 
-static inline void easyEditor_startInteracting(EasyEditor *e, void *item, int lineNumber, char *fileName, int index) {
+static inline void easyEditor_startInteracting(EasyEditor *e, void *item, int lineNumber, char *fileName, int index, EasyEditorInteractType type) {
 	e->interactingWith.item = item;
 	e->interactingWith.id.lineNumber = lineNumber;
 	e->interactingWith.id.fileName = fileName;
 	e->interactingWith.id.index = index;
 	e->interactingWith.visitedThisFrame = true;
+	e->interactingWith.type = type;
 }
 
 static inline bool easyEditor_idEqual(EasyEditorId id, int lineNumber, char *fileName, int index) {
@@ -170,6 +201,34 @@ static inline EasyEditorTextField *easyEditor_addTextField(EasyEditor *e, int li
 
 		t->buffer.length = 0;
 		t->buffer.cursorAt = 0;
+
+	}
+	return t;
+}
+
+static inline EasyEditorColorSelection *easyEditor_hasColorSelector(EasyEditor *e, int lineNumber, char *fileName, int index) {
+	EasyEditorColorSelection *result = 0;
+	for(int i = 0; i < e->colorSelectionCount && !result; ++i) {
+		EasyEditorColorSelection *t = e->colorSelections + i;
+		if(easyEditor_idEqual(t->id, lineNumber, fileName, index)) {
+			result = t;
+			break;
+		}
+	}
+	return result;
+}
+
+static inline EasyEditorColorSelection *easyEditor_addColorSelector(EasyEditor *e, int lineNumber, char *fileName, int index) {
+	EasyEditorColorSelection *t = easyEditor_hasColorSelector(e, lineNumber, fileName, index);
+	if(!t) {
+		assert(e->colorSelectionCount < arrayCount(e->colorSelections));
+		t = &e->colorSelections[e->colorSelectionCount++];
+		t->id.lineNumber = lineNumber;
+		t->id.fileName = fileName;
+		t->id.index = index;
+
+		t->coord = v2(0, 0);
+		t->value = 1.0f;
 
 	}
 	return t;
@@ -223,7 +282,7 @@ static inline void easyEditor_endWindow(EasyEditor *e) {
 	if(inBounds(e->keyStates->mouseP, rect, BOUNDS_RECT) && !e->interactingWith.item) {
 		color = COLOR_YELLOW;
 		if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
-			easyEditor_startInteracting(e, w, lineNumber, fileName, 0);
+			easyEditor_startInteracting(e, w, lineNumber, fileName, 0, EASY_EDITOR_INTERACT_WINDOW);
 
 			e->interactingWith.dragOffset = v2_minus(e->keyStates->mouseP, w->topCorner);
 		} 
@@ -292,7 +351,7 @@ static inline bool easyEditor_pushButton_(EasyEditor *e, char *name, int lineNum
 				//NOTE: Clicking on a different cell will swap it
 				easyEditor_stopInteracting(e);	
 			}
-			easyEditor_startInteracting(e, &e->bogusItem, lineNumber, fileName, 0);
+			easyEditor_startInteracting(e, &e->bogusItem, lineNumber, fileName, 0, EASY_EDITOR_INTERACT_BUTTON);
 		} 
 	}
 
@@ -344,7 +403,11 @@ static inline Rect2f easyEditor_renderFloatBox_(EasyEditor *e, float *f, int lin
 		sprintf(field->buffer.chars, "%f", *f); 
 	} 
 
-	Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, field->buffer.chars, w->margin, COLOR_BLACK, 1, true, e->screenRelSize);
+	char *string = field->buffer.chars;
+	if(strlen(string) == 0) {
+		string = " ";
+	}
+	Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, string, w->margin, COLOR_BLACK, 1, true, e->screenRelSize);
 	if(getDim(bounds).x < EASY_EDITOR_MIN_TEXT_FIELD_WIDTH) {
 		bounds.maxX = bounds.minX + EASY_EDITOR_MIN_TEXT_FIELD_WIDTH;
 	}
@@ -359,7 +422,7 @@ static inline Rect2f easyEditor_renderFloatBox_(EasyEditor *e, float *f, int lin
 				//NOTE: Clicking on a different cell will swap it
 				easyEditor_stopInteracting(e);	
 			}
-			easyEditor_startInteracting(e, field, lineNumber, fileName, index);
+			easyEditor_startInteracting(e, field, lineNumber, fileName, index, EASY_EDITOR_INTERACT_TEXT_FIELD);
 		} 
 	}
 
@@ -452,3 +515,71 @@ static inline void easyEditor_endEditorForFrame(EasyEditor *e) {
 	e->interactingWith.visitedThisFrame = false;
 	
 }
+
+
+#define easyEditor_pushColor(e, name, color) easyEditor_pushColor_(e, name, color, __LINE__, __FILE__)
+static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, int lineNumber, char *fileName) {
+	EasyEditorWindow *w = e->currentWindow;
+	assert(w);
+
+	EasyEditorColorSelection *field = easyEditor_addColorSelector(e, lineNumber, fileName, 0);
+
+	Rect2f rect = rect2f(0, 0, 30, 10);
+	if(name && strlen(name) > 0) {
+		rect = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, name, w->margin, COLOR_WHITE, 1, true, e->screenRelSize);
+		w->at.x += getDim(rect).x + 3*EASY_EDITOR_MARGIN;
+	}
+
+	float advanceY = 0;
+	if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, 0)) {
+
+		e->interactingWith.visitedThisFrame = true;
+		assert(field == (EasyEditorColorSelection *)e->interactingWith.item);
+		if(wasPressed(e->keyStates->gameButtons, BUTTON_ENTER)) {
+			easyEditor_stopInteracting(e);
+		}
+
+		V2 dim = v2(150, 150);
+		V3 center = v3(w->at.x + 0.5f*dim.x, w->at.y + 0.5f*dim.y, 1);
+		
+		renderColorWheel(center, dim, 1.0f,mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix, mat4());
+
+
+		advanceY = dim.y + e->font->fontHeight;
+
+	} else {
+		V2 at = v2_minus(w->at, v2(0, getDim(rect).y));
+		Rect2f bounds = rect2fMinDimV2(at, getDim(rect));
+		renderDrawRect(bounds, 2, *color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+		w->at.x += getDim(bounds).x;
+
+		advanceY = getDim(bounds).y;
+
+		if(inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT)) {
+			if(!e->interactingWith.item) {
+				// color = COLOR_YELLOW;	
+			}
+			
+			if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+				if(e->interactingWith.item) {
+					//NOTE: Clicking on a different cell will swap it
+					easyEditor_stopInteracting(e);	
+				}
+				//update the field we are interacting with
+				easyEditor_startInteracting(e, field, lineNumber, fileName, 0, EASY_EDITOR_INTERACT_COLOR_WHEEL);
+			} 
+		}
+
+
+	}
+	
+
+	if(w->maxX < w->at.x) {
+		w->maxX = w->at.x;
+	}
+
+	w->at.x = w->topCorner.x;
+	w->at.y += advanceY + EASY_EDITOR_MARGIN;
+}
+
+

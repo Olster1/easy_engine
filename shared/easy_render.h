@@ -111,6 +111,9 @@ RenderProgram textureProgram;
 RenderProgram skyQuadProgram;
 RenderProgram terrainProgram;
 RenderProgram toneMappingProgram;
+RenderProgram blurProgram;
+RenderProgram colorWheelProgram;
+
 
 typedef struct {
     V3 pos;
@@ -178,6 +181,7 @@ typedef enum {
     SHAPE_CIRCLE,
     SHAPE_LINE,
     SHAPE_BLUR,
+    SHAPE_COLOR_WHEEL,
 } ShapeType;
 
 typedef enum {
@@ -521,6 +525,15 @@ typedef struct {
     V3 dim;
 } EasyTerrainDataPacket;
 
+
+typedef struct {
+    u32 mainBufferTexId;
+    u32 bloomBufferTexId;
+
+    float exposure;
+} EasyRender_ToneMap_Bloom_DataPacket;
+
+
 typedef struct {
     Vertex *triangleData;
     int triCount; 
@@ -690,8 +703,6 @@ typedef struct {
     Matrix4 cameraToWorldTransform;
     //
 
-    void *dataPacket;
-
     bool initied;
     
 } RenderGroup;
@@ -782,7 +793,7 @@ static inline void easyRender_disableScissors(RenderGroup *g) {
 static inline EasyLight *easy_makeLight(EasyTransform *T, EasyLightType type, float brightness, V3 color) {
     EasyLight *light = pushStruct(&globalLongTermArena, EasyLight);
 
-    light->T = T; //for drawing model & direction of light, could also effect rdius??
+    light->T = T; //for drawing model & direction of light, could also effect radius??
 
     light->type = type;
     light->brightness = brightness;
@@ -881,7 +892,7 @@ void renderSetViewPort(float x0, float y0, float x1, float y1) {
     glViewport(x0, y0, x1, y1);
 }
 
-void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material) {
+RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material) {
     assert(group->initied);
         
     int scissorId = -1;
@@ -956,6 +967,8 @@ void pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData
     info->pMat = pMat;
     info->vMat = vMat;
     info->mMat = mMat;
+
+    return info;
 }
 
 void easyRender_pushScissors(RenderGroup *g, Rect2f rect, float zAt, Matrix4 offsetTransform, Matrix4 viewToClipMatrix, V2 viewPort) {
@@ -1377,6 +1390,13 @@ void enableRenderer(int width, int height, Arena *arena) {
 
     toneMappingProgram = createProgramFromFile(vertex_fullscreen_quad_shader, frag_tone_map_shader, false);
     renderCheckError();
+
+    blurProgram = createProgramFromFile(vertex_fullscreen_quad_shader, frag_blur_shader, false);
+    renderCheckError();
+
+    colorWheelProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, frag_color_wheel_shader, false);
+    renderCheckError();
+    
     
 #endif
 
@@ -1416,6 +1436,12 @@ GLuint renderLoadTexture(int width, int height, void *imageData, RenderTextureFl
     renderCheckError();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     renderCheckError();
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    renderCheckError();
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    renderCheckError();
+    
     
     GLenum pixelType = GL_UNSIGNED_BYTE;
     GLenum internalFormat = GL_RGBA8;
@@ -1450,7 +1476,14 @@ typedef struct {
     GLuint textureIds[RENDER_MAX_COLOR_ATTACHMENTS];
     GLuint depthId;
     int flags;
+
+    int width;
+    int height;
+
 } FrameBuffer;
+
+
+
 
 
 void renderReadPixels(u32 bufferId, int x0, int y0,
@@ -1510,9 +1543,14 @@ FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuff
         result.textureIds[result.colorBufferCount++] = renderLoadTexture(width, height, 0, textureType);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + cIndex, GL_TEXTURE_2D, result.textureIds[cIndex], 0);
         renderCheckError();
-        // glBindFramebuffer(GL_FRAMEBUFFER, frameBufferHandle);
-        // renderCheckError();
+        
     }
+
+    if(numColorBuffers > 1) {
+        unsigned int attachments[RENDER_MAX_COLOR_ATTACHMENTS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2};
+        glDrawBuffers(numColorBuffers, attachments);    
+    }
+     
     
     if(flags & FRAMEBUFFER_DEPTH) {
         glGenTextures(1, &depthId);
@@ -1540,6 +1578,8 @@ FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuff
     
     result.bufferId = frameBufferHandle;
     result.depthId = depthId; 
+    result.width = width;
+    result.height = height;
     
     return result;
 }
@@ -1746,8 +1786,9 @@ static inline void renderMesh(RenderGroup *group, EasyMesh *mesh, V4 colorTint, 
 
 }
 
-static inline void renderTerrain(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material) {
-    pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, &terrainProgram, SHAPE_TERRAIN, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+static inline void renderTerrain(RenderGroup *group, VaoHandle *bufferHandle, V4 colorTint, EasyMaterial *material, void *packet) {
+    RenderItem * i = pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, &terrainProgram, SHAPE_TERRAIN, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+    i->dataPacket = packet; 
 }
 
 static inline void renderModel(RenderGroup *group, EasyModel *model, V4 colorTint) {  
@@ -1874,6 +1915,7 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
     }
 }
 
+
 void easy_BindTexture(char *uniformName, int slotId, GLint textureId, RenderProgram *program) {
 
     // GLint texUniform = getUniformFromProgram(program, uniformName).handle;
@@ -1891,6 +1933,72 @@ void easy_BindTexture(char *uniformName, int slotId, GLint textureId, RenderProg
     renderCheckError();
 }
 
+static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, int colorAttachementId) {
+    int blurCount = 10;
+    float horizontal = 0.0f;
+
+#if OPENGL_BACKEND
+    glUseProgram(blurProgram.glProgram);
+    renderCheckError();
+
+    initVao(&globalFullscreenQuadVaoHandle, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData));
+    
+    glBindVertexArray(globalFullscreenQuadVaoHandle.vaoHandle);
+    renderCheckError();
+
+    glDepthFunc(GL_ALWAYS);
+    
+    ////if the buffer is goim to blurred we can cache this
+    FrameBuffer tempBuffer =  createFrameBuffer(src->width, src->height, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+
+    for (int i = 0; i < blurCount; ++i)
+    {
+        GLuint texId = 0;
+        if(i % 2) {
+            glBindFramebuffer(GL_FRAMEBUFFER, dest->bufferId); 
+            renderCheckError();
+            texId = tempBuffer.textureIds[0];
+            horizontal = 1.0f;
+        } else {
+            assert(i != (blurCount - 1));
+            glBindFramebuffer(GL_FRAMEBUFFER, tempBuffer.bufferId); 
+            renderCheckError();
+            if(i == 0) {
+                //first time we get the texture from the src
+                texId = src->textureIds[colorAttachementId];    
+            } else {
+                texId = dest->textureIds[0];
+            }
+            
+            horizontal = 0.0f;
+        }
+
+        glUniform1f(glGetUniformLocation(blurProgram.glProgram, "horizontal"),  horizontal);
+        renderCheckError();
+
+        easy_BindTexture("image", 1, texId, &blurProgram);
+
+        glDrawElements(GL_TRIANGLES, globalFullscreenQuadVaoHandle.indexCount, GL_UNSIGNED_INT, 0); 
+        renderCheckError();
+    }
+
+    glDepthFunc(GL_LESS);
+
+    glBindVertexArray(0);
+    renderCheckError();    
+
+    glUseProgram(0);
+    renderCheckError();
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0); 
+    deleteFrameBuffer(&tempBuffer);
+
+
+#endif
+
+}
+
+
 static V2 globalBlurDir = {};
 void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, DrawCallType drawCallType, int instanceCount, EasyMaterial *material, RenderGroup *group, Matrix4 *projectionTransform, void *dataPacket) {
     
@@ -1907,6 +2015,15 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     glBindBuffer(GL_ARRAY_BUFFER, bufferHandles->vboHandle);
     renderCheckError();
 #endif
+
+    if(type == SHAPE_COLOR_WHEEL) {
+        // EasyColorWheelPacket *packet = (EasyColorWheelPacket *)dataPacket;
+        glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
+        renderCheckError();
+        glUniform1f(glGetUniformLocation(program->glProgram, "value"),  1.0f);
+        renderCheckError();
+    }
+
 
     if(type == SHAPE_TERRAIN) {
         EasyTerrainDataPacket *packet = (EasyTerrainDataPacket *)dataPacket;
@@ -1941,7 +2058,7 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         glUniform4f(glGetUniformLocation(program->glProgram, "skyColor"),  globalSkyColor.x, globalSkyColor.y, globalSkyColor.z, globalSkyColor.w);
         renderCheckError();
 
-        glUniform3f(glGetUniformLocation(program->glProgram, "eyePos"),  group->eyePos.x, group->eyePos.y, group->eyePos.z);
+        glUniform3f(glGetUniformLocation(program->glProgram, "eyePos"),  0, 0, 0);
         renderCheckError();
 
         V3 direction = easyTransform_getZAxis(group->lights[0]->T);
@@ -1991,13 +2108,17 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     }
 
     if(type == SHAPE_TONE_MAP) {
-
+            
+        EasyRender_ToneMap_Bloom_DataPacket *bloomPacket = (EasyRender_ToneMap_Bloom_DataPacket *)dataPacket;
         GLint exposureConstant = glGetUniformLocation(program->glProgram, "exposure"); 
         renderCheckError();
-        glUniform1f(exposureConstant, 1.0f);
+        glUniform1f(exposureConstant, bloomPacket->exposure);
         renderCheckError();
 
-        easy_BindTexture("tex", 1, textureId, program);
+        easy_BindTexture("tex", 1, bloomPacket->mainBufferTexId, program);
+        renderCheckError();
+
+        easy_BindTexture("bloom", 2, bloomPacket->bloomBufferTexId, program);
         renderCheckError();
     }
 
@@ -2083,64 +2204,18 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         
     }
 
-    if(type == SHAPE_TEXTURE || type == SHAPE_SHADOW || type == SHAPE_BLUR) {
+    if(type == SHAPE_TEXTURE) {
 
         easy_BindTexture("tex", 3, textureId, program);
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
         renderCheckError();
 
-        // GLint texUniform = getUniformFromProgram(program, "tex").handle;
-        // //GLint texUniform = glGetUniformLocation(programId, "tex");
-        // renderCheckError();
-        
-        // glUniform1i(texUniform, 3);
-        // renderCheckError();
-        // glActiveTexture(GL_TEXTURE3);
-        // renderCheckError();
-        
-        // // printf("texture id: %d\n", textureId);
-        // glBindTexture(GL_TEXTURE_2D, textureId); 
-        // renderCheckError();
-        
-        if(type == SHAPE_BLUR) {
-            //GLint directionUniform = glGetUniformLocation(programId, "dir");
-            GLint directionUniform = glGetUniformLocation(program->glProgram, "dir"); 
-            glUniform2f(directionUniform, globalBlurDir.x, globalBlurDir.y);
-        }
-        
-        if(type == SHAPE_SHADOW) {
-            // GLint fboWidthUniform = glGetUniformLocation(programId, "fboWidth");
-            // glUniform1f(fboWidthUniform, );
-            //Lighting info stuff
-            // //light count 
-            // GLint lightCountUniform = glGetUniformLocation(programId, "lightCount");
-            // renderCheckError();
-            
-            // glUniform1i(lightCountUniform, globalLightInfoCount);
-            // renderCheckError();
-            
-            // //lights
-            // GLint lightPosUniform = glGetUniformLocation(programId, "lightsPos");
-            // renderCheckError();
-            
-            // glUniform1fv(lightPosUniform, globalLightInfoCount*3, globalLightInfos);
-            // renderCheckError();    
-        }
-        
-    } else if(type == SHAPE_LINE || type == SHAPE_CIRCLE) {
-        // GLint percentUniform = getUniformFromProgram(program, "percentY").handle;
-        GLint percentUniform = glGetUniformLocation(program->glProgram, "percentY");
-        renderCheckError();
-    }
-    
+    } 
     
     if(drawCallType == DRAWCALL_SINGLE) {
         glDrawElements(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0); 
         renderCheckError();
     } else if(drawCallType == DRAWCALL_INSTANCED) {
-        // if(program == &rectangleProgram) {
-            // printf("%s\n", "isQuad");
-        // }
         
         glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
         renderCheckError();
@@ -2162,11 +2237,6 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     
 }
 
-void renderBlitQuad(RenderGroup *group, u32 textureId) {
-    Texture onStack = {};
-    onStack.id = textureId;
-    pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, SHAPE_TONE_MAP, &onStack, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0);
-}
 
 void renderDrawBillBoardQuad(RenderGroup *group, EasyMaterial *material, V4 colorTint, V3 scale, V3 upAxis, V3 pos, V3 eyePos) {
     V3 direction = v3_minus(eyePos, pos);
@@ -2277,6 +2347,12 @@ void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float
     V4 colors[4] = {color, color, color, color}; 
     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix);
 }
+
+void renderColorWheel(V3 center, V2 dim, float value, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
+    V4 colors[4]; 
+    renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix);
+}
+
 
 // void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot) {
 //     V4 colors[4] = {color, color, color, color}; 
@@ -2424,6 +2500,7 @@ static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items)
     if(items->count > 0) {
         
         RenderItem *info = (RenderItem *)getElementFromAlloc_(items, 0);
+
         glBindFramebuffer(GL_FRAMEBUFFER, info->bufferId);
         renderCheckError();
         
@@ -2501,7 +2578,7 @@ static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items)
         createBufferStorage2(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
 
         {
-            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, items->count, info->material, group, &info->pMat, group->dataPacket);
+            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, items->count, info->material, group, &info->pMat, info->dataPacket);
             drawCallCount++;
             
         }
@@ -2515,6 +2592,12 @@ static inline void easyRender_EndBatch(EasyRenderBatch *b) {
     assert(b->items.sizeOfMember > 0);
     memset(b->items.memory, 0, b->items.totalCount*b->items.sizeOfMember);
     b->items.count = 0;
+}
+
+void renderBlitQuad(RenderGroup *group, void *packet) {
+    //TODO This is a hack. 
+    RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, SHAPE_TONE_MAP, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0);
+    i->dataPacket = packet;
 }
 
 void drawRenderGroup(RenderGroup *group) {

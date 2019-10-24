@@ -24,6 +24,8 @@ typedef struct {
 	EasyTokenizer tokenizer;
 } EasyConsole;
 
+static EasyConsole *DEBUG_globalEasyConsole;
+
 inline void easyConsole_initConsole(EasyConsole *c, ButtonType hotkey) {
 	c->hotkey = hotkey;
 	c->state = EASY_CONSOLE_CLOSED;
@@ -79,6 +81,19 @@ inline void easyConsole_addToStream(EasyConsole *c, char *toAdd) {
 
 		
 	}
+}
+
+
+static inline void easyConsole_pushFloat(EasyConsole *c, float i) {
+	char buf[32];
+	sprintf(buf, "%f", i);
+	easyConsole_addToStream(c, buf);
+}
+
+static inline void easyConsole_pushInt(EasyConsole *c, int i) {
+	char buf[32];
+	sprintf(buf, "%d", i);
+	easyConsole_addToStream(c, buf);
 }
 
 inline void easyConsole_setHotKey(EasyConsole *c, ButtonType hotkey) {

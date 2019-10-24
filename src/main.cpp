@@ -45,7 +45,9 @@ int main(int argc, char *args[]) {
         globalDebugFont = initFont(fontName1, 32);
         ///
         FrameBuffer mainFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL | FRAMEBUFFER_HDR, 2);
-        FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, 0, 1);
+        FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR, 1);
+
+        FrameBuffer bloomFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
         
         bool hasBlackBars = true;
         bool running = true;
@@ -149,6 +151,8 @@ int main(int argc, char *args[]) {
         EasyConsole console = {};
         easyConsole_initConsole(&console, BUTTON_TILDE);
 
+        DEBUG_globalEasyConsole = &console;
+
         float x[20] = {};
         float y[20] = {};
 
@@ -191,6 +195,8 @@ int main(int argc, char *args[]) {
 
         EasyEditor *editor = pushStruct(&globalLongTermArena, EasyEditor);
         easyEditor_initEditor(editor, globalRenderGroup, &globalDebugFont, OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y), resolution, appInfo.screenRelativeSize, &keyStates);
+
+        easyFlashText_initManager(&globalFlashTextManager, &mainFont, resolution, appInfo.screenRelativeSize);
 
         EasyTransform T;
         easyTransform_initTransform(&T, v3(0, 0, 0));
@@ -343,7 +349,7 @@ int main(int argc, char *args[]) {
             // renderDisableCulling(globalRenderGroup);
             // renderDrawBillBoardQuad(globalRenderGroup,  &flowerMaterial, COLOR_WHITE, v3(10, 10, 10), v3(0, 1, 0), v3(0, 0, 0), camera.pos);
             // renderEnableCulling(globalRenderGroup);
-           
+           static bool blur = false;
             if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
                 EasyToken token = easyConsole_getNextToken(&console);
                 if(token.type == TOKEN_WORD) {
@@ -372,6 +378,8 @@ int main(int argc, char *args[]) {
                         debug_IsFlyMode = !debug_IsFlyMode;
                     } else if(stringsMatchNullN("bounds", token.at, token.size)) {
                         DEBUG_drawBounds = !DEBUG_drawBounds;
+                    } else if(stringsMatchNullN("blur", token.at, token.size)) {
+                        blur = !blur;
                     } else {
                         easyConsole_parseDefault(&console);
                     }
@@ -381,6 +389,7 @@ int main(int argc, char *args[]) {
             }
 
 
+            static float exposureTerm = 1.0f;
             if(inEditor) {
                 easyEditor_startWindow(editor, "Lister Panel");
                 
@@ -389,9 +398,14 @@ int main(int argc, char *args[]) {
                 easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
                 easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
 
+                easyEditor_pushFloat1(editor, "Exposure:", &exposureTerm);
+static V4 color = COLOR_RED;
+                easyEditor_pushColor(editor, "Color: ", &color);
+
                 static bool saveLevel = false;
                 if(easyEditor_pushButton(editor, "Save Level")) {
                     saveLevel = !saveLevel;
+                     easyFlashText_addText(&globalFlashTextManager, "SAVED!");
                 }
 
                 if(saveLevel) {
@@ -406,6 +420,7 @@ int main(int argc, char *args[]) {
                 easyEditor_endEditorForFrame(editor);
             }
 
+            easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
 
             //a.T->pos = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
             //Matrix4 m = mat4_angle_aroundZ(1.28);
@@ -436,10 +451,24 @@ int main(int argc, char *args[]) {
             //////
             drawRenderGroup(globalRenderGroup);
 
+            easyRender_blurBuffer(&mainFrameBuffer, &bloomFrameBuffer, 1);
+
+            // Texture t = {};
+            // t.id = bloomFrameBuffer.textureIds[0];
+            // t.width = bloomFrameBuffer.width;
+            // t.height = bloomFrameBuffer.height;
+            // renderTextureCentreDim(&t, v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
 
             clearBufferAndBind(toneMappedBuffer.bufferId, COLOR_YELLOW, toneMappedBuffer.flags, &postProcessRenderGroup); 
             renderSetShader(&postProcessRenderGroup, &toneMappingProgram);
-            renderBlitQuad(&postProcessRenderGroup, mainFrameBuffer.textureIds[0]);
+            
+            EasyRender_ToneMap_Bloom_DataPacket *packet = pushStruct(&globalPerFrameArena, EasyRender_ToneMap_Bloom_DataPacket);
+            packet->mainBufferTexId = mainFrameBuffer.textureIds[0];
+            packet->bloomBufferTexId = bloomFrameBuffer.textureIds[0];
+
+            packet->exposure = exposureTerm;
+
+            renderBlitQuad(&postProcessRenderGroup, packet);
 
             drawRenderGroup(&postProcessRenderGroup);
             

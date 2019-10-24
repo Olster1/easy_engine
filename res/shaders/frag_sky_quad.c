@@ -1,5 +1,6 @@
 in vec3 direction_frag; 
 out vec4 color;
+out vec4 BrightColor;
 
 uniform vec4 skyColor;
 uniform vec3 eyePos;
@@ -94,8 +95,8 @@ void main (void) {
 
     vec4 tempColor = skyColor;
     float tVal = dot(-normalize(sunDirection), direction_frag_norm);
-    if(tVal > 0.999f) {
-    	tempColor = mix(tempColor, vec4(1, 1, 0, 1), smoothstep(0, 1, tVal));
+    if(tVal > 0.9999f) {
+    	tempColor = vec4(10000, 10000, 10000, 1);//mix(tempColor, vec4(1, 1, 0, 1), smoothstep(0, 1, tVal));
 
     }
     vec4 colorOfSky = mix(tempColor, vec4(1, 1, 1, 1), pow(1.0f - max(direction_frag_norm.y, 0.0f), 3));
@@ -147,4 +148,10 @@ void main (void) {
     
     vec3 cloudColor = vec3(1.5) + cloudContrubtion;
     color = mix(colorOfSky, vec4(cloudColor, 1.0f), blendFactor);
+
+    float brightness = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    if(brightness > 1.0)
+        BrightColor = vec4(color.rgb, 1.0);
+    else
+        BrightColor = vec4(0.0, 0.0, 0.0, 1.0);
 }
