@@ -1,7 +1,7 @@
 #define PI32 3.14159265359
 #define RENDER_HANDNESS 1 //positive is left hand handess -> z going into the screen. 
-#define NEAR_CLIP_PLANE 1.0f
-#define FAR_CLIP_PLANE 100.0f
+#define NEAR_CLIP_PLANE 0.1f
+#define FAR_CLIP_PLANE 1000.0f
 
 #define PRINT_NUMBER_DRAW_CALLS 0
 
@@ -44,7 +44,7 @@ FUNC(ORTHO_MATRIX) \
 
 static bool globalImmediateModeGraphics = false;
 
-static V4 globalSkyColor = v4(0.4f, 0.6f, 1.0f, 1.0f);
+static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
 
 
 #if DEVELOPER_MODE
@@ -191,6 +191,7 @@ typedef enum {
 
 typedef enum {
     BLEND_FUNC_STANDARD,
+    BLEND_FUNC_STANDARD_NO_PREMULTIPLED_ALPHA,
     BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA, 
 } BlendFuncType;
 
@@ -662,6 +663,8 @@ typedef struct {
     BlendFuncType blendFuncType;
 
     bool cullingEnabled;
+
+    Matrix4 pMat;
     
     VaoHandle *bufferHandles;
 } EasyRender_BatchQuery;
@@ -696,6 +699,8 @@ typedef struct {
     EasyLight *lights[EASY_MAX_LIGHT_COUNT];
     EasySkyBox *skybox;
     int lightCount;
+
+    bool useSkyBox;
 
     //NOTE: This is for the sky quad
     float fov;
@@ -740,7 +745,9 @@ static inline bool easyRender_canItemBeBatched(RenderItem *i, EasyRender_BatchQu
         i->type == j->type && 
         i->bufferId == j->bufferId &&
         i->depthTest == j->depthTest &&
-        i->blendFuncType == j->blendFuncType);
+        i->blendFuncType == j->blendFuncType &&
+        easyMath_mat4AreEqual(&i->pMat, &j->pMat));
+
 
     return result;
 
@@ -811,6 +818,8 @@ void initRenderGroup(RenderGroup *group) {
     assert(!group->initied);
     group->currentDepthTest = true;
     group->blendFuncType = BLEND_FUNC_STANDARD;
+
+    group->useSkyBox = false;
     
     group->currentShader = 0;
     group->modelTransform = mat4();
@@ -838,6 +847,18 @@ void initRenderGroup(RenderGroup *group) {
 
         easy3d_initMaterial(&globalWhiteMaterial);
     } 
+}
+
+static inline void renderClearDepthBuffer(u32 frameBufferId) {
+    glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)frameBufferId); 
+    
+    glClearDepthf(1.0f);
+    renderCheckError();
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+    renderCheckError();
+    
+    
 }
 
 void renderSetShader(RenderGroup *group, RenderProgram *shader) {
@@ -905,10 +926,20 @@ RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *trian
     query.program = program; 
     query.type = type;
     if(texture) {
-        query.textureHandle = texture->id;    
+        query.textureHandle = texture->id;
+        assert(query.textureHandle > 0);    
     } else {
         query.textureHandle = 0; //no Texture
+        if(type == SHAPE_RECTANGLE) {
+            query.program = &textureProgram;
+            query.type = SHAPE_TEXTURE; 
+
+            assert(globalWhiteTextureInited);
+            query.textureHandle = globalWhiteTexture.id;
+        } 
+        
     }
+    query.pMat = pMat;
     query.material = material;
     query.scissorId = scissorId;
     query.bufferId = group->currentBufferId;
@@ -1446,7 +1477,7 @@ GLuint renderLoadTexture(int width, int height, void *imageData, RenderTextureFl
     GLenum pixelType = GL_UNSIGNED_BYTE;
     GLenum internalFormat = GL_RGBA8;
     if(flags & RENDER_TEXTURE_HDR) {
-        pixelType = GL_FLOAT; //NOTE: I'm not this does anything since we normally aren't passing in any iamge data for this function
+        pixelType = GL_FLOAT; //NOTE: I'm not sure this does anything since we normally aren't passing in any iamge data for this function
         internalFormat = GL_RGBA16F; //NOTE: Out HDR buffer
     } 
 
@@ -1662,6 +1693,12 @@ static inline void clearBufferAndBind(GLuint frameBufferId, V4 color, int flags,
    
     glClear(clearFlags); 
     renderCheckError();
+}
+
+static inline void renderSetFrameBuffer(GLuint frameBufferId, RenderGroup *g) {
+    if(g) {
+        setFrameBufferId(g, frameBufferId);
+    }
 }
 
 typedef enum {
@@ -2540,6 +2577,10 @@ static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items)
                 glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
                 renderCheckError();
             } break;
+            case BLEND_FUNC_STANDARD_NO_PREMULTIPLED_ALPHA: {
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                renderCheckError();
+            } break;
             default: {
                 assert(!"case not handled");
             }
@@ -2594,29 +2635,81 @@ static inline void easyRender_EndBatch(EasyRenderBatch *b) {
     b->items.count = 0;
 }
 
+int cmpDepthfunc (const void * a, const void * b) {
+    EasyRenderBatch *a1 = *(EasyRenderBatch **)a;
+    EasyRenderBatch *b1 = *(EasyRenderBatch **)b;
+
+    RenderItem *i = (RenderItem *)getElementFromAlloc_(&a1->items, 0);
+    RenderItem *j = (RenderItem *)getElementFromAlloc_(&b1->items, 0);
+   return ( i->zAt < j->zAt);
+}
+
 void renderBlitQuad(RenderGroup *group, void *packet) {
     //TODO This is a hack. 
     RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, SHAPE_TONE_MAP, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0);
     i->dataPacket = packet;
 }
 
-void drawRenderGroup(RenderGroup *group) {
+typedef enum {
+    RENDER_DRAW_DEFAULT = 1 << 0,
+    RENDER_DRAW_SORT = 1 << 1,
+} RenderDrawSettings;
+
+void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
     // sortItems(group);
 
     int drawCallCount = 0;
 
     render_enableCullFace();
     
-    for(int i = 0; i < RENDER_BATCH_HASH_COUNT; ++i) {
-        if(group->batches[i]) {
-            EasyRenderBatch *b = group->batches[i];
-            while(b) {
-                drawCallCount += easyRender_DrawBatch(group, &b->items);
-                easyRender_EndBatch(b);
-                
-                b = b->next;    
+    if(settings == RENDER_DRAW_DEFAULT) {
+        for(int i = 0; i < RENDER_BATCH_HASH_COUNT; ++i) {
+            if(group->batches[i]) {
+                EasyRenderBatch *b = group->batches[i];
+                while(b) {
+                    drawCallCount += easyRender_DrawBatch(group, &b->items);
+                    easyRender_EndBatch(b);
+                    
+                    b = b->next;    
+                }
             }
         }
+    } else if (settings == RENDER_DRAW_SORT) {
+
+        //NOTE(ol): Going to cache the groups in an array 
+        InfiniteAlloc renderBatches = initInfinteAlloc(EasyRenderBatch *);
+
+        //NOTE(Ol): get all the batches that need drawing
+        for(int i = 0; i < RENDER_BATCH_HASH_COUNT; ++i) {
+            if(group->batches[i]) {
+                EasyRenderBatch *b = group->batches[i];
+                while(b) {
+                    if(b->items.count) {
+                        EasyRenderBatch **result = (EasyRenderBatch **)addElementInifinteAlloc_(&renderBatches, 0);
+                        *result = b;
+                    }
+                                        
+                    b = b->next;    
+                }
+            }
+        }
+        //
+
+        //Sort the items
+        qsort(renderBatches.memory, renderBatches.count, sizeof(EasyRenderBatch *), cmpDepthfunc);
+        //
+
+        //Draw the render batches from z+ve big to z small
+        for(int i = 0; i < renderBatches.count; ++i) {
+            EasyRenderBatch *b = *((EasyRenderBatch **)getElementFromAlloc_(&renderBatches, i));
+            if(b) {
+                drawCallCount += easyRender_DrawBatch(group, &b->items);
+                easyRender_EndBatch(b);
+            }
+        }
+        ////
+
+        releaseInfiniteAlloc(&renderBatches);
     }
     
 
@@ -2626,7 +2719,7 @@ void drawRenderGroup(RenderGroup *group) {
     glCullFace(GL_FRONT);  
     glFrontFace(GL_CCW);  
 
-    if(group->skybox) {
+    if(group->skybox && group->useSkyBox) {
          glDepthFunc(GL_LEQUAL);
 #if USE_SKY_BOX
         if(!globalCubeMapVaoHandle.valid) {

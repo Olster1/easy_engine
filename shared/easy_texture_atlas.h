@@ -249,7 +249,7 @@ static inline void easyAtlas_drawAtlas(char *folderName, Arena *memoryArena, Inf
 		}
         
 		renderSetViewPort(0, 0, bufferDim.x, bufferDim.y);
-		drawRenderGroup(globalRenderGroup);
+		drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
         
 		glFlush();
 		printf("%s\n", "successfullly rendered group");

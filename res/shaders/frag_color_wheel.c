@@ -1,5 +1,6 @@
 out vec4 FragColor;
 in vec2 texUV_out;
+in vec4 colorOut;
 
 uniform float value;
 
@@ -67,10 +68,15 @@ void main (void) {
 
 	float saturation = length(localToOrigin);
 
-	if(saturation > 1.0f) {
-		discard;
-	}
+	vec4 color = hsvToRgb(hue, saturation, value);
 
-	// FragColor = vec4(xFlip.y, 0, 0, 1);//hsvToRgb(hue, saturation, value);
-	FragColor = hsvToRgb(hue, saturation, value);
+	float alphaVal = 1.0f;
+	if(saturation > 1.0f) {
+		// alphaVal = 0.0f;	
+		alphaVal = mix(1.0f, 0.0f, (saturation - 1.0f) / 0.01f);
+	} 
+
+	// alphaVal = max(fwidth(alphaVal), alphaVal);
+	
+	FragColor = vec4(color.r, color.g, color.b, alphaVal);
 }

@@ -265,7 +265,7 @@ static inline void easyEditor_endWindow(EasyEditor *e) {
 	assert(e->currentWindow);
 	EasyEditorWindow *w = e->currentWindow;
 	Rect2f bounds = rect2fMinMax(w->topCorner.x - EASY_EDITOR_MARGIN, w->topCorner.y - e->font->fontHeight, w->maxX + EASY_EDITOR_MARGIN, w->at.y); 
-	renderDrawRect(bounds, 3, COLOR_BLACK, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+	renderDrawRect(bounds, 5.1f, COLOR_BLACK, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
 
 	int lineNumber = w->id.lineNumber;
 	char *fileName = w->id.fileName;
@@ -426,7 +426,7 @@ static inline Rect2f easyEditor_renderFloatBox_(EasyEditor *e, float *f, int lin
 		} 
 	}
 
-	renderDrawRect(bounds, 2, color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+	renderDrawRect(bounds, 2.0f, color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
 
 	return bounds;
 }
@@ -530,6 +530,14 @@ static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, i
 		w->at.x += getDim(rect).x + 3*EASY_EDITOR_MARGIN;
 	}
 
+	V2 at = v2_minus(w->at, v2(0, getDim(rect).y));
+	Rect2f bounds = rect2fMinDimV2(at, getDim(rect));
+	renderDrawRect(bounds, 2, *color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+	w->at.x += getDim(bounds).x;
+
+	w->at.y += getDim(bounds).y;
+
+
 	float advanceY = 0;
 	if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, 0)) {
 
@@ -541,20 +549,23 @@ static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, i
 
 		V2 dim = v2(150, 150);
 		V3 center = v3(w->at.x + 0.5f*dim.x, w->at.y + 0.5f*dim.y, 1);
+			
+		//NOTE(ol): Take snapshot of state
+		BlendFuncType tempType = globalRenderGroup->blendFuncType;
+		//
+		//change to other type of blend
+		setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD_NO_PREMULTIPLED_ALPHA);
+		//
+		renderColorWheel(center, dim, 2.0f,mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix, mat4());
 		
-		renderColorWheel(center, dim, 1.0f,mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix, mat4());
-
+		//restore the state
+		setBlendFuncType(globalRenderGroup, tempType);
+		//
 
 		advanceY = dim.y + e->font->fontHeight;
 
 	} else {
-		V2 at = v2_minus(w->at, v2(0, getDim(rect).y));
-		Rect2f bounds = rect2fMinDimV2(at, getDim(rect));
-		renderDrawRect(bounds, 2, *color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
-		w->at.x += getDim(bounds).x;
-
-		advanceY = getDim(bounds).y;
-
+		
 		if(inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT)) {
 			if(!e->interactingWith.item) {
 				// color = COLOR_YELLOW;	

@@ -45,7 +45,7 @@ int main(int argc, char *args[]) {
         globalDebugFont = initFont(fontName1, 32);
         ///
         FrameBuffer mainFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL | FRAMEBUFFER_HDR, 2);
-        FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR, 1);
+        FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL, 1);
 
         FrameBuffer bloomFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
         
@@ -76,6 +76,8 @@ int main(int argc, char *args[]) {
         EasySkyBox *skybox = easy_makeSkybox(&skyboxImages);
 
         globalRenderGroup->skybox = skybox;
+
+        globalRenderGroup->useSkyBox = true;
 
         easy3d_loadMtl("models/low_poly_tree_model/tree_mtl.mtl");
         EasyModel treeModel = {};
@@ -203,6 +205,9 @@ int main(int argc, char *args[]) {
 
         bool inEditor = false;
 
+        float exposureTerm = 1.0f;
+        int toneMapId = 0;
+
 
         while(running) {
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
@@ -231,6 +236,7 @@ int main(int argc, char *args[]) {
             
             if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
                 inEditor = !inEditor;
+                easyEditor_stopInteracting(editor);
             }
 
 
@@ -262,10 +268,13 @@ int main(int argc, char *args[]) {
             }
             //
             //
+            // Texture tempTex = {};
+            // tempTex.id = 1;
+            // tempTex.uvCoords = rect2fMinMax(0, 0, 1, 1); 
             // light->direction.xyz = normalizeV3(easyMath_getZAxis(easy3d_getViewToWorld(&camera)));//
             // // printf("%s %f %f %f\n", "color: ", treeModel.meshes[1]->material->defaultAmbient.x, treeModel.meshes[1]->material->defaultAmbient.y, treeModel.meshes[1]->material->defaultAmbient.z);
             // renderDrawRectCenterDim(v3(100, 100, 1), v2(100, 100), COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-            // renderTextureCentreDim(findTextureAsset("path.png"), v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+            // renderTextureCentreDim(&tempTex, v3(400, 400, 1), v2(400, 400), COLOR_WHITE, 0, mat4(), mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
             ///Drawing here
             //outputText(&mainFont, 0.5f*resolution.x, 0.5f*resolution.y, 1, resolution, "hey there", rect2fMinMax(0, 0, 1000, 1000), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
             //What this is should be...size should be baked into the font. 
@@ -276,15 +285,11 @@ int main(int argc, char *args[]) {
             setProjectionTransform(globalRenderGroup, perspectiveMatrix);
 
             renderEnableDepthTest(globalRenderGroup);
-            // renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
-            // renderMesh(globalRenderGroup, &floorMesh, hexARGBTo01Color(0xFFCEFF74), &emptyMaterial);
 
             Matrix4 scaledIdentity = Matrix4_scale(identity, v3(1, 1, 1));
             setModelTransform(globalRenderGroup, scaledIdentity);
-            // renderModel(globalRenderGroup, &treeModel, COLOR_WHITE);
 
             renderDisableCulling(globalRenderGroup);
-                        // renderDrawBillBoardQuad(globalRenderGroup,  &flowerMaterial, COLOR_WHITE, v3(10, 10, 10), v3(0, 1, 0), v3(0, 0, 0), camera.pos);
             
 
             setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(1, 0, 1)));
@@ -313,114 +318,8 @@ int main(int argc, char *args[]) {
             easyTerrain_renderTerrain(terrain, globalRenderGroup, &emptyMaterial);
 
             renderEnableCulling(globalRenderGroup);
-            // setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(1, 0, 1)));
-            // renderModel(globalRenderGroup, &carrotModel, COLOR_WHITE);
 
-            // for(int i = 0; i < 20; ++i) {
-            //     setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(x[i], 0, y[i])));
-            //     renderModel(globalRenderGroup, &palmTree, COLOR_WHITE);
-            // }
-
-            // for(int i = 0; i < 20; ++i) {
-            //    setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(x1[i], 0, y1[i])));
-            //    renderModel(globalRenderGroup, &firTree, COLOR_WHITE);
-            // }
-
-
-            // setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(20, 0, 1)));
-            // renderModel(globalRenderGroup, &oakTree, COLOR_WHITE);
-
-            // setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(30, 0, 1)));
-            // renderModel(globalRenderGroup, &firTree, COLOR_WHITE);
-
-
-            // setModelTransform(globalRenderGroup,  Matrix4_scale(identity, v3(0.3, 0.3, 0.3)));
-            // renderModel(globalRenderGroup, &character, COLOR_WHITE);
-
-            // setModelTransform(globalRenderGroup, Matrix4_translate(Matrix4_scale(identity, v3(0.1f, 0.1f, 0.1f)), v3(7, 0, 10)));
-            // renderModel(globalRenderGroup, &tower, COLOR_WHITE);
-
-            // setModelTransform(globalRenderGroup, Matrix4_translate(Matrix4_scale(identity, v3(0.1f, 0.1f, 0.1f)), v3(7, 0, 1)));
-            // renderModel(globalRenderGroup, &ship, COLOR_WHITE);
-
-            // setModelTransform(globalRenderGroup, Matrix4_translate(scaledIdentity, v3(40, 0, 1)));
-            // renderModel(globalRenderGroup, &poplarTree, COLOR_WHITE);
-
-            // renderDisableCulling(globalRenderGroup);
-            // renderDrawBillBoardQuad(globalRenderGroup,  &flowerMaterial, COLOR_WHITE, v3(10, 10, 10), v3(0, 1, 0), v3(0, 0, 0), camera.pos);
-            // renderEnableCulling(globalRenderGroup);
-           static bool blur = false;
-            if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
-                EasyToken token = easyConsole_getNextToken(&console);
-                if(token.type == TOKEN_WORD) {
-                    if(stringsMatchNullN("camPower", token.at, token.size)) {
-                        token = easyConsole_seeNextToken(&console);
-                        if(token.type == TOKEN_FLOAT) {
-                            token = easyConsole_getNextToken(&console);
-                            cameraMovePower = token.floatVal;
-                        } else if(token.type == TOKEN_INTEGER) {
-                            token = easyConsole_getNextToken(&console);
-                            cameraMovePower = (float)token.intVal;    
-                        } else {
-                            easyConsole_addToStream(&console, "must pass a number");
-                        }
-                        
-                    } else if(stringsMatchNullN("wireframe", token.at, token.size)) {
-                        token = easyConsole_getNextToken(&console);
-                        if(stringsMatchNullN("on", token.at, token.size)) {
-                            DEBUG_drawWireFrame = true;
-                        } else if(stringsMatchNullN("off", token.at, token.size)) {
-                            DEBUG_drawWireFrame = false;
-                        } else {
-                            easyConsole_addToStream(&console, "parameter not understood");
-                        }
-                    } else if(stringsMatchNullN("fly", token.at, token.size)) {
-                        debug_IsFlyMode = !debug_IsFlyMode;
-                    } else if(stringsMatchNullN("bounds", token.at, token.size)) {
-                        DEBUG_drawBounds = !DEBUG_drawBounds;
-                    } else if(stringsMatchNullN("blur", token.at, token.size)) {
-                        blur = !blur;
-                    } else {
-                        easyConsole_parseDefault(&console);
-                    }
-                } else {
-                    easyConsole_parseDefault(&console);
-                }
-            }
-
-
-            static float exposureTerm = 1.0f;
-            if(inEditor) {
-                easyEditor_startWindow(editor, "Lister Panel");
-                
-                static V3 v = {};
-                easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
-                easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
-                easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
-
-                easyEditor_pushFloat1(editor, "Exposure:", &exposureTerm);
-static V4 color = COLOR_RED;
-                easyEditor_pushColor(editor, "Color: ", &color);
-
-                static bool saveLevel = false;
-                if(easyEditor_pushButton(editor, "Save Level")) {
-                    saveLevel = !saveLevel;
-                     easyFlashText_addText(&globalFlashTextManager, "SAVED!");
-                }
-
-                if(saveLevel) {
-                    easyEditor_pushFloat1(editor, "", &v.x);
-                    easyEditor_pushFloat2(editor, "", &v.x, &v.y);
-                    easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
-                }
-
-                easyEditor_endWindow(editor); //might not actuall need this
-                
-
-                easyEditor_endEditorForFrame(editor);
-            }
-
-            easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
+      
 
             //a.T->pos = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
             //Matrix4 m = mat4_angle_aroundZ(1.28);
@@ -449,7 +348,7 @@ static V4 color = COLOR_RED;
             // }
             
             //////
-            drawRenderGroup(globalRenderGroup);
+            drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
 
             easyRender_blurBuffer(&mainFrameBuffer, &bloomFrameBuffer, 1);
 
@@ -463,15 +362,105 @@ static V4 color = COLOR_RED;
             renderSetShader(&postProcessRenderGroup, &toneMappingProgram);
             
             EasyRender_ToneMap_Bloom_DataPacket *packet = pushStruct(&globalPerFrameArena, EasyRender_ToneMap_Bloom_DataPacket);
-            packet->mainBufferTexId = mainFrameBuffer.textureIds[0];
+            
+            packet->mainBufferTexId = mainFrameBuffer.textureIds[toneMapId];
             packet->bloomBufferTexId = bloomFrameBuffer.textureIds[0];
 
             packet->exposure = exposureTerm;
 
             renderBlitQuad(&postProcessRenderGroup, packet);
 
-            drawRenderGroup(&postProcessRenderGroup);
-            
+            drawRenderGroup(&postProcessRenderGroup, RENDER_DRAW_DEFAULT);
+
+            renderClearDepthBuffer(toneMappedBuffer.bufferId);
+
+            renderSetFrameBuffer(toneMappedBuffer.bufferId, globalRenderGroup);
+
+            globalRenderGroup->useSkyBox = false; 
+
+            {
+                   static bool blur = false;
+                    if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
+                        EasyToken token = easyConsole_getNextToken(&console);
+                        if(token.type == TOKEN_WORD) {
+                            if(stringsMatchNullN("camPower", token.at, token.size)) {
+                                token = easyConsole_seeNextToken(&console);
+                                if(token.type == TOKEN_FLOAT) {
+                                    token = easyConsole_getNextToken(&console);
+                                    cameraMovePower = token.floatVal;
+                                } else if(token.type == TOKEN_INTEGER) {
+                                    token = easyConsole_getNextToken(&console);
+                                    cameraMovePower = (float)token.intVal;    
+                                } else {
+                                    easyConsole_addToStream(&console, "must pass a number");
+                                }
+                                
+                            } else if(stringsMatchNullN("wireframe", token.at, token.size)) {
+                                token = easyConsole_getNextToken(&console);
+                                if(stringsMatchNullN("on", token.at, token.size)) {
+                                    DEBUG_drawWireFrame = true;
+                                } else if(stringsMatchNullN("off", token.at, token.size)) {
+                                    DEBUG_drawWireFrame = false;
+                                } else {
+                                    easyConsole_addToStream(&console, "parameter not understood");
+                                }
+                            } else if(stringsMatchNullN("fly", token.at, token.size)) {
+                                debug_IsFlyMode = !debug_IsFlyMode;
+                            } else if(stringsMatchNullN("bounds", token.at, token.size)) {
+                                DEBUG_drawBounds = !DEBUG_drawBounds;
+                            } else if(stringsMatchNullN("blur", token.at, token.size)) {
+                                blur = !blur;
+                            } else if(stringsMatchNullN("bloom", token.at, token.size)) {
+                                toneMapId = (toneMapId) ? 0 : 1;
+                            } else {
+                                easyConsole_parseDefault(&console);
+                            }
+                        } else {
+                            easyConsole_parseDefault(&console);
+                        }
+                    }
+
+
+                    
+                    if(inEditor) {
+                        easyEditor_startWindow(editor, "Lister Panel");
+                        
+                        static V3 v = {};
+                        easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
+                        easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
+                        easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
+
+                        easyEditor_pushFloat1(editor, "Exposure:", &exposureTerm);
+        static V4 color = COLOR_RED;
+                        easyEditor_pushColor(editor, "Color: ", &color);
+
+                        static bool saveLevel = false;
+                        if(easyEditor_pushButton(editor, "Save Level")) {
+                            saveLevel = !saveLevel;
+                             easyFlashText_addText(&globalFlashTextManager, "SAVED!");
+                        }
+
+                        if(saveLevel) {
+                            easyEditor_pushFloat1(editor, "", &v.x);
+                            easyEditor_pushFloat2(editor, "", &v.x, &v.y);
+                            easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
+                        }
+
+                        easyEditor_endWindow(editor); //might not actuall need this
+                        
+
+                        easyEditor_endEditorForFrame(editor);
+                    }
+
+                    easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
+            }
+
+             drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+
+             glFlush();
+
+             globalRenderGroup->useSkyBox = true;
+
             easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, hasBlackBars);
             easyOS_endKeyState(&keyStates);
         }

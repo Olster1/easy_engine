@@ -99,7 +99,7 @@ void main (void) {
     	tempColor = vec4(10000, 10000, 10000, 1);//mix(tempColor, vec4(1, 1, 0, 1), smoothstep(0, 1, tVal));
 
     }
-    vec4 colorOfSky = mix(tempColor, vec4(1, 1, 1, 1), pow(1.0f - max(direction_frag_norm.y, 0.0f), 3));
+    vec4 colorOfSky = mix(tempColor, vec4(1, 1, 2, 1), pow(1.0f - max(direction_frag_norm.y, 0.0f), 3));
 
    	windDir = normalize(vec3(1, -0.01, 0.2));
     float cloudContrubtion = 0;
