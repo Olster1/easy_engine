@@ -42,7 +42,7 @@ static char* globalExeBasePath;
 // #include "easy_skeleton.h"
 
 
-
+#include "easy_color.h"
 #include "easy_os.h"
 #include "easy_editor.h"
 #include "easy_camera.h"

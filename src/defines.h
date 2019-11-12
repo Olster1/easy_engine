@@ -3,6 +3,8 @@
 #define OPENGL_MAJOR 3
 #define OPENGL_MINOR 1
 
+#define PHYSICS_TIME_STEP 0.002f
+
 #if DEVELOPER_MODE
 #define RESOURCE_PATH_EXTENSION "../res/" 
 #else 

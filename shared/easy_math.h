@@ -37,6 +37,10 @@ float absVal(float a) {
     
 }
 
+float easyMath_degreesToRadians(float degrees) {
+    return ((TAU32 * degrees) / 360.0f);
+}
+
 bool floatEqual_withError(float a, float b) {
     float error = 0.00001;
     bool result = (a >= (b - error) && a < (b + error));
@@ -1155,6 +1159,7 @@ float mapValue(float value, float minA, float maxA, float minB, float maxB) {
 
 
 float smoothStep01(float a, float t, float b) {
+    //TODO: change to using formula instead of sin
     float mappedT = sin(t*PI32/2);
     float value = lerp(a, mappedT, b);
     return value;
@@ -1447,6 +1452,9 @@ static inline bool easyMath_rayVsAABB3f(V3 origin, V3 dir, Rect3f b, V3 *hitPoin
         }
     return true;              /* ray hits box */
 }
+
+#define NULL_VECTOR2 v2(0, 0)
+#define NULL_VECTOR3 v3(0, 0, 0)
 
 #define EASY_MATH_H 1
 #endif

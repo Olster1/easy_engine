@@ -489,7 +489,7 @@ typedef struct {
     Rect3f bounds;
     V4 colorTint;
 
-    EasyTransform *T;
+    // EasyTransform *T;
 } EasyModel;
 
 
@@ -526,6 +526,9 @@ typedef struct {
     V3 dim;
 } EasyTerrainDataPacket;
 
+typedef struct {
+    float value;
+} EasyRender_ColorWheel_DataPacket;
 
 typedef struct {
     u32 mainBufferTexId;
@@ -593,6 +596,8 @@ typedef struct {
     //NOTE: This is the handle to the cubemap
     unsigned int gpuHandle;
 } EasySkyBox;
+
+
 
 //Cube Maps have been specified to follow the RenderMan specification 
 //(for whatever reason), and RenderMan assumes the images' origin 
@@ -700,8 +705,6 @@ typedef struct {
     EasySkyBox *skybox;
     int lightCount;
 
-    bool useSkyBox;
-
     //NOTE: This is for the sky quad
     float fov;
     float aspectRatio; 
@@ -714,9 +717,17 @@ typedef struct {
 
 
 
+static inline void easyRender_updateSkyQuad(RenderGroup *g, float zoom, float aspectRatio, Matrix4 viewToWorld) {
+    g->fov = zoom;
+    g->aspectRatio = aspectRatio;
+    g->cameraToWorldTransform = viewToWorld;
+}
+
+
 
 
 static inline u64 easyRender_getBatchKey(EasyRender_BatchQuery *i) {
+    //TODO(ollie): Handle multiple data packets for the batch 
     u64 result = 0;
     result += 19*(intptr_t)i->textureHandle;
     result += 23*(intptr_t)i->bufferHandles;
@@ -818,8 +829,6 @@ void initRenderGroup(RenderGroup *group) {
     assert(!group->initied);
     group->currentDepthTest = true;
     group->blendFuncType = BLEND_FUNC_STANDARD;
-
-    group->useSkyBox = false;
     
     group->currentShader = 0;
     group->modelTransform = mat4();
@@ -2054,10 +2063,10 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
 #endif
 
     if(type == SHAPE_COLOR_WHEEL) {
-        // EasyColorWheelPacket *packet = (EasyColorWheelPacket *)dataPacket;
+        EasyRender_ColorWheel_DataPacket *packet = (EasyRender_ColorWheel_DataPacket *)dataPacket;
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
         renderCheckError();
-        glUniform1f(glGetUniformLocation(program->glProgram, "value"),  1.0f);
+        glUniform1f(glGetUniformLocation(program->glProgram, "value"),  packet->value);
         renderCheckError();
     }
 
@@ -2345,7 +2354,8 @@ void renderDrawRectOutlineRect2f(Rect2f rect, V4 color, float rot, Matrix4 offse
 }
 
 //
-void renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 offsetTransform, Texture *texture, ShapeType type, RenderProgram *program, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
+RenderItem *renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 offsetTransform, Texture *texture, ShapeType type, RenderProgram *program, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
+    RenderItem *result = 0;
     float a1 = cos(rot);
     float a2 = sin(rot);
     float b1 = cos(rot + HALF_PI32);
@@ -2363,10 +2373,12 @@ void renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 
     if(globalImmediateModeGraphics) {
     } else {
         int indicesCount = arrayCount(globalQuadIndicesData);
-        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), 
+        result = pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), 
                        globalQuadIndicesData, indicesCount, program, type, texture, rotationMat,
                        viewMatrix, projectionMatrix, colors[0], center.z, 0);
-    }    
+    }   
+
+    return result; 
 }
 
 void renderDrawRectCenterDim(V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 projectionMatrix) {
@@ -2385,9 +2397,11 @@ void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float
     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix);
 }
 
-void renderColorWheel(V3 center, V2 dim, float value, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
+void renderColorWheel(V3 center, V2 dim, EasyRender_ColorWheel_DataPacket *packet, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
     V4 colors[4]; 
-    renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix);
+    RenderItem * i = renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix);
+    i->dataPacket = packet;
+
 }
 
 
@@ -2653,6 +2667,7 @@ void renderBlitQuad(RenderGroup *group, void *packet) {
 typedef enum {
     RENDER_DRAW_DEFAULT = 1 << 0,
     RENDER_DRAW_SORT = 1 << 1,
+    RENDER_DRAW_SKYBOX = 1 << 2,
 } RenderDrawSettings;
 
 void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
@@ -2662,7 +2677,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
 
     render_enableCullFace();
     
-    if(settings == RENDER_DRAW_DEFAULT) {
+    if(settings & RENDER_DRAW_DEFAULT) {
         for(int i = 0; i < RENDER_BATCH_HASH_COUNT; ++i) {
             if(group->batches[i]) {
                 EasyRenderBatch *b = group->batches[i];
@@ -2674,7 +2689,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
                 }
             }
         }
-    } else if (settings == RENDER_DRAW_SORT) {
+    } else if (settings & RENDER_DRAW_SORT) {
 
         //NOTE(ol): Going to cache the groups in an array 
         InfiniteAlloc renderBatches = initInfinteAlloc(EasyRenderBatch *);
@@ -2719,7 +2734,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
     glCullFace(GL_FRONT);  
     glFrontFace(GL_CCW);  
 
-    if(group->skybox && group->useSkyBox) {
+    if(group->skybox && (settings & RENDER_DRAW_SKYBOX)) {
          glDepthFunc(GL_LEQUAL);
 #if USE_SKY_BOX
         if(!globalCubeMapVaoHandle.valid) {

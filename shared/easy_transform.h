@@ -7,8 +7,12 @@ typedef struct EasyTransform {
 
 	EasyTransform *parent;
 
-
+	int id;
+	bool markForDeletion;
 } EasyTransform;
+
+
+static int GLOBAL_transformID = 0; 
 
 static inline void easyTransform_initTransform(EasyTransform *t, V3 pos) {
 	t->T = mat4();
@@ -16,6 +20,9 @@ static inline void easyTransform_initTransform(EasyTransform *t, V3 pos) {
 	t->scale = v3(1, 1, 1);
 	t->Q = identityQuaternion();
 
+	t->parent = 0;
+	t->id = GLOBAL_transformID++;
+	t->markForDeletion = false;
 }
 
 
@@ -44,6 +51,18 @@ static inline Matrix4 easyTransform_getTransform(EasyTransform *T) {
 
 	return result;
 	
+}
+
+static inline V3 easyTransform_getWorldPos(EasyTransform *T) {
+	V3 pos = T->pos;
+	EasyTransform *parent = T->parent;
+
+	while(parent) {
+		pos = v3_plus(pos, parent->pos);
+		parent = parent->parent;
+	}
+
+	return pos;
 }
 
 static inline V3 easyTransform_getZAxis(EasyTransform *T) {
