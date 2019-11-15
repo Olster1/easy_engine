@@ -1,7 +1,7 @@
 typedef enum {
 	EASY_CONSOLE_CLOSED,
 	EASY_CONSOLE_OPEN_MID,
-	EASY_CONSOLE_OPEN_LARGE,
+	// EASY_CONSOLE_OPEN_LARGE,
 
 	///
 	EASY_CONSOLE_COUNT
@@ -132,9 +132,9 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 		case EASY_CONSOLE_OPEN_MID: {
 			height = smoothStep01(0, v, 0.3f*resolution.y);
 		} break;
-		case EASY_CONSOLE_OPEN_LARGE: {
-			height = smoothStep01(0.3f*resolution.y, v, 0.8f*resolution.y);
-		} break;
+		// case EASY_CONSOLE_OPEN_LARGE: {
+		// 	height = smoothStep01(0.3f*resolution.y, v, 0.8f*resolution.y);
+		// } break;
 		default: {
 			assert(!"shouldn't be here");
 		} break;
@@ -186,7 +186,28 @@ inline EasyToken easyConsole_getNextToken(EasyConsole *console) {
 inline EasyToken easyConsole_seeNextToken(EasyConsole *console) {
 	return lexSeeNextToken(&console->tokenizer);
 }
-inline void easyConsole_parseDefault(EasyConsole *c) {
-	easyConsole_addToStream(c, "parameter not understood");
+
+/*
+	
+	Short cuts: 
+
+	fly - fly the camera around
+
+	camMoveXY - only move in the XY coordinates
+
+	camRotate - toggle camera rotating off/on
+*/
+
+inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
+	if(stringsMatchNullN("fly", token.at, token.size)) {
+        DEBUG_global_IsFlyMode = !DEBUG_global_IsFlyMode;
+    } else if(stringsMatchNullN("camMoveXY", token.at, token.size)) {
+        DEBUG_global_CameraMoveXY = !DEBUG_global_CameraMoveXY;
+    } else if(stringsMatchNullN("camRotate", token.at, token.size)) {
+        DEBUG_global_CamNoRotate = !DEBUG_global_CamNoRotate;
+    } else {
+    	easyConsole_addToStream(c, "parameter not understood");
+    }
+	
 }
 

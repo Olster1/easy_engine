@@ -804,7 +804,7 @@ Quaternion addScaledVectorToQuaternion(Quaternion q_, V3 vector, float timeScale
                               vector.x * timeScale,
                               vector.y * timeScale,
                               vector.z * timeScale);
-    
+
     q = quaternion_mult(q_, q);
     result.r += q.r * 0.5f;
     result.i += q.i * 0.5f;
@@ -812,6 +812,17 @@ Quaternion addScaledVectorToQuaternion(Quaternion q_, V3 vector, float timeScale
     result.k += q.k * 0.5f;
     
     return result;
+}
+
+Quaternion easyMath_normalizeQuaternion(Quaternion q) {
+    float n = sqrt(q.i*q.i + q.j*q.j + q.k*q.k + q.r*q.r);
+    
+    q.i /= n;
+    q.j /= n;
+    q.k /= n;
+    q.r /= n;
+
+    return q;
 }
 
 Quaternion eulerAnglesToQuaternion(float y, float x, float z) {

@@ -1,5 +1,5 @@
 int loadAndAddImagesToAssets(char *folderName) {
-	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp"};
+	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp", "PNG"};
 	FileNameOfType fileNames = getDirectoryFilesOfType(concat(globalExeBasePath, folderName), imgFileTypes, arrayCount(imgFileTypes));
 	int result = fileNames.count;
 	

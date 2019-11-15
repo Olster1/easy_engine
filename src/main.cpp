@@ -106,7 +106,7 @@ int main(int argc, char *args[]) {
 
 
         EasyCamera camera;
-        easy3d_initCamera(&camera, v3(0, 0, -2));
+        easy3d_initCamera(&camera, v3(0, 0, -5));
 
         globalRenderGroup->skybox = initSkyBox();
 
@@ -118,6 +118,10 @@ int main(int argc, char *args[]) {
         EasyModel grass = {};
         easy3d_loadObj("models/terrain/grass.obj", &grass);
 
+        easy3d_loadMtl("models/tower.mtl");
+        EasyModel castle = {};
+        easy3d_loadObj("models/tower.obj", &castle);
+
         EasyTerrain *terrain = initTerrain(fern, grass);
 
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
@@ -126,9 +130,9 @@ int main(int argc, char *args[]) {
 
 
         EasyTransform sunTransform;
-        easyTransform_initTransform(&sunTransform, v3(0, 10, 0));
+        easyTransform_initTransform(&sunTransform, v3(0, -10, 0));
 
-        EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 0));//easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
+        EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 1));//easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
         easy_addLight(globalRenderGroup, light);
         
 
@@ -138,23 +142,44 @@ int main(int argc, char *args[]) {
 
     MyEntityManager *entityManager = initEntityManager();
 
+    ///////////////////////************ Load the resources *************////////////////////
+
+    loadAndAddImagesToAssets("img/period_game/");
+
     ///////////////////////*********** Load the player model **************////////////////////
     
-    easy3d_loadMtl("models/player.mtl");
+    // easy3d_loadMtl("models/player.mtl");
 
     //TODO(ollie): Change this to add models to the asset catalog
-    EasyModel playerModel = {};
-    easy3d_loadObj("models/player.obj", &playerModel);
+    // EasyModel playerModel = {};
+    // easy3d_loadObj("models/player.obj", &playerModel);
 
     ////////////////////////////////////////////////////////////////////
     
-    initPlayer(entityManager, &playerModel);
+    initPlayer(entityManager, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
 
-////////////////////////////////////////////////////////////////////        
+    initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(-1, 2, 0));
+
+    initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(1, 2, 0));
+
+    initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(1, 3, 0));
+
+    initBucket(entityManager, findTextureAsset("toilet1.png"), v3(-1, 4, 0));
+
+////////////////////////////////////////////////////////////////////      
+
+
+///////////////////////************ Setup level stuff*************////////////////////
+
+
+EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo_track.wav"), 0, AUDIO_BACKGROUND));
+
+
+////////////////////////////////////////////////////////////////////  
 
 ////////////*** Variables *****//////
         float cameraMovePower = 2000.0f;
-        bool debug_IsFlyMode = true;
+        
         float exposureTerm = 1.0f;
         int toneMapId = 0;
         bool controllingPlayer = true;
@@ -186,8 +211,13 @@ int main(int argc, char *args[]) {
 
 
             EasyCamera_MoveType camMove = EASY_CAMERA_MOVE_NULL;
-            if(debug_IsFlyMode && !easyConsole_isOpen(&console) && !easyEditor_isInteracting(editor) && !inEditor) {
+            if(DEBUG_global_IsFlyMode && !easyConsole_isOpen(&console) && !easyEditor_isInteracting(editor) && !inEditor) {
                 camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
+
+                if(DEBUG_global_CameraMoveXY) camMove = easyCamera_addFlag(camMove, EASY_CAMERA_MOVE_XY);
+
+                if(DEBUG_global_CamNoRotate) camMove = easyCamera_removeFlag(camMove, EASY_CAMERA_ROTATE);
+                    
             }
              
             easy3d_updateCamera(&camera, &keyStates, 1, cameraMovePower, appInfo.dt, camMove);
@@ -210,28 +240,26 @@ int main(int argc, char *args[]) {
 
             renderDisableCulling(globalRenderGroup);
             
-            setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, -1, 1)));
-            renderModel(globalRenderGroup, &grass, COLOR_WHITE);
+            // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, -1, 1)));
+            // renderModel(globalRenderGroup, &grass, COLOR_WHITE);
 
-            setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 1, 1)));
-            renderModel(globalRenderGroup, &fern, color);
+            // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 1, 1)));
+            // renderModel(globalRenderGroup, &fern, color);
 
             // easyTerrain_renderTerrain(terrain, globalRenderGroup, &emptyMaterial);
 
             renderEnableCulling(globalRenderGroup);
 
-///////////////////////************ Update entities here *************////////////////////
+            renderSetShader(globalRenderGroup, &phongProgram);
 
-            updateEntitiesPrePhysics(entityManager, &keyStates, appInfo.dt);
+            // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 1, 1)));
+            // renderDrawCube(globalRenderGroup, &crateMaterial, COLOR_WHITE);
+
+
+            // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 2, 1)));
+            // renderModel(globalRenderGroup, &castle, COLOR_WHITE);
+
             
-            EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
-
-            updateEntities(entityManager, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix);
-
-            cleanUpEntities(entityManager);
-
-////////////////////////////////////////////////////////////////////
-
             drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT));
 
             easyRender_blurBuffer(&mainFrameBuffer, &bloomFrameBuffer, 1);
@@ -254,10 +282,27 @@ int main(int argc, char *args[]) {
 
 ////////////////////////////////////////////////////////////////////
 
+
+
 ///////////////////////// DEBUG UI /////////////////////////////////////////
 
             renderClearDepthBuffer(toneMappedBuffer.bufferId);
             renderSetFrameBuffer(toneMappedBuffer.bufferId, globalRenderGroup);
+
+
+///////////////////////************ Update entities here *************////////////////////
+
+            updateEntitiesPrePhysics(entityManager, &keyStates, appInfo.dt);
+            
+            EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
+
+            updateEntities(entityManager, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt);
+
+            cleanUpEntities(entityManager);
+
+            // renderTextureCentreDim(findTextureAsset("cup_half_full.png"), v3(100, 100, 1), v2(100, 100), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+
+////////////////////////////////////////////////////////////////////
 
 /////////////////////// DRAWING & UPDATE CONSOLE /////////////////////////////////
             if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
@@ -284,17 +329,21 @@ int main(int argc, char *args[]) {
                         } else {
                             easyConsole_addToStream(&console, "parameter not understood");
                         }
-                    } else if(stringsMatchNullN("fly", token.at, token.size)) {
-                        debug_IsFlyMode = !debug_IsFlyMode;
-                    } else if(stringsMatchNullN("bounds", token.at, token.size)) {
+                    }  else if(stringsMatchNullN("bounds", token.at, token.size)) {
                         DEBUG_drawBounds = !DEBUG_drawBounds;
                     } else if(stringsMatchNullN("bloom", token.at, token.size)) {
                         toneMapId = (toneMapId) ? 0 : 1;
+                    } else if(stringsMatchNullN("camPos", token.at, token.size)) { 
+                        char buffer[256];
+                        sprintf(buffer, "camera pos: %f %f %f\n", camera.pos.x, camera.pos.y, camera.pos.z);
+                        easyConsole_addToStream(&console, buffer);
+                    } else if(stringsMatchNullN("movePlayer", token.at, token.size)) { 
+                        DEBUG_global_movePlayer = !DEBUG_global_movePlayer;
                     } else {
-                        easyConsole_parseDefault(&console);
+                        easyConsole_parseDefault(&console, token);
                     }
                 } else {
-                    easyConsole_parseDefault(&console);
+                    easyConsole_parseDefault(&console, token);
                 }
             }
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -308,7 +357,7 @@ int main(int argc, char *args[]) {
                         easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
                         easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
 
-                        easyEditor_pushFloat1(editor, "Exposure:", &exposureTerm);
+                        easyEditor_pushSlider(editor, "Exposure:", &exposureTerm, 0.3f, 3.0f);
            
                         easyEditor_pushColor(editor, "Color: ", &color);
                         static float a = 1.0f;

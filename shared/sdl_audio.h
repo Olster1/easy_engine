@@ -248,6 +248,12 @@ PlayingSound *playSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundT
     return result;
 }
 
+
+static void EasySound_LoopSound(PlayingSound *playingSound) {
+    assert(!playingSound->nextSound); //can't have sounds already playing
+    playingSound->nextSound = playingSound;
+}
+
 //This call is for setting a sound up but not playing it. 
 PlayingSound *pushSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundToPlay, AudioChannel channel) {
     PlayingSound *result = playSound(arena, wavFile, nextSoundToPlay, channel);

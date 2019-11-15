@@ -159,8 +159,10 @@ void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 #endif
     
     //////////SETUP AUDIO/////
-    initAudioSpec(&result->audioSpec, 44100);
+    initAudioSpec(&result->audioSpec, DEFINES_AUDIO_SAMPLE_RATE);
     initAudio(&result->audioSpec);
+
+    loadAndAddSoundsToAssets(DEFINES_SOUNDS_FOLDER, &result->audioSpec);
     //////////
     
     ////SETUP OPEN GL//

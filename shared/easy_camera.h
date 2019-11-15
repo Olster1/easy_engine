@@ -17,6 +17,7 @@ typedef enum {
 	EASY_CAMERA_ROTATE = 1 << 0,
 	EASY_CAMERA_MOVE = 1 << 1,
 	EASY_CAMERA_ZOOM = 1 << 2,
+	EASY_CAMERA_MOVE_XY = 1 << 3,
 } EasyCamera_MoveType;
 
 static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates, float sensitivity, float movePower, float dt, EasyCamera_MoveType moveType) {
@@ -92,7 +93,14 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	V3 zAxis = normalizeV3(easyMath_getZAxis(camOrientation));
 	V3 xAxis = normalizeV3(easyMath_getXAxis(camOrientation));
 
+
+	if(moveType & EASY_CAMERA_MOVE_XY) {
+		zAxis = v3(0, 1, 0);
+		xAxis = v3(1, 0, 0);
+	}
+
 	V3 moveDir = v3_plus(v3_scale(xPower, xAxis), v3_scale(zPower, zAxis));
+	
 
 	cam->velocity = v3_plus(v3_scale(dt, moveDir), cam->velocity);
 
@@ -100,6 +108,15 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 	cam->pos = v3_plus(v3_scale(dt, cam->velocity), cam->pos);
 
 	// printf("pos: %f %f %f\n", cam->pos.x, cam->pos.y, cam->pos.z);
+}
+
+static inline EasyCamera_MoveType easyCamera_addFlag(EasyCamera_MoveType camMove, EasyCamera_MoveType flag) {
+	return ((EasyCamera_MoveType)(((int)flag) | (int)camMove));
+}
+
+
+static inline EasyCamera_MoveType easyCamera_removeFlag(EasyCamera_MoveType camMove, EasyCamera_MoveType flag) {
+	return ((EasyCamera_MoveType)((~(int)flag) & (int)camMove));
 }
 
 static inline void easy3d_initCamera(EasyCamera *cam, V3 pos) {

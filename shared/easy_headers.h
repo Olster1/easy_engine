@@ -23,11 +23,7 @@ static char* globalExeBasePath;
 #include "easy_font.h"
 #include "easy_timer.h"
 
-#define GJK_IMPLEMENTATION 
-#include "easy_gjk.h"
 
-#include "easy_collision.h"
-#include "easy_physics.h"
 #include "easy_text_io.h"
 #include "easy_animation.h"
 #include "easy_assets.h"
@@ -42,7 +38,9 @@ static char* globalExeBasePath;
 // #include "easy_skeleton.h"
 
 
+#include "easy_debug_variables.h"
 #include "easy_color.h"
+#include "easy_asset_loader.h"
 #include "easy_os.h"
 #include "easy_editor.h"
 #include "easy_camera.h"
@@ -52,5 +50,12 @@ static char* globalExeBasePath;
 #include "easy_console.h"
 #include "easy_flash_text.h"
 
+#define GJK_IMPLEMENTATION 
+#include "easy_gjk.h"
+
+#include "easy_collision.h"
+#include "easy_physics.h"
+
 #include "easy_write.h"
-#include "easy_asset_loader.h"
+
+

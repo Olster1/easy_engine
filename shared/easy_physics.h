@@ -119,13 +119,22 @@ static inline EasyPhysics_RayCastAABB3f_Info EasyPhysics_CastRayAgainstAABB3f(Ma
 
 typedef struct {
 	V3 dP;
-	float angle; //quartenion in 3D
-	float dA;
-	float inverseWeight;
-	float inverse_I;
-	// float inertia;
-
 	V3 accumForce; //perFrame
+	V3 accumTorque;
+
+	union {
+		struct { //2d
+			float inverse_I;
+		};
+		struct { //3d
+			V3 dA;
+			// Matrix4 inverse_I;
+		};
+	};
+	
+	float inverseWeight;
+
+
 } EasyRigidBody;
 
 typedef enum {
@@ -138,7 +147,7 @@ typedef struct {
 	EasyCollisionType type;
 	int objectId; 
 
-	bool hitThisFrame;
+	bool hitThisFrame_; //only used internally 
 } EasyCollisionInfo;
 
 typedef enum {
@@ -219,7 +228,17 @@ static EasyCollisionInfo *EasyCollider_addCollisionInfo(EasyCollider *col, int h
 
 		if(info->objectId == hitObjectId) {
 			result = info;
-			result->type = EASY_COLLISION_STAY; //already in the array, so is a stay type
+			
+			if(!result->hitThisFrame_ && result->type == EASY_COLLISION_ENTER) {
+				result->type = EASY_COLLISION_STAY; //already in the array, so is a stay type
+			}
+			
+
+			if (result->type == EASY_COLLISION_EXIT) {
+				assert(!result->hitThisFrame_);
+				result->type = EASY_COLLISION_ENTER;
+			}
+			
 			break;
 		}	
 	}
@@ -233,7 +252,7 @@ static EasyCollisionInfo *EasyCollider_addCollisionInfo(EasyCollider *col, int h
 
 	assert(result);
 
-	result->hitThisFrame = true;
+	result->hitThisFrame_ = true;
 	result->objectId = hitObjectId;
 
 	return result;
@@ -244,7 +263,7 @@ static void EasyCollider_removeCollisions(EasyCollider *col) {
 		bool increment = true;
 		EasyCollisionInfo *info = col->collisions + i;
 
-		if(!info->hitThisFrame) {
+		if(!info->hitThisFrame_) {
 			if(info->type != EASY_COLLISION_EXIT) {
 				//NOTE(ollie): set collision to an exit collision
 				info->type = EASY_COLLISION_EXIT;
@@ -260,6 +279,14 @@ static void EasyCollider_removeCollisions(EasyCollider *col) {
 			i++;
 		}
 	}
+
+///////////////////////************ Empty out all hits this frame*************////////////////////
+	for(int i = 0; i < col->collisionCount; i++) {
+		EasyCollisionInfo *info = col->collisions + i;
+		info->hitThisFrame_ = false;
+	}
+////////////////////////////////////////////////////////////////////
+
 }
 
 	
@@ -293,46 +320,46 @@ static inline EasyCollisionOutput EasyPhysics_SolveRigidBodies(EasyCollider *a_,
 }
 
 void EasyPhysics_ResolveCollisions(EasyRigidBody *ent, EasyRigidBody *testEnt, EasyTransform *A, EasyTransform *B, EasyCollisionOutput *output) {
-	V2 AP = v2_minus(output->pointA.xy, A->pos.xy);
-	isNanErrorV2(AP);
-	// printf("%f %f\n", output->pointB.x, output->pointB.y);
-	// printf("%f %f\n", testEnt->T->pos.x, testEnt->T->pos.y);
-	V2 BP = v2_minus(output->pointB.xy, B->pos.xy);
-	isNanErrorV2(BP);
+	// V2 AP = v2_minus(output->pointA.xy, A->pos.xy);
+	// isNanErrorV2(AP);
+	// // printf("%f %f\n", output->pointB.x, output->pointB.y);
+	// // printf("%f %f\n", testEnt->T->pos.x, testEnt->T->pos.y);
+	// V2 BP = v2_minus(output->pointB.xy, B->pos.xy);
+	// isNanErrorV2(BP);
 	    
-	V2 Velocity_A = v2_plus(ent->dP.xy, v2_scale(ent->dA, perp(AP)));
-	isNanErrorV2(Velocity_A);
-	V2 Velocity_B = v2_plus(testEnt->dP.xy, v2_scale(testEnt->dA, perp(BP)));
-	isNanErrorV2(Velocity_B);
+	// V2 Velocity_A = v2_plus(ent->dP.xy, v2_scale(ent->dA, perp(AP)));
+	// isNanErrorV2(Velocity_A);
+	// V2 Velocity_B = v2_plus(testEnt->dP.xy, v2_scale(testEnt->dA, perp(BP)));
+	// isNanErrorV2(Velocity_B);
 
-	V2 RelVelocity = v2_minus(Velocity_A, Velocity_B);
-	isNanErrorV2(RelVelocity);
+	// V2 RelVelocity = v2_minus(Velocity_A, Velocity_B);
+	// isNanErrorV2(RelVelocity);
 
-	float R = 1.0f; //NOTE(oliver): CoefficientOfRestitution
+	// float R = 1.0f; //NOTE(oliver): CoefficientOfRestitution
 
-	float Inv_BodyA_Mass = ent->inverseWeight;
-	float Inv_BodyB_Mass = testEnt->inverseWeight;
+	// float Inv_BodyA_Mass = ent->inverseWeight;
+	// float Inv_BodyB_Mass = testEnt->inverseWeight;
 	        
-	float Inv_BodyA_I = ent->inverse_I;
-	float Inv_BodyB_I = testEnt->inverse_I;
-	V2 N = output->normal.xy;
+	// float Inv_BodyA_I = ent->inverse_I;
+	// float Inv_BodyB_I = testEnt->inverse_I;
+	// V2 N = output->normal.xy;
 	        
-	float J_Numerator = dotV2(v2_scale(-(1.0f + R), RelVelocity), N);
-	float J_Denominator = dotV2(N, N)*(Inv_BodyA_Mass + Inv_BodyB_Mass) +
-	    (sqr(dotV2(perp(AP), N)) * Inv_BodyA_I) + (sqr(dotV2(perp(BP), N)) * Inv_BodyB_I);
+	// float J_Numerator = dotV2(v2_scale(-(1.0f + R), RelVelocity), N);
+	// float J_Denominator = dotV2(N, N)*(Inv_BodyA_Mass + Inv_BodyB_Mass) +
+	//     (sqr(dotV2(perp(AP), N)) * Inv_BodyA_I) + (sqr(dotV2(perp(BP), N)) * Inv_BodyB_I);
 
-	float J = J_Numerator / J_Denominator;
-	isNanf(J);
+	// float J = J_Numerator / J_Denominator;
+	// isNanf(J);
 
-	V2 Impulse = v2_scale(J, N);
-	isNanErrorV2(Impulse);
+	// V2 Impulse = v2_scale(J, N);
+	// isNanErrorV2(Impulse);
 	    
-	ent->dP.xy = v2_plus(ent->dP.xy, v2_scale(Inv_BodyA_Mass, Impulse));                
-	isNanErrorV2(ent->dP.xy);
-	testEnt->dP.xy = v2_minus(testEnt->dP.xy, v2_scale(Inv_BodyB_Mass, Impulse));
-	isNanErrorV2(testEnt->dP.xy);
-	ent->dA = ent->dA + (dotV2(perp(AP), Impulse)*Inv_BodyA_I);
-	testEnt->dA = testEnt->dA - (dotV2(perp(BP), Impulse)*Inv_BodyB_I);
+	// ent->dP.xy = v2_plus(ent->dP.xy, v2_scale(Inv_BodyA_Mass, Impulse));                
+	// isNanErrorV2(ent->dP.xy);
+	// testEnt->dP.xy = v2_minus(testEnt->dP.xy, v2_scale(Inv_BodyB_Mass, Impulse));
+	// isNanErrorV2(testEnt->dP.xy);
+	// ent->dA = ent->dA + (dotV2(perp(AP), Impulse)*Inv_BodyA_I);
+	// testEnt->dA = testEnt->dA - (dotV2(perp(BP), Impulse)*Inv_BodyB_I);
 }
 
 static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float inverseWeight, float inverseIntertia) {
@@ -341,8 +368,7 @@ static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float i
     rb->dP = v3(0, 0, 0);
     rb->inverseWeight = inverseWeight;
     rb->inverse_I = inverseIntertia;
-    rb->angle = 0; 
-    rb->dA = 0;
+    rb->dA = NULL_VECTOR3;
 
     return rb;
 }
@@ -393,7 +419,13 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 	    	
 	        rb->dP = v3_plus(v3_scale(dt * rb->inverseWeight, rb->accumForce), rb->dP);
 
+	        rb->accumForce = NULL_VECTOR3; //clear the forces for frame
+	        
 			//TODO(ollie): Integrate torque 
+
+	        rb->dA = v3_plus(v3_scale(dt, rb->accumTorque), rb->dA);
+
+			rb->accumTorque = NULL_VECTOR3;
 
 	    ////////////////////////////////////////////////////////////////////
 	        
@@ -411,7 +443,10 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
         if(a->rb) {
         	EasyRigidBody *rb = a->rb;
         	a->T->pos = v3_plus(v3_scale(dt, rb->dP), a->T->pos);
-        	rb->angle = rb->dA*dt + rb->angle;
+
+        	a->T->Q = addScaledVectorToQuaternion(a->T->Q, rb->dA, dt);
+
+        	a->T->Q = easyMath_normalizeQuaternion(a->T->Q);
         }
 
         ////////////////////////////////////////////////////////////////////
@@ -494,21 +529,6 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
         }
     }
 
-
-///////////////////////************ Post process collisions *************////////////////////
-
-
-    for (int i = 0; i < colliders->count; ++i)
-    {
-        EasyCollider *col = (EasyCollider *)getElement(colliders, i);
-        if(col) {
-        	EasyCollider_removeCollisions(col);
-        }
-    }
-
-////////////////////////////////////////////////////////////////////
-
-
 }
 
 
@@ -523,4 +543,16 @@ static void EasyPhysics_UpdateWorld(EasyPhysics_World *world, float dt) {
 	    ProcessPhysics(&world->colliders, &world->rigidBodies, timeInterval);
 	    world->physicsTime -= timeInterval;
 	}
+
+	///////////////////////************ Post process collisions *************////////////////////
+
+	    for (int i = 0; i < world->colliders.count; ++i)
+	    {
+	        EasyCollider *col = (EasyCollider *)getElement(&world->colliders, i);
+	        if(col) {
+	        	EasyCollider_removeCollisions(col);
+	        }
+	    }
+
+	////////////////////////////////////////////////////////////////////
 }

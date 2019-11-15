@@ -5,6 +5,9 @@
 
 #define PHYSICS_TIME_STEP 0.002f
 
+#define DEFINES_SOUNDS_FOLDER "sounds/"
+#define DEFINES_AUDIO_SAMPLE_RATE 44100
+
 #if DEVELOPER_MODE
 #define RESOURCE_PATH_EXTENSION "../res/" 
 #else 

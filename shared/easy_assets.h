@@ -43,18 +43,15 @@ Asset *findAsset(char *fileName) {
     
     bool found = false;
     
-    while(!found) {
-        if(!file) {
-            found = true; 
+    while(!found && file) {
+        assert(file);
+        assert(file->file);
+        assert(file->name);
+        if(cmpStrNull(fileName, file->name)) {
+            result = file;
+            found = true;
         } else {
-            assert(file->file);
-            assert(file->name);
-            if(cmpStrNull(fileName, file->name)) {
-                result = file;
-                found = true;
-            } else {
-                file = file->next;
-            }
+            file = file->next;
         }
     }
     return result;

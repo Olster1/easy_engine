@@ -106,6 +106,7 @@ typedef struct {
 } RenderProgram;
 
 RenderProgram phongProgram;
+RenderProgram glossProgram;
 RenderProgram skyboxProgram;
 RenderProgram textureProgram;
 RenderProgram skyQuadProgram;
@@ -113,6 +114,7 @@ RenderProgram terrainProgram;
 RenderProgram toneMappingProgram;
 RenderProgram blurProgram;
 RenderProgram colorWheelProgram;
+RenderProgram circleProgram;
 
 
 typedef struct {
@@ -1416,6 +1418,12 @@ void enableRenderer(int width, int height, Arena *arena) {
     phongProgram = createProgramFromFile(vertex_model_shader, frag_model_shader, false);
     renderCheckError();
 
+    circleProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, frag_circle_shader, false);
+    renderCheckError();
+
+    glossProgram = createProgramFromFile(vertex_gloss_shader, frag_gloss_shader, false);
+    renderCheckError();
+
     skyboxProgram = createProgramFromFile(vertex_skybox_shader, frag_skybox_shader, false);
     renderCheckError();
     
@@ -1749,8 +1757,16 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
     }
 }
 
-void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
+static void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
     pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], material);
+}
+
+static void renderDrawSprite(RenderGroup *group, Texture *sprite, V4 colorTint) {
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_TEXTURE, sprite, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], 0);
+}
+
+static void renderDrawQuad(RenderGroup *group, V4 colorTint) {
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_TEXTURE, &globalWhiteTexture, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], 0);
 }
 
 #if DEVELOPER_MODE
@@ -2251,6 +2267,13 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     }
 
     if(type == SHAPE_TEXTURE) {
+
+        GLuint eyeLoc = glGetUniformLocation(program->glProgram, "eyePosition");
+        if(eyeLoc >= 0) { //has this value
+            glUniform3f(eyeLoc, group->eyePos.x, group->eyePos.y, group->eyePos.z);
+            renderCheckError();    
+        }
+        
 
         easy_BindTexture("tex", 3, textureId, program);
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
