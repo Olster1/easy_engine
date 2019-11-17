@@ -1,12 +1,10 @@
-#include <GL/gl3w.h>
-
-#include "../SDL2/sdl.h"
-#include "../SDL2/SDL_syswm.h"
-
 #include "defines.h"
 #include "easy_headers.h"
 
 #include "myEntity.h"
+#include "myGameState.h"
+#include "myTransitions.h"
+
 
 static EasyTerrain *initTerrain(EasyModel fern, EasyModel grass) {
     //TERRAIN STUFF
@@ -50,8 +48,8 @@ int main(int argc, char *args[]) {
         }
     }
 
-    V2 screenDim = v2(800, 800); //init in create app function
-    V2 resolution = v2(0, 0);
+    V2 screenDim = v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
+    V2 resolution = v2(DEFINES_RESOLUTION_X, DEFINES_RESOLUTION_Y);
 
 
     // screenDim = resolution;
@@ -65,7 +63,7 @@ int main(int argc, char *args[]) {
         loadAndAddImagesToAssets("img/");
         
         ////INIT FONTS
-        char *fontName = concatInArena(globalExeBasePath, "/fonts/Khand-Regular.ttf", &globalPerFrameArena);
+        char *fontName = concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena);
         Font mainFont = initFont(fontName, 88);
 
         char *fontName1 = concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena);
@@ -102,11 +100,13 @@ int main(int argc, char *args[]) {
 
         bool inEditor = false;
 
+        EasyTransitionState *transitionState = EasyTransition_initTransitionState(easyAudio_findSound("ting.wav"));
+
 ///////////************************/////////////////
 
 
         EasyCamera camera;
-        easy3d_initCamera(&camera, v3(0, 0, -5));
+        easy3d_initCamera(&camera, v3(0, 0, -4));
 
         globalRenderGroup->skybox = initSkyBox();
 
@@ -158,13 +158,24 @@ int main(int argc, char *args[]) {
     
     initPlayer(entityManager, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
 
-    initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(-1, 2, 0));
+    Entity *room = initRoom(entityManager, v3(0, 0, 0));
 
-    initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(1, 2, 0));
+    initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(-1, 2, LAYER0), room);
 
-    initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(1, 3, 0));
+    initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(1, 2, LAYER0), room);
 
-    initBucket(entityManager, findTextureAsset("toilet1.png"), v3(-1, 4, 0));
+    initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(1, 3, LAYER0), room);
+
+    initBucket(entityManager, findTextureAsset("toilet1.png"), v3(-1, 4, LAYER0), room);
+
+    MyGameStateVariables gameVariables = {};
+    gameVariables.roomSpeed = -0.3f;
+
+
+    MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
+
+    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_START_MENU;
+     
 
 ////////////////////////////////////////////////////////////////////      
 
@@ -292,17 +303,82 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
 ///////////////////////************ Update entities here *************////////////////////
 
-            updateEntitiesPrePhysics(entityManager, &keyStates, appInfo.dt);
+            u32 updateFlags = 0;
+            if(gameState->currentGameMode == MY_GAME_MODE_PLAY) updateFlags |= MY_ENTITIES_UPDATE;
             
-            EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
+            if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
+                gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
+                gameState->currentGameMode == MY_GAME_MODE_SCORE ||
+                gameState->currentGameMode == MY_GAME_MODE_SCORE) {
+                updateFlags |= MY_ENTITIES_RENDER;
+            }
 
-            updateEntities(entityManager, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt);
+            if(updateFlags & MY_ENTITIES_RENDER) {
+                if(updateFlags & MY_ENTITIES_UPDATE) {
+                    updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, appInfo.dt);
+                    
+                    EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
+                }
 
-            cleanUpEntities(entityManager);
+                updateEntities(entityManager, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
+
+                cleanUpEntities(entityManager);
+
+                if(gameState->currentGameMode != MY_GAME_MODE_PLAY) {
+                    drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+                    easyRender_blurBuffer(&toneMappedBuffer, &toneMappedBuffer, 0);
+
+                    renderClearDepthBuffer(toneMappedBuffer.bufferId);
+                }
+            }
 
             // renderTextureCentreDim(findTextureAsset("cup_half_full.png"), v3(100, 100, 1), v2(100, 100), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
 
+///////////////////////************* Update the other game modes ************////////////////////
+            static float zCoord = 1.0f; 
+            switch (gameState->currentGameMode) {
+                case MY_GAME_MODE_START_MENU: {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
+
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY);
+
+                        EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
+                    }
+
+                    outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, 1.0f, resolution, "The Period Game", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                } break;
+                case MY_GAME_MODE_PLAY: {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE)) {
+                        gameState->lastGameMode = gameState->currentGameMode;
+                        gameState->currentGameMode = MY_GAME_MODE_PAUSE;
+                    }
+
+                } break;
+                case MY_GAME_MODE_PAUSE: {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE)) {
+                        gameState->lastGameMode = gameState->currentGameMode;
+                        gameState->currentGameMode = MY_GAME_MODE_PLAY;
+                    }
+
+                    outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, zCoord, resolution, "IS PAUSED!", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                } break;
+                case MY_GAME_MODE_SCORE: {
+
+                } break;
+                case MY_GAME_MODE_LEVEL_SELECTOR: {
+
+                } break;
+                case MY_GAME_MODE_START: {
+
+                } break;
+                default: {
+                    assert(false);
+                }
+            }
+
 ////////////////////////////////////////////////////////////////////
+
+
 
 /////////////////////// DRAWING & UPDATE CONSOLE /////////////////////////////////
             if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
@@ -349,44 +425,53 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 /////////////////////// DRAWING & UPDATE IN GAME EDITOR /////////////////////////////////                    
-                    if(inEditor) {
-                        easyEditor_startWindow(editor, "Lister Panel");
-                        
-                        static V3 v = {};
-                        easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
-                        easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
-                        easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
+            if(inEditor) {
+                easyEditor_startWindow(editor, "Lister Panel");
+                
+                static V3 v = {};
+                easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
+                easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
+                easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
 
-                        easyEditor_pushSlider(editor, "Exposure:", &exposureTerm, 0.3f, 3.0f);
-           
-                        easyEditor_pushColor(editor, "Color: ", &color);
-                        static float a = 1.0f;
-                        easyEditor_pushSlider(editor, "Some Value: ", &a, 0, 10);
+                easyEditor_pushSlider(editor, "Exposure:", &exposureTerm, 0.3f, 3.0f);
+                easyEditor_pushSlider(editor, "camera z:", &camera.pos.z, -5.0f, 5.0f);
+   
+                easyEditor_pushColor(editor, "Color: ", &color);
+                static float a = 1.0f;
+                easyEditor_pushSlider(editor, "Some Value: ", &a, 0, 10);
 
-                        static bool saveLevel = false;
-                        if(easyEditor_pushButton(editor, "Save Level")) {
-                            saveLevel = !saveLevel;
-                             easyFlashText_addText(&globalFlashTextManager, "SAVED!");
-                        }
+                static bool saveLevel = false;
+                if(easyEditor_pushButton(editor, "Save Level")) {
+                    saveLevel = !saveLevel;
+                     easyFlashText_addText(&globalFlashTextManager, "SAVED!");
+                }
 
-                        if(saveLevel) {
-                            easyEditor_pushFloat1(editor, "", &v.x);
-                            easyEditor_pushFloat2(editor, "", &v.x, &v.y);
-                            easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
-                        }
+                if(saveLevel) {
+                    easyEditor_pushFloat1(editor, "", &v.x);
+                    easyEditor_pushFloat2(editor, "", &v.x, &v.y);
+                    easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
+                }
 
-                        easyEditor_endWindow(editor); //might not actuall need this
-                        
+                easyEditor_endWindow(editor); //might not actuall need this
+                
 
-                        easyEditor_endEditorForFrame(editor);
-                    }
+                easyEditor_endEditorForFrame(editor);
+            }
 
-                    easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
+            easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
 
-//////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////// DRAW THE UI ITEMS ///////
 
-                    drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+            drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+            //NOTE(ollie): Make sure the transition is on top
+            renderClearDepthBuffer(toneMappedBuffer.bufferId);
+
+            EasyTransition_updateTransitions(transitionState, resolution, appInfo.dt);
+            drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
 
 ////////////////////////////////////////////////////////////////////////////
 

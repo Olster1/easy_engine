@@ -17,19 +17,22 @@
 	}
 */
 
+#define LAYER0 0
+#define LAYER1 0.1f
+#define LAYER2 0.2f
+#define LAYER3 0.3f
+
+
 #define MAX_LANE_COUNT 5
 
 static bool DEBUG_global_movePlayer = true;
 
-typedef enum {
-	ENTITY_PLAYER,
-	ENTITY_BULLET,
-	ENTITY_BUCKET,
-	ENTITY_DROPLET,
-	ENTITY_CHOC_BAR,
-	ENTITY_ROOM,
-	ENTITY_CRAMP
-} EntityType;
+
+typedef struct {
+	float roomSpeed;	
+} MyGameStateVariables;
+
+
 
 typedef enum {
 	ENTITY_MOVE_NULL,
@@ -187,7 +190,6 @@ static inline bool isMoveListEmpty(MoveOption *list) {
 	return (list->next == list);
 }
 
-
 ///////////////////////************* Collision helper functions ************////////////////////
 
 typedef struct {
@@ -233,10 +235,16 @@ static void MyEntity_MarkForDeletion(EasyTransform *T) {
 
 ////////////////////////////////////////////////////////////////////
 
+
+typedef enum {
+	MY_ENTITIES_UPDATE = 1 << 0,
+	MY_ENTITIES_RENDER = 1 << 1,
+} MyEntityUpdateFlag;
+
 ///////////////////////************* pre collision update ************////////////////////
 
 
-static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, float dt) {
+static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, MyGameStateVariables *variables, float dt) {
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e && e->active) { //can be null
@@ -275,7 +283,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 						float a = getLaneX(e->startLane);
 						float b = getLaneX(e->laneIndex);
 
-						e->T.pos.x = smoothStep01(a, info.canonicalVal, b);
+						e->T.pos.x = lerp(a, info.canonicalVal, b);
 
 						if(info.finished) {
 							turnTimerOff(&e->moveTimer);
@@ -295,9 +303,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 				} break;
 				case ENTITY_ROOM: {
-
 					//NOTE(ollie): move downwards
-					e->rb->dP.y = -1;
+					e->rb->dP.y = variables->roomSpeed;
+					
 				} break;	
 				case ENTITY_CRAMP: {
 
@@ -317,7 +325,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 ///////////////////////************ Post collision update *************////////////////////
 
 
-static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt) {
+
+static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
 	renderSetShader(renderGroup, &glossProgram);
 	setViewTransform(renderGroup, viewMatrix);
 	setProjectionTransform(renderGroup, perspectiveMatrix);
@@ -329,113 +338,118 @@ static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, Re
 			
 			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
 
-			switch(e->type) {
-				case ENTITY_PLAYER: {
+			if(flags & MY_ENTITIES_UPDATE) {
+				switch(e->type) {
+					case ENTITY_PLAYER: {
 
-					if(wasPressed(keyStates->gameButtons, BUTTON_SPACE)) {
-						V3 initPos = easyTransform_getWorldPos(&e->T);
-						initPos.z -= 0.1f;
-						MyEntity_AddToCreateList(manager, ENTITY_BULLET, initPos);
+						if(wasPressed(keyStates->gameButtons, BUTTON_SPACE)) {
+							V3 initPos = easyTransform_getWorldPos(&e->T);
+							initPos.z -= 0.1f;
+							MyEntity_AddToCreateList(manager, ENTITY_BULLET, initPos);
+						}
+
+						if(e->dropletCount > 0) {
+							e->sprite = e->sprites[1];
+						} else {
+							e->sprite = e->sprites[0];
+						}
+
+						
+					} break;
+					case ENTITY_BULLET: {
+
+						assert(isOn(&e->lifespanTimer));
+						TimerReturnInfo info = updateTimer(&e->lifespanTimer, dt);
+
+						if(info.finished) {
+							MyEntity_MarkForDeletion(&e->T);
+						}
+						
+					} break;
+					case ENTITY_BUCKET: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								info.e->dropletCountStore = info.e->dropletCount; //deposit blood
+								info.e->dropletCount = 0;
+
+								playGameSound(&globalLongTermArena, easyAudio_findSound("flush.wav"), 0, AUDIO_FOREGROUND);
+							}					
+						}
+					} break;
+					case ENTITY_CHOC_BAR: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+
+								info.e->chocPower++;
+
+								playGameSound(&globalLongTermArena, easyAudio_findSound("bite.wav"), 0, AUDIO_FOREGROUND);
+
+								turnTimerOn(&e->fadeTimer); //chocBar dissapears
+							}					
+						}
+					} break;
+					case ENTITY_DROPLET: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								info.e->dropletCount++;
+
+								turnTimerOn(&e->fadeTimer);
+							}					
+						}
+
+					} break;
+					case ENTITY_CRAMP: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								info.e->healthPoints--;
+								//check game state 
+		
+							}	
+
+							info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_BULLET, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_BULLET);
+								turnTimerOn(&e->fadeTimer);
+							
+							}						
+						}
+
+
+					} break;
+					case ENTITY_ROOM: {
+
+					} break;
+					default: {
+						assert(false);
 					}
+				}
 
-					if(e->dropletCount > 0) {
-						e->sprite = e->sprites[1];
-					} else {
-						e->sprite = e->sprites[0];
-					}
+				if(isOn(&e->fadeTimer)) {
+					TimerReturnInfo info = updateTimer(&e->fadeTimer, dt);
 
-					
-				} break;
-				case ENTITY_BULLET: {
-
-					assert(isOn(&e->lifespanTimer));
-					TimerReturnInfo info = updateTimer(&e->lifespanTimer, dt);
+					e->colorTint.w = 1.0f - info.canonicalVal;
 
 					if(info.finished) {
+						turnTimerOff(&e->fadeTimer);
 						MyEntity_MarkForDeletion(&e->T);
 					}
-					
-				} break;
-				case ENTITY_BUCKET: {
-					if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
-						MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
-
-						if(info.found) {
-							assert(info.e->type == ENTITY_PLAYER);
-							info.e->dropletCountStore = info.e->dropletCount; //deposit blood
-							info.e->dropletCount = 0;
-
-							playGameSound(&globalLongTermArena, easyAudio_findSound("flush.wav"), 0, AUDIO_FOREGROUND);
-						}					
-					}
-				} break;
-				case ENTITY_CHOC_BAR: {
-					if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
-						MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
-
-						if(info.found) {
-							assert(info.e->type == ENTITY_PLAYER);
-
-							info.e->chocPower++;
-
-							playGameSound(&globalLongTermArena, easyAudio_findSound("bite.wav"), 0, AUDIO_FOREGROUND);
-
-							turnTimerOn(&e->fadeTimer); //chocBar dissapears
-						}					
-					}
-				} break;
-				case ENTITY_DROPLET: {
-					if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
-						MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
-
-						if(info.found) {
-							assert(info.e->type == ENTITY_PLAYER);
-							info.e->dropletCount++;
-
-							turnTimerOn(&e->fadeTimer);
-						}					
-					}
-
-				} break;
-				case ENTITY_CRAMP: {
-					if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
-						MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
-
-						if(info.found) {
-							assert(info.e->type == ENTITY_PLAYER);
-							info.e->healthPoints--;
-							//check game state 
-	
-						}	
-
-						info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_BULLET, EASY_COLLISION_ENTER);	
-
-						if(info.found) {
-							assert(info.e->type == ENTITY_BULLET);
-							turnTimerOn(&e->fadeTimer);
-						
-						}						
-					}
-
-
-				} break;
-				default: {
-					assert(false);
 				}
 			}
 
-			if(isOn(&e->fadeTimer)) {
-				TimerReturnInfo info = updateTimer(&e->fadeTimer, dt);
-
-				e->colorTint.w = 1.0f - info.canonicalVal;
-
-				if(info.finished) {
-					turnTimerOff(&e->fadeTimer);
-					MyEntity_MarkForDeletion(&e->T);
-				}
-			}
-
-			if(e->sprite) {
+			if(e->sprite && (flags & (u32)MY_ENTITIES_RENDER)) {
 				renderDrawSprite(renderGroup, e->sprite, e->colorTint);
 			}	
 
@@ -457,7 +471,7 @@ static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, Re
 						tempT.scale = v3(dim, dim, 0);
 						setModelTransform(renderGroup, easyTransform_getTransform(&tempT));
 
-						renderDrawQuad(renderGroup, COLOR_RED);
+						// renderDrawQuad(renderGroup, COLOR_RED);
 
 
 					} break;
@@ -494,7 +508,7 @@ static Entity *initPlayer(MyEntityManager *m, Texture *empty,  Texture *halfEmpt
 	turnTimerOff(&e->moveTimer);
 
 	e->name = "Player";
-	easyTransform_initTransform(&e->T, v3(0, 0, 0)); 
+	easyTransform_initTransform(&e->T, v3(0, 0, LAYER3)); 
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_PLAYER;
@@ -519,8 +533,6 @@ static Entity *initPlayer(MyEntityManager *m, Texture *empty,  Texture *halfEmpt
 
 	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, false, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
-
-	e->rb->dP.y = 0.3f;
 	/////
 
 	return e;
@@ -535,7 +547,9 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Bullet";
+	pos.z = LAYER1;
 	easyTransform_initTransform(&e->T, pos); 
+	assert(!e->T.parent);
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_BULLET;
@@ -567,11 +581,13 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 //NOTE(ollie): Droplet
 
-static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos) {
+static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Droplet";
 	easyTransform_initTransform(&e->T, pos); 
+	if(parent) e->T.parent = &parent->T;
+	
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_DROPLET;
@@ -594,11 +610,13 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 
 //NOTE(ollie): Cramp
-static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos) {
+static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Cramp";
 	easyTransform_initTransform(&e->T, pos); 
+	if(parent) e->T.parent = &parent->T;
+
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_CRAMP;
@@ -621,11 +639,13 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 
 //NOTE(ollie): Bucket
-static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos) {
+static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Bucket";
 	easyTransform_initTransform(&e->T, pos); 
+	if(parent) e->T.parent = &parent->T;
+
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_BUCKET;
@@ -648,11 +668,13 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 
 //NOTE(ollie): Choc bar
-static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos) {
+static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Chocolate Bar";
 	easyTransform_initTransform(&e->T, pos); 
+	if(parent) e->T.parent = &parent->T;
+
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_CHOC_BAR;
@@ -673,7 +695,30 @@ static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 ////////////////////////////////////////////////////////////////////
 
+//NOTE(ollie): Room
+static Entity *initRoom(MyEntityManager *m, V3 pos) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
+	e->name = "Room";
+	easyTransform_initTransform(&e->T, pos); 
+	e->active = true;
+	e->colorTint = COLOR_WHITE;
+	e->type = ENTITY_ROOM;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	////Physics 
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+
+	/////
+
+	return e;
+
+}
+
+////////////////////////////////////////////////////////////////////
 
 
 ///////////////////////*************  Clean up at end of frame ************////////////////////
