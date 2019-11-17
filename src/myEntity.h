@@ -22,17 +22,27 @@
 #define LAYER2 0.2f
 #define LAYER3 0.3f
 
+#define CHOC_INCREMENT 0.1f
+
 
 #define MAX_LANE_COUNT 5
 
 static bool DEBUG_global_movePlayer = true;
 
 
+///////////////////////*********** Game Variables **************////////////////////
+
 typedef struct {
 	float roomSpeed;	
+	float playerMoveSpeed;
+
+	float maxPlayerMoveSpeed;
+	float minPlayerMoveSpeed;
 } MyGameStateVariables;
 
 
+
+////////////////////////////////////////////////////////////////////
 
 typedef enum {
 	ENTITY_MOVE_NULL,
@@ -86,7 +96,6 @@ typedef struct {
 			int dropletCount;
 
 			int dropletCountStore;
-			int chocPower;
 		};
 		struct { //Bullet
 			Timer lifespanTimer;
@@ -245,6 +254,22 @@ typedef enum {
 
 
 static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, MyGameStateVariables *variables, float dt) {
+	
+	///////////////////////*********** Update Game Variables **************////////////////////
+
+	variables->roomSpeed += 0.01f*dt;
+
+	float maxRoomSpeed = 5.0f;
+	if(variables->roomSpeed > maxRoomSpeed) variables->roomSpeed = maxRoomSpeed;
+
+
+	//NOTE(ollie): increase
+
+	variables->playerMoveSpeed += 0.01f*dt;
+	if(variables->playerMoveSpeed > variables->maxPlayerMoveSpeed) variables->playerMoveSpeed = variables->maxPlayerMoveSpeed;
+
+	////////////////////////////////////////////////////////////////////
+
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e && e->active) { //can be null
@@ -277,6 +302,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 						}
 					}
 
+					//NOTE(ollie): Set the player move speed
+					e->moveTimer.period = variables->playerMoveSpeed;
+
 					if(isOn(&e->moveTimer)) {
 						TimerReturnInfo info = updateTimer(&e->moveTimer, dt);
 
@@ -304,7 +332,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				} break;
 				case ENTITY_ROOM: {
 					//NOTE(ollie): move downwards
-					e->rb->dP.y = variables->roomSpeed;
+					e->rb->dP.y = -variables->roomSpeed;
 					
 				} break;	
 				case ENTITY_CRAMP: {
@@ -326,7 +354,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 
 
-static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
+static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
 	renderSetShader(renderGroup, &glossProgram);
 	setViewTransform(renderGroup, viewMatrix);
 	setProjectionTransform(renderGroup, perspectiveMatrix);
@@ -386,7 +414,9 @@ static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, Re
 							if(info.found) {
 								assert(info.e->type == ENTITY_PLAYER);
 
-								info.e->chocPower++;
+								gameStateVariables->playerMoveSpeed -= CHOC_INCREMENT;
+								if(gameStateVariables->playerMoveSpeed < gameStateVariables->minPlayerMoveSpeed) gameStateVariables->playerMoveSpeed = gameStateVariables->minPlayerMoveSpeed;
+
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("bite.wav"), 0, AUDIO_FOREGROUND);
 
@@ -501,10 +531,10 @@ static void updateEntities(MyEntityManager *manager, AppKeyStates *keyStates, Re
 #define MY_ENTITY_DEFAULT_DIM 0.4f
 
 //NOTE(ollie): Player
-static Entity *initPlayer(MyEntityManager *m, Texture *empty,  Texture *halfEmpty) {
+static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, Texture *empty,  Texture *halfEmpty) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
-	e->moveTimer = initTimer(0.5f, false);
+	e->moveTimer = initTimer(variables->playerMoveSpeed, false);
 	turnTimerOff(&e->moveTimer);
 
 	e->name = "Player";

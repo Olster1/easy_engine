@@ -2,6 +2,7 @@
 #include "easy_headers.h"
 
 #include "myEntity.h"
+#include "myLevels.h"
 #include "myGameState.h"
 #include "myTransitions.h"
 
@@ -155,22 +156,19 @@ int main(int argc, char *args[]) {
     // easy3d_loadObj("models/player.obj", &playerModel);
 
     ////////////////////////////////////////////////////////////////////
-    
-    initPlayer(entityManager, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
 
-    Entity *room = initRoom(entityManager, v3(0, 0, 0));
-
-    initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(-1, 2, LAYER0), room);
-
-    initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(1, 2, LAYER0), room);
-
-    initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(1, 3, LAYER0), room);
-
-    initBucket(entityManager, findTextureAsset("toilet1.png"), v3(-1, 4, LAYER0), room);
 
     MyGameStateVariables gameVariables = {};
-    gameVariables.roomSpeed = -0.3f;
+    gameVariables.roomSpeed = 0.5f;
+    gameVariables.playerMoveSpeed = 0.2f;
 
+    gameVariables.minPlayerMoveSpeed = 0.1f;
+    gameVariables.maxPlayerMoveSpeed = 1.3f;
+    
+    initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
+
+    myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
+     myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
 
     MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
 
@@ -320,9 +318,21 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
 
-                updateEntities(entityManager, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
+                updateEntities(entityManager, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
 
                 cleanUpEntities(entityManager);
+
+                ///////////////////////************ Draw the choc meter *************////////////////////
+
+                float canonicalVal = 1.0f - inverse_lerp(gameVariables.minPlayerMoveSpeed, gameVariables.playerMoveSpeed, gameVariables.maxPlayerMoveSpeed);
+                assert(canonicalVal >= 0.0f && canonicalVal <= 1.0f);
+
+                float barWidth = 0.15f*resolution.x;
+                float barHeight = 0.1f*resolution.y;
+                renderDrawRect(rect2fMinDim(barWidth, barHeight, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                renderDrawRect(rect2fMinDim(barWidth, barHeight, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, COLOR_GREEN, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+
+                ////////////////////////////////////////////////////////////////////
 
                 if(gameState->currentGameMode != MY_GAME_MODE_PLAY) {
                     drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
