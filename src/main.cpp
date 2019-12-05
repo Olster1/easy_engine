@@ -347,6 +347,11 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
 ///////////////////////************* Update the other game modes ************////////////////////
             static float zCoord = 1.0f; 
+
+            char frameRate[256];
+            sprintf(frameRate, "%f", 1.0f / appInfo.dt);
+            outputTextNoBacking(&mainFont, 0.1f*resolution.x, 0.1f*resolution.y, 1.0f, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
+            
             switch (gameState->currentGameMode) {
                 case MY_GAME_MODE_START_MENU: {
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
