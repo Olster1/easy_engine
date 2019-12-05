@@ -205,9 +205,27 @@ inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
         DEBUG_global_CameraMoveXY = !DEBUG_global_CameraMoveXY;
     } else if(stringsMatchNullN("camRotate", token.at, token.size)) {
         DEBUG_global_CamNoRotate = !DEBUG_global_CamNoRotate;
+    } else if(stringsMatchNullN("command", token.at, token.size)) {
+    	STARTUPINFO startUpInfo = {};
+    	_PROCESS_INFORMATION lpProcessInformation;
+
+    	if(!CreateProcessA(
+    	   "c:\\windows\\system32\\cmd.exe",
+    	  "/c mkdir",
+    	  NULL,
+    	  NULL,
+    	  FALSE,
+    	  NORMAL_PRIORITY_CLASS,
+    	  NULL,
+    	  "C://",
+    	  &startUpInfo,
+    	  &lpProcessInformation
+    	)) {
+    		easyConsole_addToStream(c, "parameter not understood");
+    	}
     } else {
     	easyConsole_addToStream(c, "parameter not understood");
-    }
+    } 
 	
 }
 

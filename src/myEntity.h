@@ -21,6 +21,8 @@
 #define LAYER1 0.1f
 #define LAYER2 0.2f
 #define LAYER3 0.3f
+#define MY_ROOM_HEIGHT 5
+
 
 #define CHOC_INCREMENT 0.1f
 
@@ -29,20 +31,6 @@
 
 static bool DEBUG_global_movePlayer = true;
 
-
-///////////////////////*********** Game Variables **************////////////////////
-
-typedef struct {
-	float roomSpeed;	
-	float playerMoveSpeed;
-
-	float maxPlayerMoveSpeed;
-	float minPlayerMoveSpeed;
-} MyGameStateVariables;
-
-
-
-////////////////////////////////////////////////////////////////////
 
 typedef enum {
 	ENTITY_MOVE_NULL,
@@ -111,6 +99,23 @@ typedef struct {
 	};
 
 } Entity;
+
+///////////////////////*********** Game Variables **************////////////////////
+
+typedef struct {
+	float roomSpeed;	
+	float playerMoveSpeed;
+
+	float maxPlayerMoveSpeed;
+	float minPlayerMoveSpeed;
+
+	//NOTE: Use Entity ids instead
+	Entity *mostRecentRoom; //the one at the front
+	Entity *lastRoomCreated; //the one at the back
+	int lastLevelIndex;
+} MyGameStateVariables;
+
+////////////////////////////////////////////////////////////////////
 
 typedef struct {
 	EntityType type;
@@ -278,25 +283,28 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 					///////////////////////************ UPDATE PLAYER MOVEMENT *************////////////////////
 					
 					if(DEBUG_global_movePlayer) {
-						if(wasPressed(keyStates->gameButtons, BUTTON_LEFT) && e->laneIndex > 0) {
+						if(wasPressed(keyStates->gameButtons, BUTTON_LEFT)) {
 							pushDirectionOntoList(ENTITY_MOVE_LEFT, e);
-						} else if(wasPressed(keyStates->gameButtons, BUTTON_RIGHT) && e->laneIndex < (MAX_LANE_COUNT - 1)) {
+						} else if(wasPressed(keyStates->gameButtons, BUTTON_RIGHT)) {
 							pushDirectionOntoList(ENTITY_MOVE_RIGHT, e);
 						}
 					}
 
 					if(!isMoveListEmpty(&e->moveList) && !isOn(&e->moveTimer)) {
-						turnTimerOn(&e->moveTimer);
+						
 						MoveDirection dir = pullDirectionOffList(e);
 						if(dir == ENTITY_MOVE_RIGHT) {
-							assert(e->laneIndex < (MAX_LANE_COUNT - 1));
-							e->startLane = e->laneIndex;
-							e->laneIndex++;
-
+							if(e->laneIndex < (MAX_LANE_COUNT - 1)) {
+								e->startLane = e->laneIndex;
+								e->laneIndex++;
+								turnTimerOn(&e->moveTimer);
+							}
 						} else if (dir == ENTITY_MOVE_LEFT) {
-							assert(e->laneIndex > 0);
-							e->startLane = e->laneIndex;
-							e->laneIndex--;
+							if(e->laneIndex > 0) {
+								e->startLane = e->laneIndex;
+								e->laneIndex--;	
+								turnTimerOn(&e->moveTimer);
+							}
 						} else {
 							assert(false);
 						}
@@ -460,7 +468,16 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 
 					} break;
 					case ENTITY_ROOM: {
-
+						if(gameStateVariables->mostRecentRoom == e) { //NOTE(ollie): Is the last room created so look for a new one
+							V3 roomWorldP = easyTransform_getWorldPos(&e->T);
+							if(roomWorldP.y <= -MY_ROOM_HEIGHT) {
+								V3 newPos = easyTransform_getWorldPos(&gameStateVariables->lastRoomCreated->T);
+								newPos.y += MY_ROOM_HEIGHT;
+								MyEntity_AddToCreateList(manager, ENTITY_ROOM, newPos);
+							}	
+						}
+						
+						
 					} break;
 					default: {
 						assert(false);
@@ -729,6 +746,8 @@ static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 static Entity *initRoom(MyEntityManager *m, V3 pos) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
+	zeroStruct(e, Entity);
+
 	e->name = "Room";
 	easyTransform_initTransform(&e->T, pos); 
 	e->active = true;
@@ -748,13 +767,61 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
 
 }
 
+
+
+static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManager, V3 roomPos) {
+	Entity *room = initRoom(entityManager, roomPos);
+
+	char *at = level;
+
+	float startX = -2;
+	float startY = MY_ROOM_HEIGHT - 1;
+
+	V2 posAt = v2(startX, startY);
+	while(*at != '\0') {
+		switch(*at) {
+			case '*': { //empty space
+				posAt.x++;
+			} break;
+			case '\n': { //empty space
+				posAt.y--;
+				posAt.x = startX;
+			} break;
+			case 'e': { //choc bar
+				initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 'c': { //cramp
+				initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 'd': { //droplet
+				initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 't': { //toilet
+				initBucket(entityManager, findTextureAsset("toilet1.png"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			default: {
+
+			} 
+		}
+
+		at++;
+	}
+
+	return room;
+
+}
+
 ////////////////////////////////////////////////////////////////////
 
 
 ///////////////////////*************  Clean up at end of frame ************////////////////////
 
 
-static void cleanUpEntities(MyEntityManager *manager) {
+static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *variables) {
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e && e->active) { //can be null
@@ -772,6 +839,13 @@ static void cleanUpEntities(MyEntityManager *manager) {
 			case ENTITY_BULLET: {
 				initBullet(manager, findTextureAsset("tablet.png"), info.pos);
 			} break;
+			case ENTITY_ROOM: {
+				variables->lastLevelIndex = myLevels_getLevel(variables->lastLevelIndex); 
+				//Only have two rooms at a time
+				variables->mostRecentRoom = variables->lastRoomCreated;
+				variables->lastRoomCreated = myLevels_generateLevel(myLevels_getLevelForIndex(variables->lastLevelIndex), manager, info.pos);
+			
+			} break;
 			default: {
 				assert(false);//not handled
 			}
@@ -782,6 +856,7 @@ static void cleanUpEntities(MyEntityManager *manager) {
 
 	manager->toCreateCount = 0;
 }
+
 
 
 ////////////////////////////////////////////////////////////////////

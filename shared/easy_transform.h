@@ -25,8 +25,6 @@ static inline void easyTransform_initTransform(EasyTransform *t, V3 pos) {
 	t->markForDeletion = false;
 }
 
-
-
 static inline Matrix4 easyTransform_getTransform(EasyTransform *T) {
 	Matrix4 result;
 	EasyTransform *parent = T->parent;

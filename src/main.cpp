@@ -1,8 +1,8 @@
 #include "defines.h"
 #include "easy_headers.h"
 
-#include "myEntity.h"
 #include "myLevels.h"
+#include "myEntity.h"
 #include "myGameState.h"
 #include "myTransitions.h"
 
@@ -123,7 +123,7 @@ int main(int argc, char *args[]) {
         EasyModel castle = {};
         easy3d_loadObj("models/tower.obj", &castle);
 
-        EasyTerrain *terrain = initTerrain(fern, grass);
+        // EasyTerrain *terrain = initTerrain(fern, grass);
 
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
         EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
@@ -160,15 +160,16 @@ int main(int argc, char *args[]) {
 
     MyGameStateVariables gameVariables = {};
     gameVariables.roomSpeed = 0.5f;
-    gameVariables.playerMoveSpeed = 0.2f;
+    gameVariables.playerMoveSpeed = 0.5f;
 
     gameVariables.minPlayerMoveSpeed = 0.1f;
     gameVariables.maxPlayerMoveSpeed = 1.3f;
+
     
     initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
 
-    myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
-     myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
+    gameVariables.mostRecentRoom = myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
+    gameVariables.lastRoomCreated = myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
 
     MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
 
@@ -320,7 +321,7 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
                 updateEntities(entityManager, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
 
-                cleanUpEntities(entityManager);
+                cleanUpEntities(entityManager, &gameVariables);
 
                 ///////////////////////************ Draw the choc meter *************////////////////////
 

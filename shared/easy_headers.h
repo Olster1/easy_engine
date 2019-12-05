@@ -1,3 +1,8 @@
+#include <GL/gl3w.h>
+
+#include "../SDL2/sdl.h"
+#include "../SDL2/SDL_syswm.h"
+
 #include <stdio.h>
 #include <time.h> // to init random generator
 #include "easy_types.h"
@@ -40,6 +45,8 @@ static char* globalExeBasePath;
 
 #include "easy_debug_variables.h"
 #include "easy_color.h"
+#include "easy_transition.h"
+
 #include "easy_asset_loader.h"
 #include "easy_os.h"
 #include "easy_editor.h"
