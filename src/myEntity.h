@@ -55,6 +55,11 @@ typedef struct {
 	EntityType type;
 	Texture *sprite;
 
+	EasyModel  *model;
+
+	bool updatedPhysics;
+	bool updatedFrame;
+
 	//NOTE(ollie): physics world hold both colliders & rigidbodies
 
 	EasyCollider *collider; //trigger
@@ -278,6 +283,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e && e->active) { //can be null
+			assert(!e->updatedPhysics);
+			e->updatedPhysics = true;
 			switch(e->type) {
 				case ENTITY_PLAYER: {
 					///////////////////////************ UPDATE PLAYER MOVEMENT *************////////////////////
@@ -340,7 +347,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				} break;
 				case ENTITY_ROOM: {
 					//NOTE(ollie): move downwards
-					e->rb->dP.y = -variables->roomSpeed;
+					e->rb->dP.y = -1;//variables->roomSpeed;
 					
 				} break;	
 				case ENTITY_CRAMP: {
@@ -357,22 +364,32 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 	}
 }
 
+static void myEntity_recusiveDelete(Entity *parent, MyEntityManager *manager) {
+	for(int i = 0; i < manager->entities.count; ++i) {
+		Entity *e = (Entity *)getElement(&manager->entities, i);
+		if(e && e != parent && e->T.parent == &parent->T) {
+			myEntity_recusiveDelete(e, manager);
+			MyEntity_MarkForDeletion(&e->T);
+		}
+	}
+}
 
 ///////////////////////************ Post collision update *************////////////////////
 
-
-
 static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
-	renderSetShader(renderGroup, &glossProgram);
+	RenderProgram *mainShader = &glossProgram;
+	renderSetShader(renderGroup, mainShader);
 	setViewTransform(renderGroup, viewMatrix);
 	setProjectionTransform(renderGroup, perspectiveMatrix);
-
 
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e && e->active) { //can be null
+			assert(!e->updatedFrame);
+			e->updatedFrame = true;
 			
 			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
+			if(e->type != ENTITY_ROOM && e->type != ENTITY_PLAYER) assert(e->rb == 0);
 
 			if(flags & MY_ENTITIES_UPDATE) {
 				switch(e->type) {
@@ -433,6 +450,9 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 						}
 					} break;
 					case ENTITY_DROPLET: {
+						assert(e->T.parent);
+						assert(e->T.parent->parent == 0);
+						
 						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
 							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
 
@@ -468,13 +488,30 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 
 					} break;
 					case ENTITY_ROOM: {
-						if(gameStateVariables->mostRecentRoom == e) { //NOTE(ollie): Is the last room created so look for a new one
-							V3 roomWorldP = easyTransform_getWorldPos(&e->T);
+						V3 roomWorldP = easyTransform_getWorldPos(&e->T);
+						if(gameStateVariables->mostRecentRoom == e) { //NOTE(ollie): Is the last room created, so see if it is time to create a new room
 							if(roomWorldP.y <= -MY_ROOM_HEIGHT) {
 								V3 newPos = easyTransform_getWorldPos(&gameStateVariables->lastRoomCreated->T);
 								newPos.y += MY_ROOM_HEIGHT;
 								MyEntity_AddToCreateList(manager, ENTITY_ROOM, newPos);
 							}	
+						}
+
+						assert(e->T.parent == 0);
+
+						#define SAFE_REGION_TO_DESTROY 2
+						if(roomWorldP.y <= -SAFE_REGION_TO_DESTROY*MY_ROOM_HEIGHT) {
+ 							assert(gameStateVariables->mostRecentRoom != e);
+
+ 							// for(int i = 0; i < manager->entities.count; ++i) {
+ 							// 	Entity *e1 = (Entity *)getElement(&manager->entities, i);
+ 							// 	if(e1 && e1 != e && e1->T.parent == &e->T) {
+ 							// 		MyEntity_MarkForDeletion(&e1->T);
+ 							// 	}
+ 							// }
+
+							myEntity_recusiveDelete(e, manager);
+							MyEntity_MarkForDeletion(&e->T);
 						}
 						
 						
@@ -498,6 +535,12 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 
 			if(e->sprite && (flags & (u32)MY_ENTITIES_RENDER)) {
 				renderDrawSprite(renderGroup, e->sprite, e->colorTint);
+			}	
+
+			if(e->model && (flags & (u32)MY_ENTITIES_RENDER)) {
+				renderSetShader(renderGroup, &phongProgram);
+				renderModel(renderGroup, e->model, e->colorTint);
+				renderSetShader(renderGroup, mainShader);
 			}	
 
 			///////////////////////************ Debug Collider viewing *************////////////////////
@@ -610,7 +653,6 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
 
-
 	////Physics 
 
 	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
@@ -636,7 +678,7 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 	if(parent) e->T.parent = &parent->T;
 	
 	e->active = true;
-	e->colorTint = COLOR_WHITE;
+	e->colorTint = COLOR_PINK;
 	e->type = ENTITY_DROPLET;
 
 	e->sprite = sprite;
@@ -657,7 +699,7 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 
 
 //NOTE(ollie): Cramp
-static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
+static Entity *initCramp(MyEntityManager *m, Texture *sprite, EasyModel *model, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Cramp";
@@ -665,10 +707,12 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
-	e->colorTint = COLOR_WHITE;
+	e->colorTint = COLOR_BLUE;
 	e->type = ENTITY_CRAMP;
 
 	e->sprite = sprite;
+	e->model = model;
+
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
 
@@ -694,7 +738,7 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *p
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
-	e->colorTint = COLOR_WHITE;
+	e->colorTint = COLOR_RED;
 	e->type = ENTITY_BUCKET;
 
 	e->sprite = sprite;
@@ -748,10 +792,13 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
 
 	zeroStruct(e, Entity);
 
+	e->sprite = findTextureAsset("choc_bar.png");
+
 	e->name = "Room";
 	easyTransform_initTransform(&e->T, pos); 
+	e->T.scale = v3(1, 1, 1);
 	e->active = true;
-	e->colorTint = COLOR_WHITE;
+	e->colorTint = COLOR_GREEN;
 	e->type = ENTITY_ROOM;
 
 	e->fadeTimer = initTimer(0.3f, false);
@@ -792,7 +839,7 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 				posAt.x++;
 			} break;
 			case 'c': { //cramp
-				initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
+				initCramp(entityManager, findTextureAsset("cramp.PNG"), findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'd': { //droplet
@@ -824,9 +871,26 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *variables) {
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
-		if(e && e->active) { //can be null
+		if(e) { //can be null
+			e->updatedPhysics = false;
+			e->updatedFrame = false;
+
 			if(e->T.markForDeletion) {
 				//remove from array
+				e->active = false;
+				if(e->collider) {
+					removeElement_ordered(&manager->physicsWorld.colliders, e->collider->arrayIndex);
+					memset(e->collider, 0, sizeof(EasyCollider));
+					e->collider = 0;
+				}
+
+				if(e->rb) {
+					removeElement_ordered(&manager->physicsWorld.rigidBodies, e->rb->arrayIndex);
+					memset(e->rb, 0, sizeof(EasyRigidBody));
+					e->rb = 0;
+				}
+				memset(e, 0, sizeof(Entity));
+				assert(e->T.parent == 0);
 				removeElement_ordered(&manager->entities, i);
 			}		
 		}

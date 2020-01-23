@@ -260,7 +260,6 @@ PoolInfo getPoolInfo(Array_Dynamic *array, int absIndex) {
 
 
 void *getElement(Array_Dynamic *array, unsigned int absIndex) {
-    
     void *elm = 0;
     PoolInfo info = getPoolInfo(array, absIndex);
     if(info.pool && info.indexAt < (info.pool->indexAt) && info.indexAt >= 0 && isElmValid(info.pool, info.indexAt)) {
@@ -273,6 +272,7 @@ void *getElement(Array_Dynamic *array, unsigned int absIndex) {
 void *getEmptyElement(Array_Dynamic *array) {
     int index = addElement_(array, 0, array->sizeofType);
     void *result = getElement(array, index);
+    memset(result, 0, array->sizeofType);
     return result;
 }
 

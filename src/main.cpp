@@ -62,6 +62,9 @@ int main(int argc, char *args[]) {
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
         
         loadAndAddImagesToAssets("img/");
+
+        
+        loadAndAddImagesToAssets("img/period_game/");
         
         ////INIT FONTS
         char *fontName = concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena);
@@ -115,6 +118,10 @@ int main(int argc, char *args[]) {
         EasyModel fern = {};
         easy3d_loadObj("models/terrain/fern.obj", &fern);
 
+        easy3d_loadMtl("models/Crystal.mtl");
+        EasyModel Crystal = {};
+        easy3d_loadObj("models/Crystal.obj", &Crystal);
+
         easy3d_loadMtl("models/terrain/grass.mtl");
         EasyModel grass = {};
         easy3d_loadObj("models/terrain/grass.obj", &grass);
@@ -145,15 +152,6 @@ int main(int argc, char *args[]) {
 
     ///////////////////////************ Load the resources *************////////////////////
 
-    loadAndAddImagesToAssets("img/period_game/");
-
-    ///////////////////////*********** Load the player model **************////////////////////
-    
-    // easy3d_loadMtl("models/player.mtl");
-
-    //TODO(ollie): Change this to add models to the asset catalog
-    // EasyModel playerModel = {};
-    // easy3d_loadObj("models/player.obj", &playerModel);
 
     ////////////////////////////////////////////////////////////////////
 
@@ -250,8 +248,8 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
             renderDisableCulling(globalRenderGroup);
             
-            // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, -1, 1)));
-            // renderModel(globalRenderGroup, &grass, COLOR_WHITE);
+            setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, -1, 1)));
+            renderModel(globalRenderGroup, &Crystal, COLOR_WHITE);
 
             // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 1, 1)));
             // renderModel(globalRenderGroup, &fern, color);
@@ -303,7 +301,7 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 ///////////////////////************ Update entities here *************////////////////////
 
             u32 updateFlags = 0;
-            if(gameState->currentGameMode == MY_GAME_MODE_PLAY) updateFlags |= MY_ENTITIES_UPDATE;
+            if(gameState->currentGameMode == MY_GAME_MODE_PLAY && !DEBUG_global_PauseGame) updateFlags |= MY_ENTITIES_UPDATE;
             
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                 gameState->currentGameMode == MY_GAME_MODE_PAUSE ||

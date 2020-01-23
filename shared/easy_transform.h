@@ -55,7 +55,9 @@ static inline V3 easyTransform_getWorldPos(EasyTransform *T) {
 	V3 pos = T->pos;
 	EasyTransform *parent = T->parent;
 
+	int parentCount = 0;
 	while(parent) {
+		parentCount++;
 		pos = v3_plus(pos, parent->pos);
 		parent = parent->parent;
 	}

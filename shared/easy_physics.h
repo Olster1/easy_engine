@@ -118,6 +118,8 @@ static inline EasyPhysics_RayCastAABB3f_Info EasyPhysics_CastRayAgainstAABB3f(Ma
 
 
 typedef struct {
+	int arrayIndex;
+	
 	V3 dP;
 	V3 accumForce; //perFrame
 	V3 accumTorque;
@@ -161,6 +163,8 @@ typedef enum {
 } EasyColliderType;
 
 typedef struct {
+	int arrayIndex;
+
 	EasyTransform *T;
 	EasyRigidBody *rb;
 
@@ -363,8 +367,13 @@ void EasyPhysics_ResolveCollisions(EasyRigidBody *ent, EasyRigidBody *testEnt, E
 }
 
 static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float inverseWeight, float inverseIntertia) {
-    EasyRigidBody *rb = (EasyRigidBody *)getEmptyElement(&world->rigidBodies);
-    
+    ArrayElementInfo arrayInfo = getEmptyElementWithInfo(&world->rigidBodies);
+
+    EasyRigidBody *rb = (EasyRigidBody *)arrayInfo.elm;
+
+    // memset(rb, 0, sizeof(EasyRigidBody));
+    rb->arrayIndex = arrayInfo.absIndex;
+
     rb->dP = v3(0, 0, 0);
     rb->inverseWeight = inverseWeight;
     rb->inverse_I = inverseIntertia;
@@ -375,9 +384,14 @@ static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float i
 
 
 static EasyCollider *EasyPhysics_AddCollider(EasyPhysics_World *world, EasyTransform *T, EasyRigidBody *rb, EasyColliderType type, V3 offset, bool isTrigger, V3 info) {
+	ArrayElementInfo arrayInfo = getEmptyElementWithInfo(&world->colliders);
 
-	EasyCollider *col = (EasyCollider *)getEmptyElement(&world->colliders);
+	EasyCollider *col = (EasyCollider *)arrayInfo.elm;
+	memset(col, 0, sizeof(EasyCollider));
+	
+	col->arrayIndex = arrayInfo.absIndex;
 
+	assert(T);
 	col->T = T;
 	col->rb = rb;
 
@@ -419,13 +433,10 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 	    	
 	        rb->dP = v3_plus(v3_scale(dt * rb->inverseWeight, rb->accumForce), rb->dP);
 
-	        rb->accumForce = NULL_VECTOR3; //clear the forces for frame
-	        
 			//TODO(ollie): Integrate torque 
 
 	        rb->dA = v3_plus(v3_scale(dt, rb->accumTorque), rb->dA);
 
-			rb->accumTorque = NULL_VECTOR3;
 
 	    ////////////////////////////////////////////////////////////////////
 	        
@@ -440,14 +451,14 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 
         ///////////////////////************* Integrate the physics ************////////////////////
 
-        if(a->rb) {
-        	EasyRigidBody *rb = a->rb;
-        	a->T->pos = v3_plus(v3_scale(dt, rb->dP), a->T->pos);
+	        if(a->rb) {
+	        	EasyRigidBody *rb = a->rb;
+	        	a->T->pos = v3_plus(v3_scale(dt, rb->dP), a->T->pos);
 
-        	a->T->Q = addScaledVectorToQuaternion(a->T->Q, rb->dA, dt);
+	        	a->T->Q = addScaledVectorToQuaternion(a->T->Q, rb->dA, dt);
 
-        	a->T->Q = easyMath_normalizeQuaternion(a->T->Q);
-        }
+	        	a->T->Q = easyMath_normalizeQuaternion(a->T->Q);
+	        }
 
         ////////////////////////////////////////////////////////////////////
 
@@ -534,14 +545,12 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 
 static void EasyPhysics_UpdateWorld(EasyPhysics_World *world, float dt) {
 
-	//     V3 screenP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, -10, mat4());
-	//     EasyPhysics_AddRigidBody(&gameObjects, 0.1f, 1, screenP);
-
 	world->physicsTime += dt;
 	float timeInterval = PHYSICS_TIME_STEP;
-	while(world->physicsTime > timeInterval) {
-	    ProcessPhysics(&world->colliders, &world->rigidBodies, timeInterval);
-	    world->physicsTime -= timeInterval;
+	while(world->physicsTime > 0.00000001f) {
+		float t = min(timeInterval, world->physicsTime);
+	    ProcessPhysics(&world->colliders, &world->rigidBodies, t);
+	    world->physicsTime -= t;
 	}
 
 	///////////////////////************ Post process collisions *************////////////////////
@@ -551,6 +560,10 @@ static void EasyPhysics_UpdateWorld(EasyPhysics_World *world, float dt) {
 	        EasyCollider *col = (EasyCollider *)getElement(&world->colliders, i);
 	        if(col) {
 	        	EasyCollider_removeCollisions(col);
+	        	if(col->rb) {
+	        		col->rb->accumForce = NULL_VECTOR3;
+	        		col->rb->accumTorque = NULL_VECTOR3;
+	        	}
 	        }
 	    }
 

@@ -3,7 +3,8 @@ typedef enum {
     ASSET_SOUND, 
     ASSET_ANIMATION,
     ASSET_EVENT,
-    ASSET_MATERIAL        
+    ASSET_MATERIAL,
+    ASSET_MODEL      
 } AssetType;
 
 typedef struct
@@ -57,6 +58,7 @@ Asset *findAsset(char *fileName) {
     return result;
 }
 
+#define findModelAsset(fileName) (EasyModel *)findAsset(fileName)->file
 #define findMaterialAsset(fileName) (EasyMaterial *)findAsset(fileName)->file
 #define findTextureAsset(fileName) (Texture *)findAsset(fileName)->file
 #define findSoundAsset(fileName) (WavFile *)findAsset(fileName)->file
@@ -130,6 +132,11 @@ Asset *addAssetEvent(char *fileName, Event *asset) { // we have these for type c
 }
 
 Asset *addAssetMaterial(char *fileName, EasyMaterial *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetModel(char *fileName, EasyModel *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
     return result;
 }

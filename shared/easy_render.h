@@ -49,7 +49,7 @@ static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
 
 #if DEVELOPER_MODE
 static bool DEBUG_drawWireFrame = false;
-static bool DEBUG_drawBounds = false;
+static bool DEBUG_drawBounds = true;
 #endif
 
 typedef enum {
@@ -462,6 +462,8 @@ typedef struct {
     V4 defaultSpecular;
 
     float specularConstant;
+    
+    char *name;
 } EasyMaterial;
 
 static EasyMaterial globalWhiteMaterial;
@@ -1352,9 +1354,9 @@ static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 
 // }
 
 void render_enableCullFace() {
-    glEnable(GL_CULL_FACE); 
-    glCullFace(GL_BACK);  
-    glFrontFace(GL_CW);  
+    // glEnable(GL_CULL_FACE); 
+    // glCullFace(GL_BACK);  
+    // glFrontFace(GL_CW);  
 
 }
 

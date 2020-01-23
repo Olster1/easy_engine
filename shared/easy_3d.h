@@ -119,12 +119,13 @@ static void easy3d_loadMtl(char *fileName) {
                     //TODO: Add folder prefix for unique names 
                     char *materialName = nullTerminateArena(t.at, t.size, &globalPerFrameArena);
                     char *uniqueName = concatInArena(materialFileName, materialName, &globalLongTermArena);
+                    mat->name = uniqueName;
                     addAssetMaterial(uniqueName, mat);
                 }
                 if(stringsMatchNullN("Ka", token.at, token.size)) {
                     // if(!hadKdMap && !hadKd) {
                         assert(mat);
-                        mat->defaultAmbient.xyz = easy3d_makeVector3(&tokenizer);
+                        // mat->defaultAmbient.xyz = easy3d_makeVector3(&tokenizer);
                     // }
                 }
                 if(stringsMatchNullN("Kd", token.at, token.size)) {
@@ -132,6 +133,7 @@ static void easy3d_loadMtl(char *fileName) {
                         hadKd = true;
                         assert(mat);
                         mat->defaultDiffuse.xyz = easy3d_makeVector3(&tokenizer);
+                        mat->defaultAmbient.xyz = v3(0, 0, 0);
                     }
                 }
                 if(stringsMatchNullN("Ks", token.at, token.size)) {
@@ -245,6 +247,17 @@ static void easy3d_loadObj(char *fileName, EasyModel *model) {
     fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     FileContents fileContents = getFileContentsNullTerminate(fileName);
     unsigned char *at = fileContents.memory;
+
+    if(!model) { //NOTE(ollie): no model passed in
+        model = pushStruct(&globalLongTermArena, EasyModel);
+
+        
+    }
+
+    //NOTE(ollie): add model to catalog, so add it to asset catalog
+    //NOTE(ollie): This function takes the last portion, so don't need to do this. 
+    // Although this means it won't be unique. 
+    addAssetModel(fileName, model); 
 
     model->bounds = InverseInfinityRect3f();
     

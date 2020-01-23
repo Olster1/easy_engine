@@ -140,32 +140,34 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 		} break;
 	}
 
-	
+	bool result = false;
 
-	bool result = wasPressed(keyStates->gameButtons, BUTTON_ENTER);
-	if(height != 0) {
-		if(!result) {
-			if(keyStates->inputString && !wasPressed) {
-				splice(&c->buffer, keyStates->inputString, true);
-			}
+	if(c->state != EASY_CONSOLE_CLOSED) {
+		result = wasPressed(keyStates->gameButtons, BUTTON_ENTER);
+		if(height != 0) {
+			if(!result) {
+				if(keyStates->inputString && !wasPressed) {
+					splice(&c->buffer, keyStates->inputString, true);
+				}
 
-			if(wasPressed(keyStates->gameButtons, BUTTON_BACKSPACE)) {
-				splice(&c->buffer, "1", false);
-			}
+				if(wasPressed(keyStates->gameButtons, BUTTON_BACKSPACE)) {
+					splice(&c->buffer, "1", false);
+				}
 
-			if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_LEFT) && c->buffer.cursorAt > 0) {
-				c->buffer.cursorAt--;
+				if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_LEFT) && c->buffer.cursorAt > 0) {
+					c->buffer.cursorAt--;
+				}
+				if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_RIGHT) && c->buffer.cursorAt < c->buffer.length) {
+					c->buffer.cursorAt++;
+				}
 			}
-			if(wasPressed(keyStates->gameButtons, BUTTON_BOARD_RIGHT) && c->buffer.cursorAt < c->buffer.length) {
-				c->buffer.cursorAt++;
-			}
+			// renderEnableDepthTest(RenderGroup *group);
+			renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, 2), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+		 	outputText_with_cursor(&globalDebugFont, 0, height, 1.5f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont.fontHeight, resolution.x, height + 0.4f*globalDebugFont.fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
+			
+			V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, resolution.x, height - globalDebugFont.fontHeight), &globalDebugFont, 1, resolution, relativeSize);
+			outputText(&globalDebugFont, 0, height - globalDebugFont.fontHeight - bounds.y, 1.5f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
 		}
-		// renderEnableDepthTest(RenderGroup *group);
-		renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, 2), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-	 	outputText_with_cursor(&globalDebugFont, 0, height, 1.5f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont.fontHeight, resolution.x, height + 0.4f*globalDebugFont.fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
-		
-		V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, resolution.x, height - globalDebugFont.fontHeight), &globalDebugFont, 1, resolution, relativeSize);
-		outputText(&globalDebugFont, 0, height - globalDebugFont.fontHeight - bounds.y, 1.5f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
 	}
 
 	if(result) {
@@ -203,8 +205,15 @@ inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
         DEBUG_global_IsFlyMode = !DEBUG_global_IsFlyMode;
     } else if(stringsMatchNullN("camMoveXY", token.at, token.size)) {
         DEBUG_global_CameraMoveXY = !DEBUG_global_CameraMoveXY;
+    } else if(stringsMatchNullN("pause", token.at, token.size)) {
+        DEBUG_global_PauseGame = !DEBUG_global_PauseGame;
     } else if(stringsMatchNullN("camRotate", token.at, token.size)) {
         DEBUG_global_CamNoRotate = !DEBUG_global_CamNoRotate;
+    } else if(stringsMatchNullN("help", token.at, token.size)) {
+        easyConsole_addToStream(c, "camMoveXY");
+        easyConsole_addToStream(c, "fly");
+        easyConsole_addToStream(c, "camRotate");
+         easyConsole_addToStream(c, "pause");
     } else if(stringsMatchNullN("command", token.at, token.size)) {
     	STARTUPINFO startUpInfo = {};
     	_PROCESS_INFORMATION lpProcessInformation;
