@@ -31,11 +31,29 @@ e** d*\n\
 *****\n\
 ";
 
+static char *global_periodRoom4 = "\
+*****\n\
+s*d*s\n\
+s*c*s\n\
+s*d*s\n\
+*****\n\
+";
+
+static char *global_periodRoom5 = "\
+**s**\n\
+s**s*\n\
+ss**s\n\
+sss*s\n\
+*****\n\
+";
+
 
 static char *global_periodLevelStrings[] = { global_periodRoom0, 
 											 global_periodRoom1,
 											 global_periodRoom2,
-											 global_periodRoom3 
+											 global_periodRoom3,
+											 global_periodRoom4,
+											 global_periodRoom5  
 											};
 
 static inline int myLevels_getLevel(int lastLevel) {

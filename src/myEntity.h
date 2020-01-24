@@ -22,6 +22,7 @@
 #define LAYER2 0.2f
 #define LAYER3 0.3f
 #define MY_ROOM_HEIGHT 5
+#define DEBUG_ENTITY_COLOR 0
 
 
 #define CHOC_INCREMENT 0.1f
@@ -118,6 +119,10 @@ typedef struct {
 	Entity *mostRecentRoom; //the one at the front
 	Entity *lastRoomCreated; //the one at the back
 	int lastLevelIndex;
+
+	//NOTE(ollie): For camera easing
+	float cameraTargetPos;
+
 } MyGameStateVariables;
 
 ////////////////////////////////////////////////////////////////////
@@ -267,10 +272,10 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 	
 	///////////////////////*********** Update Game Variables **************////////////////////
 
-	variables->roomSpeed += 0.01f*dt;
+	variables->roomSpeed -= 0.1f*dt;
 
-	float maxRoomSpeed = 5.0f;
-	if(variables->roomSpeed > maxRoomSpeed) variables->roomSpeed = maxRoomSpeed;
+	float maxRoomSpeed = -3.0f;
+	if(variables->roomSpeed < maxRoomSpeed) variables->roomSpeed = maxRoomSpeed;
 
 
 	//NOTE(ollie): increase
@@ -347,7 +352,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				} break;
 				case ENTITY_ROOM: {
 					//NOTE(ollie): move downwards
-					e->rb->dP.y = -1;//variables->roomSpeed;
+					e->rb->dP.y = variables->roomSpeed;
 					
 				} break;	
 				case ENTITY_CRAMP: {
@@ -678,7 +683,11 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 	if(parent) e->T.parent = &parent->T;
 	
 	e->active = true;
-	e->colorTint = COLOR_PINK;
+	#if DEBUG_ENTITY_COLOR
+		e->colorTint = COLOR_PINK;
+	#else 
+		e->colorTint = COLOR_WHITE;
+	#endif
 	e->type = ENTITY_DROPLET;
 
 	e->sprite = sprite;
@@ -696,10 +705,51 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 }
 
 ////////////////////////////////////////////////////////////////////
+//NOTE(ollie): Scenery item
+
+
+//NOTE(ollie): Scenery 1x1 means it takes up 1x1 grid cell
+static Entity *initScenery1x1(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+
+	e->name = "Scenery1x1";
+	easyTransform_initTransform(&e->T, pos); 
+	if(parent) e->T.parent = &parent->T;
+
+	//NOTE(ollie): Set the transform 
+	float scale = 0.8f;
+	e->T.scale = v3(scale, scale, scale);
+	e->T.Q = eulerAnglesToQuaternion(0, -0.5f*PI32, 0);
+
+
+	e->active = true;
+	#if DEBUG_ENTITY_COLOR
+			e->colorTint = COLOR_BLUE;
+		#else 
+			e->colorTint = COLOR_WHITE;
+		#endif
+	e->type = ENTITY_CRAMP;
+
+	e->model = model;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	////Physics 
+	e->rb = 0;
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(getDimRect3f(model->bounds).x, 0, 0)); //only the x bounds is actually used for circle types
+
+	/////
+
+	return e;
+}
+
+
+////////////////////////////////////////////////////////////////////
 
 
 //NOTE(ollie): Cramp
-static Entity *initCramp(MyEntityManager *m, Texture *sprite, EasyModel *model, V3 pos, Entity *parent) {
+static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Cramp";
@@ -707,11 +757,15 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, EasyModel *model, 
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
+#if DEBUG_ENTITY_COLOR
 	e->colorTint = COLOR_BLUE;
+#else 
+	e->colorTint = COLOR_WHITE;
+#endif
+	
 	e->type = ENTITY_CRAMP;
 
 	e->sprite = sprite;
-	e->model = model;
 
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
@@ -738,7 +792,11 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *p
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
-	e->colorTint = COLOR_RED;
+	#if DEBUG_ENTITY_COLOR
+		e->colorTint = COLOR_RED;
+	#else 
+		e->colorTint = COLOR_WHITE;
+	#endif
 	e->type = ENTITY_BUCKET;
 
 	e->sprite = sprite;
@@ -792,13 +850,17 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
 
 	zeroStruct(e, Entity);
 
-	e->sprite = findTextureAsset("choc_bar.png");
+	e->sprite = 0;//findTextureAsset("choc_bar.png");
 
 	e->name = "Room";
 	easyTransform_initTransform(&e->T, pos); 
 	e->T.scale = v3(1, 1, 1);
 	e->active = true;
+#if DEBUG_ENTITY_COLOR
 	e->colorTint = COLOR_GREEN;
+#else 
+	e->colorTint = COLOR_WHITE;
+#endif
 	e->type = ENTITY_ROOM;
 
 	e->fadeTimer = initTimer(0.3f, false);
@@ -839,11 +901,15 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 				posAt.x++;
 			} break;
 			case 'c': { //cramp
-				initCramp(entityManager, findTextureAsset("cramp.PNG"), findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
+				initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'd': { //droplet
 				initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 's': { //droplet
+				initScenery1x1(entityManager, findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 't': { //toilet

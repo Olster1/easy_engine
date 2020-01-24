@@ -157,21 +157,22 @@ int main(int argc, char *args[]) {
 
 
     MyGameStateVariables gameVariables = {};
-    gameVariables.roomSpeed = 0.5f;
-    gameVariables.playerMoveSpeed = 0.5f;
+    gameVariables.roomSpeed = -1.0f;
+    gameVariables.playerMoveSpeed = 0.3f;
 
     gameVariables.minPlayerMoveSpeed = 0.1f;
-    gameVariables.maxPlayerMoveSpeed = 1.3f;
+    gameVariables.maxPlayerMoveSpeed = 1.0f;
 
+    gameVariables.cameraTargetPos = -6.0f;
     
-    initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
+    Entity *player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
 
     gameVariables.mostRecentRoom = myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
     gameVariables.lastRoomCreated = myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
 
     MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
 
-    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_START_MENU;
+    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_PLAY;
      
 
 ////////////////////////////////////////////////////////////////////      
@@ -197,7 +198,6 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
 
 ///////////************************/////////////////
-        V4 color = COLOR_RED;
         while(running) {
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
             easyOS_beginFrame(resolution, &appInfo);
@@ -312,8 +312,9 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
             if(updateFlags & MY_ENTITIES_RENDER) {
                 if(updateFlags & MY_ENTITIES_UPDATE) {
+                    camera.pos.z = lerp(camera.pos.z, 0.01f, gameVariables.cameraTargetPos); 
+
                     updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, appInfo.dt);
-                    
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
 
@@ -333,6 +334,31 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
                 ////////////////////////////////////////////////////////////////////
 
+                ///////////////////////*********** Draw the ui points board**************////////////////////
+                char buffer[512];
+                // sprintf(buffer, "%d", player->healthPoints);
+
+                Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
+                float aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
+                float xWidth = 0.05f*resolution.x;
+                float xHeight = xWidth*aspectRatio;
+                renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                sprintf(buffer, "%d", player->dropletCount);
+                outputText(&mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+
+
+                Texture *cupTexture = (player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
+                
+                aspectRatio = (float)cupTexture->height / (float)cupTexture->width;
+                xWidth = 0.05f*resolution.x;
+                xHeight = xWidth*aspectRatio;
+
+                renderTextureCentreDim(cupTexture, v3(0.1f*resolution.x, 0.25f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                sprintf(buffer, "%d", player->dropletCountStore);
+                outputText(&mainFont, 0.15f*resolution.x, 0.25f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+
+                ////////////////////////////////////////////////////////////////////
+
                 if(gameState->currentGameMode != MY_GAME_MODE_PLAY) {
                     drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
                     easyRender_blurBuffer(&toneMappedBuffer, &toneMappedBuffer, 0);
@@ -346,10 +372,12 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 ///////////////////////************* Update the other game modes ************////////////////////
             static float zCoord = 1.0f; 
 
-            char frameRate[256];
-            sprintf(frameRate, "%f", 1.0f / appInfo.dt);
-            outputTextNoBacking(&mainFont, 0.1f*resolution.x, 0.1f*resolution.y, 1.0f, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
-            
+            if(DEBUG_global_DrawFrameRate) {
+                char frameRate[256];
+                sprintf(frameRate, "%f", 1.0f / appInfo.dt);
+                outputTextNoBacking(&mainFont, 0.1f*resolution.x, 0.1f*resolution.y, 1.0f, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
+            }
+
             switch (gameState->currentGameMode) {
                 case MY_GAME_MODE_START_MENU: {
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
@@ -419,8 +447,7 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
                         } else {
                             easyConsole_addToStream(&console, "parameter not understood");
                         }
-                    }  else if(stringsMatchNullN("bounds", token.at, token.size)) {
-                        DEBUG_drawBounds = !DEBUG_drawBounds;
+                    
                     } else if(stringsMatchNullN("bloom", token.at, token.size)) {
                         toneMapId = (toneMapId) ? 0 : 1;
                     } else if(stringsMatchNullN("camPos", token.at, token.size)) { 
@@ -441,30 +468,38 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 /////////////////////// DRAWING & UPDATE IN GAME EDITOR /////////////////////////////////                    
             if(inEditor) {
                 easyEditor_startWindow(editor, "Lister Panel");
-                
-                static V3 v = {};
-                easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
-                easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
-                easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
+                {
+                    easyEditor_pushSlider(editor, "Level move speed: ", &gameVariables.roomSpeed, -3.0f, -0.5f);
+                    easyEditor_pushSlider(editor, "Player move speed: ", &gameVariables.playerMoveSpeed, 0.1f, 1.0f);
 
-                easyEditor_pushSlider(editor, "Exposure:", &exposureTerm, 0.3f, 3.0f);
-                easyEditor_pushSlider(editor, "camera z:", &camera.pos.z, -5.0f, 5.0f);
-   
-                easyEditor_pushColor(editor, "Color: ", &color);
-                static float a = 1.0f;
-                easyEditor_pushSlider(editor, "Some Value: ", &a, 0, 10);
+                    easyEditor_pushFloat1(editor, "min player move speed: ", &gameVariables.minPlayerMoveSpeed);
+                    easyEditor_pushFloat1(editor, "max player move speed: ", &gameVariables.maxPlayerMoveSpeed);
 
-                static bool saveLevel = false;
-                if(easyEditor_pushButton(editor, "Save Level")) {
-                    saveLevel = !saveLevel;
-                     easyFlashText_addText(&globalFlashTextManager, "SAVED!");
                 }
+                // static V3 v = {};
+                // easyEditor_pushFloat3(editor, "Position:", &T.pos.x, &T.pos.y, &T.pos.z);
+                // easyEditor_pushFloat3(editor, "Rotation:", &T.Q.i, &T.Q.j, &T.Q.k);
+                // easyEditor_pushFloat3(editor, "Scale:", &T.scale.x, &T.scale.y, &T.scale.z);
 
-                if(saveLevel) {
-                    easyEditor_pushFloat1(editor, "", &v.x);
-                    easyEditor_pushFloat2(editor, "", &v.x, &v.y);
-                    easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
-                }
+                // easyEditor_pushSlider(editor, "Exposure:", &exposureTerm, 0.3f, 3.0f);
+                // easyEditor_pushSlider(editor, "camera z:", &camera.pos.z, -5.0f, 5.0f);
+    
+                // static V4 color = COLOR_GREEN;
+                // easyEditor_pushColor(editor, "Color: ", &color);
+                // static float a = 1.0f;
+                // easyEditor_pushSlider(editor, "Some Value: ", &a, 0, 10);
+
+                // static bool saveLevel = false;
+                // if(easyEditor_pushButton(editor, "Save Level")) {
+                //     saveLevel = !saveLevel;
+                //      easyFlashText_addText(&globalFlashTextManager, "SAVED!");
+                // }
+
+                // if(saveLevel) {
+                //     easyEditor_pushFloat1(editor, "", &v.x);
+                //     easyEditor_pushFloat2(editor, "", &v.x, &v.y);
+                //     easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
+                // }
 
                 easyEditor_endWindow(editor); //might not actuall need this
                 
