@@ -49,7 +49,7 @@ static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
 
 #if DEVELOPER_MODE
 static bool DEBUG_drawWireFrame = false;
-static bool DEBUG_drawBounds = true;
+static bool DEBUG_drawBounds = false;
 #endif
 
 typedef enum {

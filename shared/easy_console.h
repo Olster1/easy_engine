@@ -207,13 +207,18 @@ inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
         DEBUG_global_CameraMoveXY = !DEBUG_global_CameraMoveXY;
     } else if(stringsMatchNullN("pause", token.at, token.size)) {
         DEBUG_global_PauseGame = !DEBUG_global_PauseGame;
+    } else if(stringsMatchNullN("bounds", token.at, token.size)) {
+        DEBUG_drawBounds = !DEBUG_drawBounds;
+    }  else if(stringsMatchNullN("framerate", token.at, token.size)) {
+        DEBUG_global_DrawFrameRate = !DEBUG_global_DrawFrameRate;
     } else if(stringsMatchNullN("camRotate", token.at, token.size)) {
         DEBUG_global_CamNoRotate = !DEBUG_global_CamNoRotate;
     } else if(stringsMatchNullN("help", token.at, token.size)) {
         easyConsole_addToStream(c, "camMoveXY");
         easyConsole_addToStream(c, "fly");
         easyConsole_addToStream(c, "camRotate");
-         easyConsole_addToStream(c, "pause");
+        easyConsole_addToStream(c, "pause");
+        easyConsole_addToStream(c, "framerate");
     } else if(stringsMatchNullN("command", token.at, token.size)) {
     	STARTUPINFO startUpInfo = {};
     	_PROCESS_INFORMATION lpProcessInformation;

@@ -825,7 +825,7 @@ Quaternion easyMath_normalizeQuaternion(Quaternion q) {
     return q;
 }
 
-Quaternion eulerAnglesToQuaternion(float y, float x, float z) {
+Quaternion eulerAnglesToQuaternion(float y, float x, float z) { //in radians
     Quaternion result = {};
     float h = y / 2;
     float p = x / 2;

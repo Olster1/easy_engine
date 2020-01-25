@@ -90,6 +90,7 @@ typedef struct {
 			int dropletCount;
 
 			int dropletCountStore;
+			MoveDirection moveDirection;
 		};
 		struct { //Bullet
 			Timer lifespanTimer;
@@ -294,28 +295,53 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				case ENTITY_PLAYER: {
 					///////////////////////************ UPDATE PLAYER MOVEMENT *************////////////////////
 					
+					MoveDirection newDirection = ENTITY_MOVE_NULL;
 					if(DEBUG_global_movePlayer) {
 						if(wasPressed(keyStates->gameButtons, BUTTON_LEFT)) {
-							pushDirectionOntoList(ENTITY_MOVE_LEFT, e);
+							newDirection = ENTITY_MOVE_LEFT;
+							// pushDirectionOntoList(ENTITY_MOVE_LEFT, e);
 						} else if(wasPressed(keyStates->gameButtons, BUTTON_RIGHT)) {
-							pushDirectionOntoList(ENTITY_MOVE_RIGHT, e);
+							// pushDirectionOntoList(ENTITY_MOVE_RIGHT, e);
+							newDirection = ENTITY_MOVE_RIGHT;
 						}
 					}
 
-					if(!isMoveListEmpty(&e->moveList) && !isOn(&e->moveTimer)) {
+					if(newDirection != ENTITY_MOVE_NULL) {
 						
-						MoveDirection dir = pullDirectionOffList(e);
-						if(dir == ENTITY_MOVE_RIGHT) {
+						if(newDirection == ENTITY_MOVE_RIGHT) {
 							if(e->laneIndex < (MAX_LANE_COUNT - 1)) {
-								e->startLane = e->laneIndex;
-								e->laneIndex++;
-								turnTimerOn(&e->moveTimer);
+								
+								bool isSafe = !(e->moveDirection == ENTITY_MOVE_RIGHT && isOn(&e->moveTimer));
+								
+								if(isSafe) {
+									e->startLane = e->laneIndex;
+									e->laneIndex++;
+
+									if(isOn(&e->moveTimer)) {
+										assert(e->moveDirection == ENTITY_MOVE_LEFT);
+										e->moveTimer.value_ = e->moveTimer.period - e->moveTimer.value_;
+									} else {
+										turnTimerOn(&e->moveTimer);
+									}
+								}
+								e->moveDirection = ENTITY_MOVE_RIGHT;
 							}
-						} else if (dir == ENTITY_MOVE_LEFT) {
+						} else if (newDirection == ENTITY_MOVE_LEFT) {
 							if(e->laneIndex > 0) {
-								e->startLane = e->laneIndex;
-								e->laneIndex--;	
-								turnTimerOn(&e->moveTimer);
+								bool isSafe = !(e->moveDirection == ENTITY_MOVE_LEFT && isOn(&e->moveTimer));
+								
+								if(isSafe) {
+									e->startLane = e->laneIndex;
+									e->laneIndex--;	
+
+									if(isOn(&e->moveTimer)) {
+										assert(e->moveDirection == ENTITY_MOVE_RIGHT);
+										e->moveTimer.value_ = e->moveTimer.period - e->moveTimer.value_;
+									} else {
+										turnTimerOn(&e->moveTimer);
+									}
+								}
+								e->moveDirection = ENTITY_MOVE_LEFT;
 							}
 						} else {
 							assert(false);
@@ -430,7 +456,7 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 
 							if(info.found) {
 								assert(info.e->type == ENTITY_PLAYER);
-								info.e->dropletCountStore = info.e->dropletCount; //deposit blood
+								info.e->dropletCountStore += info.e->dropletCount; //deposit blood
 								info.e->dropletCount = 0;
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("flush.wav"), 0, AUDIO_FOREGROUND);
@@ -504,7 +530,7 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 
 						assert(e->T.parent == 0);
 
-						#define SAFE_REGION_TO_DESTROY 2
+						#define SAFE_REGION_TO_DESTROY 4
 						if(roomWorldP.y <= -SAFE_REGION_TO_DESTROY*MY_ROOM_HEIGHT) {
  							assert(gameStateVariables->mostRecentRoom != e);
 
@@ -607,6 +633,7 @@ static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, T
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_PLAYER;
+	e->moveDirection = ENTITY_MOVE_NULL;
 
 	e->laneIndex = 2;
 	e->dropletCount = 0;
@@ -709,10 +736,12 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 
 
 //NOTE(ollie): Scenery 1x1 means it takes up 1x1 grid cell
-static Entity *initScenery1x1(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
+static Entity *initScenery1x1(MyEntityManager *m, char *name, EasyModel *model, V3 pos, Entity *parent) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
+	assert(!e->updatedFrame);
+	assert(!e->updatedPhysics);
 
-	e->name = "Scenery1x1";
+	e->name = name;
 	easyTransform_initTransform(&e->T, pos); 
 	if(parent) e->T.parent = &parent->T;
 
@@ -876,6 +905,18 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
 
 }
 
+static int myLevels_getLevelWidth(char *level) {
+	char *at = level;
+	int result = 0;
+	while(*at != '\0' && *at != '\n' && *at != '\r') {
+		if(*at != ' ' && *at != '\t') {
+			result++;	
+		}
+		
+		at++;
+	}
+	return result;
+}
 
 
 static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManager, V3 roomPos) {
@@ -883,7 +924,7 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 
 	char *at = level;
 
-	float startX = -2;
+	float startX = -1*(int)(0.5f*myLevels_getLevelWidth(level));
 	float startY = MY_ROOM_HEIGHT - 1;
 
 	V2 posAt = v2(startX, startY);
@@ -909,7 +950,15 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 				posAt.x++;
 			} break;
 			case 's': { //droplet
-				initScenery1x1(entityManager, findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
+				initScenery1x1(entityManager, "Crystal", findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 'q': { //droplet
+				initScenery1x1(entityManager, "Oak Tree", findModelAsset("Oak_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 'w': { //droplet
+				initScenery1x1(entityManager, "Palm Tree", findModelAsset("Palm_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 't': { //toilet

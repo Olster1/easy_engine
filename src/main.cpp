@@ -110,7 +110,7 @@ int main(int argc, char *args[]) {
 
 
         EasyCamera camera;
-        easy3d_initCamera(&camera, v3(0, 0, -4));
+        easy3d_initCamera(&camera, v3(0, 0, -12));
 
         globalRenderGroup->skybox = initSkyBox();
 
@@ -130,12 +130,17 @@ int main(int argc, char *args[]) {
         EasyModel castle = {};
         easy3d_loadObj("models/tower.obj", &castle);
 
+        easy3d_loadMtl("models/Oak_Tree.mtl");
+        easy3d_loadObj("models/Oak_Tree.obj", 0);
+
+        easy3d_loadMtl("models/Palm_Tree.mtl");
+        easy3d_loadObj("models/Palm_Tree.obj", 0);
+        
         // EasyTerrain *terrain = initTerrain(fern, grass);
 
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
         EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
         EasyMaterial flowerMaterial = easyCreateMaterial(findTextureAsset("flower.png"), 0, findTextureAsset("grey_texture.jpg"), 32);
-
 
         EasyTransform sunTransform;
         easyTransform_initTransform(&sunTransform, v3(0, -10, 0));
@@ -249,7 +254,7 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
             renderDisableCulling(globalRenderGroup);
             
             setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, -1, 1)));
-            renderModel(globalRenderGroup, &Crystal, COLOR_WHITE);
+            // renderModel(globalRenderGroup, &Crystal, COLOR_WHITE);
 
             // setModelTransform(globalRenderGroup, Matrix4_translate(mat4(), v3(1, 1, 1)));
             // renderModel(globalRenderGroup, &fern, color);
@@ -312,8 +317,9 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
 
             if(updateFlags & MY_ENTITIES_RENDER) {
                 if(updateFlags & MY_ENTITIES_UPDATE) {
-                    camera.pos.z = lerp(camera.pos.z, 0.01f, gameVariables.cameraTargetPos); 
-
+                    if(!DEBUG_global_IsFlyMode) {
+                        camera.pos.z = lerp(camera.pos.z, appInfo.dt*1, gameVariables.cameraTargetPos); 
+                    }
                     updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, appInfo.dt);
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }

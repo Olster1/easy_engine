@@ -510,9 +510,10 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
                 		bool circle = a->type == EASY_COLLIDER_CIRCLE || b->type == EASY_COLLIDER_CIRCLE;
                 		bool rectangle = a->type == EASY_COLLIDER_RECTANGLE || b->type == EASY_COLLIDER_RECTANGLE;
                 		if(circle && rectangle) {
-
+                			assert(false);
                 		} else if(rectangle && !circle) { //both rectangles
-
+                			//case not handled
+                			assert(false);
                 		} else if(circle && !rectangle) { //both circles
                 			V3 centerDiff = v3_minus(aPos, bPos);
 

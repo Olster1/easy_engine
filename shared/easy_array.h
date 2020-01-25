@@ -25,7 +25,7 @@ typedef struct Pool {
     unsigned int count;
     unsigned int indexAt;
     
-    unsigned long inValid; //size of pool can only be max 64 slots 
+    u64 inValid; //size of pool can only be max 64 slots 
     unsigned int id;  //unique to this array. Just an index;
     Pool *next;
 } Pool;
@@ -44,7 +44,7 @@ typedef struct {
     size_t sizeofType;
     Pool *poolHash[1096]; //should this be a hash table;
     Pool *latestPool; 
-    unsigned int poolIdAt;
+    u32 poolIdAt;
     
     int count;
     int indexAt;
@@ -158,8 +158,11 @@ void initArray_(Array_Dynamic *array, size_t sizeofType) {
     ////
 }
 
-bool isElmValid(Pool *pool, int index) {
-    bool result = !(pool->inValid & (1 << index));
+bool isElmValid(Pool *pool, u64 index) {
+    if(index > 32) {
+        int i = 0;
+    }
+    bool result = !(pool->inValid & (u64)((u64)1 << (u64)index));
     return result;
 }
 
@@ -218,7 +221,12 @@ int addElement_(Array_Dynamic *array, void *elmData, size_t sizeofData) {
         memcpy(at, elmData, array->sizeofType);
     }
     
-    pool->inValid &= (~(1 << indexAt));
+    assert(indexAt < INCREMENT_COUNT);
+    if(indexAt > 32) {
+        int i = 0;
+    }
+
+    pool->inValid &= (u64)(~((u64)1 << (u64)indexAt));
     
     int absIndex = (pool->id*INCREMENT_COUNT) + indexAt;
 
@@ -249,11 +257,12 @@ typedef struct {
 
 PoolInfo getPoolInfo(Array_Dynamic *array, int absIndex) {
     int poolAt = absIndex / INCREMENT_COUNT;
+    // assert(absIndex < INCREMENT_COUNT);
     
     PoolInfo result = {};
     result.pool = getPool(array, poolAt);
     result.indexAt = absIndex - (poolAt*INCREMENT_COUNT);
-    
+    assert(result.indexAt >= 0);
     return result;
 }
 
@@ -265,6 +274,8 @@ void *getElement(Array_Dynamic *array, unsigned int absIndex) {
     if(info.pool && info.indexAt < (info.pool->indexAt) && info.indexAt >= 0 && isElmValid(info.pool, info.indexAt)) {
         
         elm = info.pool->memory + (info.indexAt*array->sizeofType);
+    } else {
+        // assert(false);
     }
     return elm;
 }
@@ -304,7 +315,8 @@ void removeElement_unordered(Array_Dynamic *array, int absIndex) {
             //get element from the end. 
             memcpy(elm, elm2, array->sizeofType);
         }
-        pool->inValid |= (1 << info.indexAt);
+        assert(info.indexAt < INCREMENT_COUNT);
+        pool->inValid |= (u64)((u64)1 << (u64)info.indexAt);
         array->count--;
     } else {
         invalidCodePathStr("index not valid");
@@ -337,7 +349,10 @@ void removeElement_ordered(Array_Dynamic *array, int absIndex) {
         //assgin info
         validInd->index = info.indexAt;
         validInd->pool = info.pool;
-        validInd->pool->inValid |= (1 << info.indexAt);
+        if(info.indexAt > 32) {
+            int i = 0;
+        }
+        validInd->pool->inValid |= (u64)((u64)1 << (u64)info.indexAt);
         
         //
         validInd->prev = array->freeIndexesSent.prev;
@@ -352,6 +367,8 @@ void removeElement_ordered(Array_Dynamic *array, int absIndex) {
             // is last member on the array. 
             array->count--;
         }
+    } else {
+        assert(false);
     }
 }
 
