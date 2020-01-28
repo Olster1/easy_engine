@@ -88,6 +88,7 @@ typedef struct {
 
 			int healthPoints;
 			int dropletCount;
+			int maxHealthPoints;
 
 			int dropletCountStore;
 			MoveDirection moveDirection;
@@ -107,6 +108,22 @@ typedef struct {
 
 } Entity;
 
+typedef struct {
+	EntityType type;
+	V3 pos;
+} EntityCreateInfo;
+
+typedef struct {
+	Array_Dynamic entities;
+
+	EasyPhysics_World physicsWorld;
+
+	int toCreateCount;
+	EntityCreateInfo toCreate[512];
+
+} MyEntityManager;
+
+
 ///////////////////////*********** Game Variables **************////////////////////
 
 typedef struct {
@@ -124,24 +141,19 @@ typedef struct {
 	//NOTE(ollie): For camera easing
 	float cameraTargetPos;
 
+	//NOTE(ollie): This is for splatting the blood splat
+	int liveTimerCount;
+	Timer liveTimers[10];
+
+	//NOTE(ollie): For making the score screen have a loading feel to it
+	Timer pointLoadTimer;
+	int lastCount; //So we can make a click noise when it changes
+	//
+
 } MyGameStateVariables;
 
 ////////////////////////////////////////////////////////////////////
 
-typedef struct {
-	EntityType type;
-	V3 pos;
-} EntityCreateInfo;
-
-typedef struct {
-	Array_Dynamic entities;
-
-	EasyPhysics_World physicsWorld;
-
-	int toCreateCount;
-	EntityCreateInfo toCreate[512];
-
-} MyEntityManager;
 
 static inline MyEntityManager *initEntityManager() {
 	MyEntityManager *result = pushStruct(&globalLongTermArena, MyEntityManager);
@@ -384,6 +396,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				case ENTITY_CRAMP: {
 
 				} break;
+				case ENTITY_SCENERY: {
+
+				} break;
 				case ENTITY_CHOC_BAR: {
 
 				} break;
@@ -395,6 +410,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 	}
 }
 
+///////////////////////*********** Helper functions **************////////////////////
+
 static void myEntity_recusiveDelete(Entity *parent, MyEntityManager *manager) {
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
@@ -405,9 +422,22 @@ static void myEntity_recusiveDelete(Entity *parent, MyEntityManager *manager) {
 	}
 }
 
+void easyEntity_endRound(MyEntityManager *manager) {
+	for(int i = 0; i < manager->entities.count; ++i) {
+		Entity *e = (Entity *)getElement(&manager->entities, i);
+		if(e) { //can be null
+			if(e->type == ENTITY_PLAYER) {
+				//NOTE: Do nothing
+			} else {
+				e->T.markForDeletion = true;	
+			}
+		}
+	}
+}
+
 ///////////////////////************ Post collision update *************////////////////////
 
-static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
+static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
 	RenderProgram *mainShader = &glossProgram;
 	renderSetShader(renderGroup, mainShader);
 	setViewTransform(renderGroup, viewMatrix);
@@ -496,16 +526,55 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 						}
 
 					} break;
+					case ENTITY_SCENERY: {
+					
+					} break;
 					case ENTITY_CRAMP: {
 						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+
+							///////////////////////*********** Collision with Player **************////////////////////
 							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
 
 							if(info.found) {
 								assert(info.e->type == ENTITY_PLAYER);
-								info.e->healthPoints--;
-								//check game state 
-		
+								Entity *player = info.e;
+								player->healthPoints--;
+								
+								assert(gameStateVariables->liveTimerCount < arrayCount(gameStateVariables->liveTimers));
+
+								Timer *healthTimer = gameStateVariables->liveTimers + gameStateVariables->liveTimerCount++;
+
+								*healthTimer = initTimer(0.5f, false);
+								turnTimerOn(healthTimer);
+
+								playGameSound(&globalLongTermArena, easyAudio_findSound("splatSound.wav"), 0, AUDIO_FOREGROUND);
+
+								if(info.e->healthPoints < 0) {
+									player->healthPoints = player->maxHealthPoints;
+									//check game state
+
+									gameState->lastGameMode = gameState->currentGameMode;
+									gameState->currentGameMode = MY_GAME_MODE_END_ROUND;
+
+									setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
+									setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
+
+									setSoundType(AUDIO_FLAG_SCORE_CARD);
+
+									gameStateVariables->pointLoadTimer = initTimer(0.3f*player->dropletCountStore, false);
+									gameStateVariables->lastCount = 0;
+
+									gameState->animationTimer = initTimer(0.5f, false);
+									gameState->isIn = true;
+
+									// easyEntity_endRound(manager);
+								}
+
+								//NOTE(ollie): Cramp is removed after it fades out
+								turnTimerOn(&e->fadeTimer);
 							}	
+
+							///////////////////////*********** Collision with Bullet **************////////////////////
 
 							info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_BULLET, EASY_COLLISION_ENTER);	
 
@@ -513,7 +582,9 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 								assert(info.e->type == ENTITY_BULLET);
 								turnTimerOn(&e->fadeTimer);
 							
-							}						
+							}	
+
+							////////////////////////////////////////////////////////////////////					
 						}
 
 
@@ -622,6 +693,23 @@ static void updateEntities(MyEntityManager *manager, MyGameStateVariables *gameS
 #define MY_ENTITY_DEFAULT_DIM 0.4f
 
 //NOTE(ollie): Player
+
+static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex) { //for restarting player without the memory leaks
+	e->moveTimer = initTimer(variables->playerMoveSpeed, false);
+	turnTimerOff(&e->moveTimer);
+
+	easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(1, tex->aspectRatio_h_over_w, 1)); 
+	e->active = true;
+	e->moveDirection = ENTITY_MOVE_NULL;
+	e->laneIndex = 2;
+	e->dropletCount = 0;
+	e->healthPoints = e->maxHealthPoints;
+	e->dropletCountStore = 0;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+}
 static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, Texture *empty,  Texture *halfEmpty) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
@@ -629,15 +717,14 @@ static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, T
 	turnTimerOff(&e->moveTimer);
 
 	e->name = "Player";
-	easyTransform_initTransform(&e->T, v3(0, 0, LAYER3)); 
+	
+
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_PLAYER;
-	e->moveDirection = ENTITY_MOVE_NULL;
-
-	e->laneIndex = 2;
-	e->dropletCount = 0;
-	e->healthPoints = 3;
+	
+	e->maxHealthPoints = 3;
+	resetPlayer(e, variables, empty);
 
 	e->moveList.next = e->moveList.prev = &e->moveList;
 	e->freeList = 0;
@@ -670,7 +757,7 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 	e->name = "Bullet";
 	pos.z = LAYER1;
-	easyTransform_initTransform(&e->T, pos); 
+	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
 	assert(!e->T.parent);
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
@@ -706,7 +793,8 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Droplet";
-	easyTransform_initTransform(&e->T, pos); 
+	float width = 0.6f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(width, width*sprite->aspectRatio_h_over_w, 1)); 
 	if(parent) e->T.parent = &parent->T;
 	
 	e->active = true;
@@ -757,7 +845,7 @@ static Entity *initScenery1x1(MyEntityManager *m, char *name, EasyModel *model, 
 		#else 
 			e->colorTint = COLOR_WHITE;
 		#endif
-	e->type = ENTITY_CRAMP;
+	e->type = ENTITY_SCENERY;
 
 	e->model = model;
 
@@ -782,7 +870,7 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Cramp";
-	easyTransform_initTransform(&e->T, pos); 
+	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
@@ -795,6 +883,7 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
 	e->type = ENTITY_CRAMP;
 
 	e->sprite = sprite;
+	e->model = 0;
 
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
@@ -817,7 +906,7 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *p
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Bucket";
-	easyTransform_initTransform(&e->T, pos); 
+	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
@@ -850,7 +939,7 @@ static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Chocolate Bar";
-	easyTransform_initTransform(&e->T, pos); 
+	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
 	if(parent) e->T.parent = &parent->T;
 
 	e->active = true;
@@ -981,7 +1070,6 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 
 
 ///////////////////////*************  Clean up at end of frame ************////////////////////
-
 
 static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *variables) {
 	for(int i = 0; i < manager->entities.count; ++i) {

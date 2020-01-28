@@ -1,10 +1,55 @@
 #include "defines.h"
 #include "easy_headers.h"
 
+
+#include "myGameState.h"
 #include "myLevels.h"
 #include "myEntity.h"
-#include "myGameState.h"
 #include "myTransitions.h"
+
+
+static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player) {
+    gameVariables->roomSpeed = -1.0f;
+    gameVariables->playerMoveSpeed = 0.3f;
+
+    gameVariables->minPlayerMoveSpeed = 0.1f;
+    gameVariables->maxPlayerMoveSpeed = 1.0f;
+
+    gameVariables->cameraTargetPos = -6.0f;
+    gameVariables->liveTimerCount = 0;
+
+    setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
+    setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
+
+    if(createPlayer) {
+        player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
+    } else {
+        resetPlayer(player, gameVariables,findTextureAsset("cup_empty.png"));
+    }
+
+    gameVariables->mostRecentRoom = myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
+    gameVariables->lastRoomCreated = myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
+
+    return player;
+}
+
+
+static void transitionCallBackRestartRound(void *data_) {
+    MyTransitionData *data = (MyTransitionData *)data_;
+
+    data->gameState->lastGameMode = data->gameState->currentGameMode;
+    data->gameState->currentGameMode = data->newMode;   
+
+    setSoundType(AUDIO_FLAG_MAIN);
+
+    easyEntity_endRound(data->entityManager);
+    cleanUpEntities(data->entityManager, data->gameVariables);
+    myGame_beginRound(data->gameVariables, data->entityManager, false, data->player);
+
+    //NOTE(ol): Right now just using malloc & free
+    free(data);
+}
+
 
 
 static EasyTerrain *initTerrain(EasyModel fern, EasyModel grass) {
@@ -162,23 +207,15 @@ int main(int argc, char *args[]) {
 
 
     MyGameStateVariables gameVariables = {};
-    gameVariables.roomSpeed = -1.0f;
-    gameVariables.playerMoveSpeed = 0.3f;
-
-    gameVariables.minPlayerMoveSpeed = 0.1f;
-    gameVariables.maxPlayerMoveSpeed = 1.0f;
-
-    gameVariables.cameraTargetPos = -6.0f;
     
-    Entity *player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
-
-    gameVariables.mostRecentRoom = myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
-    gameVariables.lastRoomCreated = myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
+    Entity *player = myGame_beginRound(&gameVariables, entityManager, true, 0);
 
     MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
 
-    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_PLAY;
-     
+    turnTimerOff(&gameState->animationTimer);
+
+    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_END_ROUND;//MY_GAME_MODE_PLAY;
+    setSoundType(AUDIO_FLAG_SCORE_CARD);
 
 ////////////////////////////////////////////////////////////////////      
 
@@ -187,8 +224,10 @@ int main(int argc, char *args[]) {
 
 
 EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo_track.wav"), 0, AUDIO_BACKGROUND));
+EasySound_LoopSound(playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("ambient1.wav"), 0, AUDIO_BACKGROUND));
 
-
+setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
+setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 ////////////////////////////////////////////////////////////////////  
 
 ////////////*** Variables *****//////
@@ -311,7 +350,7 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                 gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
                 gameState->currentGameMode == MY_GAME_MODE_SCORE ||
-                gameState->currentGameMode == MY_GAME_MODE_SCORE) {
+                gameState->currentGameMode == MY_GAME_MODE_END_ROUND) {
                 updateFlags |= MY_ENTITIES_RENDER;
             }
 
@@ -324,7 +363,50 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
 
-                updateEntities(entityManager, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
+                ///////////////////////************ Draw the lives *************////////////////////
+
+                Texture *bloodSplat = findTextureAsset("blood_splat.png");
+                Texture *underpants = findTextureAsset("underwear.png");
+
+                float f0 = easyRender_getTextureAspectRatio_HOverW(bloodSplat);
+                float f1 = easyRender_getTextureAspectRatio_HOverW(underpants);
+
+                float xAt = 0.1f*resolution.x;
+                float yAt = 0.4f*resolution.y;
+                float increment = 0.08f*resolution.x;
+
+                outputText(&mainFont, xAt - 1*increment, yAt + 0.1f*increment, 1.0f, resolution, "Lives: ", InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+
+                xAt += increment;
+                for(int liveIndex = 0; liveIndex < player->maxHealthPoints; ++liveIndex) {
+
+                    float w1 = 0.05f*resolution.x;
+                    float h1 = w1*f0;
+                    float h2 = w1*f1;
+                    renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, 1), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+
+                    Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
+                    if(liveIndex < gameVariables.liveTimerCount) {
+                        float canVal = 1.0f;
+
+                        if(isOn(liveTimer)) {
+                            TimerReturnInfo timerInfo = updateTimer(liveTimer, appInfo.dt);    
+
+                            canVal = timerInfo.canonicalVal;
+                            if(timerInfo.finished) {
+                                turnTimerOff(liveTimer);
+                            }
+                        }
+                        
+                        renderTextureCentreDim(bloodSplat, v3(xAt + increment*liveIndex, yAt, 1), v2_scale(canVal, v2(w1, h1)), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));    
+                                
+                    }
+                    
+                }
+
+                ////////////////////////////////////////////////////////////////////
+
+                updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
 
                 cleanUpEntities(entityManager, &gameVariables);
 
@@ -389,8 +471,8 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
 
                         MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY);
-
                         EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
+
                     }
 
                     outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, 1.0f, resolution, "The Period Game", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
@@ -409,6 +491,76 @@ EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo
                     }
 
                     outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, zCoord, resolution, "IS PAUSED!", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                } break;
+                case MY_GAME_MODE_END_ROUND: {
+
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(transitionState)) {
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY);
+                        data->entityManager = entityManager;
+                        data->gameVariables = &gameVariables;
+                        data->player = player;
+                        EasyTransition_PushTransition(transitionState, transitionCallBackRestartRound, data, EASY_TRANSITION_FADE);
+
+                        gameState->animationTimer = initTimer(0.5f, false);
+                        gameState->isIn = false;
+
+                        assert(isOn(&gameState->animationTimer));
+                    }
+
+                    float xAt = 0;
+
+
+                    if(isOn(&gameState->animationTimer)) {
+                        TimerReturnInfo timerInfo = updateTimer(&gameState->animationTimer, appInfo.dt);    
+
+                        if(gameState->isIn) {
+                            xAt = lerp(-resolution.x, timerInfo.canonicalVal, 0);
+                        } else {
+                            xAt = lerp(0, timerInfo.canonicalVal, resolution.x);
+                        }
+
+                        if(timerInfo.finished) {
+                            turnTimerOff(&gameState->animationTimer);
+                        }
+                    } else if(EasyTransition_InTransition(transitionState)) {
+                        xAt = resolution.x;       
+                    }
+
+                    Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
+                    renderDrawRectCenterDim(v3(xAt, 0, 1), v2_scale(0.7f, v2(resolution.x, resolution.y)), COLOR_WHITE, 0, mat4(), OrthoMatrixToScreen(resolution.x, resolution.y));
+                    renderTextureCentreDim(dropletTex, v3(xAt+0.3f*resolution.x, 0.6f*resolution.y, 0.5f), v2(0.05*resolution.x, 0.05*resolution.x*dropletTex->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                    
+                    Rect2f m = rect2fMinDim(xAt+0.2*resolution.x, 0, 0.6*resolution.x, resolution.y);
+
+                    int dropCount = player->dropletCountStore;
+
+                    Timer *pointLoadTimer = &gameVariables.pointLoadTimer;
+                    if(isOn(pointLoadTimer)) {
+                        TimerReturnInfo timerInfo = updateTimer(pointLoadTimer, appInfo.dt);    
+
+                        float canVal = timerInfo.canonicalVal;
+
+                        dropCount = (int)(canVal*player->dropletCountStore);
+
+                        if(gameVariables.lastCount != dropCount) {
+                            playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("click2.wav"), 0, AUDIO_FOREGROUND);
+                        }
+                        gameVariables.lastCount = dropCount;
+
+                        if(timerInfo.finished) {
+                            turnTimerOff(pointLoadTimer);
+                        }
+                    }
+
+                    char points[512];
+                    sprintf(points, "%d", dropCount);
+
+                    outputTextNoBacking(&mainFont, xAt+0.35f*resolution.x, 0.65f*resolution.y, 0.5f, resolution, points, m, COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                    
+                    char *str = "Ah! You have no more clean underwear.";
+            
+
+                    outputTextNoBacking(&mainFont, xAt+0.2f*resolution.x, 0.3f*resolution.y, 0.5f, resolution, str, m, COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
                 } break;
                 case MY_GAME_MODE_SCORE: {
 
