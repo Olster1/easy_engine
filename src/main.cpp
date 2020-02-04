@@ -360,6 +360,20 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             }
 
             if(updateFlags & MY_ENTITIES_RENDER) {
+
+                ///////////////////////********* Drawing the background ****************////////////////////
+                Texture *bgTexture = findTextureAsset("africa.png");
+                
+                float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
+                float xWidth = resolution.x;
+                float xHeight = xWidth*aspectRatio;
+
+                renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
+                drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                renderClearDepthBuffer(toneMappedBuffer.bufferId);
+
+                ////////////////////////////////////////////////////////////////////
+
                 if(updateFlags & MY_ENTITIES_UPDATE) {
                     if(!DEBUG_global_IsFlyMode) {
                         camera.pos.z = lerp(camera.pos.z, appInfo.dt*1, gameVariables.cameraTargetPos); 
@@ -388,7 +402,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                     float w1 = 0.05f*resolution.x;
                     float h1 = w1*f0;
                     float h2 = w1*f1;
-                    renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, 1), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                    renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE + 0.1f), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
 
                     Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
                     if(liveIndex < gameVariables.liveTimerCount) {
@@ -403,13 +417,15 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                             }
                         }
                         
-                        renderTextureCentreDim(bloodSplat, v3(xAt + increment*liveIndex, yAt, 1), v2_scale(canVal, v2(w1, h1)), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));    
+                        renderTextureCentreDim(bloodSplat, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE), v2_scale(canVal, v2(w1, h1)), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));    
                                 
                     }
                     
                 }
 
                 ////////////////////////////////////////////////////////////////////
+
+
 
                 updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
 
@@ -432,9 +448,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 // sprintf(buffer, "%d", player->healthPoints);
 
                 Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
-                float aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
-                float xWidth = 0.05f*resolution.x;
-                float xHeight = xWidth*aspectRatio;
+                aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
+                xWidth = 0.05f*resolution.x;
+                xHeight = xWidth*aspectRatio;
                 renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
                 sprintf(buffer, "%d", player->dropletCount);
                 outputText(&mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
@@ -468,7 +484,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             if(DEBUG_global_DrawFrameRate) {
                 char frameRate[256];
                 sprintf(frameRate, "%f", 1.0f / appInfo.dt);
-                outputTextNoBacking(&mainFont, 0.1f*resolution.x, 0.1f*resolution.y, 1.0f, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
+                outputTextNoBacking(&mainFont, 0.1f*resolution.x, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
             }
 
             switch (gameState->currentGameMode) {

@@ -451,7 +451,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 			e->updatedFrame = true;
 			
 			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
-			if(e->type != ENTITY_ROOM && e->type != ENTITY_PLAYER) assert(e->rb == 0);
+			// if(e->type != ENTITY_ROOM && e->type != ENTITY_PLAYER) assert(e->rb == 0);
 
 			if(flags & MY_ENTITIES_UPDATE) {
 				switch(e->type) {
