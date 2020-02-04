@@ -282,7 +282,7 @@ typedef enum {
 
 
 static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, MyGameStateVariables *variables, float dt) {
-	
+	DEBUG_TIME_BLOCK();
 	///////////////////////*********** Update Game Variables **************////////////////////
 
 	variables->roomSpeed -= 0.1f*dt;
@@ -438,6 +438,7 @@ void easyEntity_endRound(MyEntityManager *manager) {
 ///////////////////////************ Post collision update *************////////////////////
 
 static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
+	DEBUG_TIME_BLOCK();
 	RenderProgram *mainShader = &glossProgram;
 	renderSetShader(renderGroup, mainShader);
 	setViewTransform(renderGroup, viewMatrix);

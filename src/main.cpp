@@ -1,7 +1,6 @@
 #include "defines.h"
 #include "easy_headers.h"
 
-
 #include "myGameState.h"
 #include "myLevels.h"
 #include "myEntity.h"
@@ -84,6 +83,8 @@ static EasySkyBox *initSkyBox() {
 }
 
 int main(int argc, char *args[]) {
+
+    DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame)
 
     if(argc > 1) {
         for(int i = 0; i < argc; i++) {
@@ -240,9 +241,13 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
         EasyTransform T;
         easyTransform_initTransform(&T, v3(0, 0, 0));
 
+        EasyProfile_ProfilerState *profilerState = EasyProfiler_initProfiler(); 
+
 
 ///////////************************/////////////////
         while(running) {
+            {
+        
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
             easyOS_beginFrame(resolution, &appInfo);
             
@@ -676,13 +681,27 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
             //NOTE(ollie): Make sure the transition is on top
             renderClearDepthBuffer(toneMappedBuffer.bufferId);
+            }
 
             EasyTransition_updateTransitions(transitionState, resolution, appInfo.dt);
+            
+            drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+
+            ///////////////////////********** Drawing the Profiler Graph ***************////////////////////
+            renderClearDepthBuffer(toneMappedBuffer.bufferId);
+
+            EasyProfile_DrawGraph(profilerState, resolution, &keyStates, appInfo.screenRelativeSize);
+            
             drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
 
 ////////////////////////////////////////////////////////////////////////////
 
+            easyOS_updateHotKeys(&keyStates);
             easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, hasBlackBars);
+            
+            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame)
+
+            DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame)
             easyOS_endKeyState(&keyStates);
         }
         easyOS_endProgram(&appInfo);

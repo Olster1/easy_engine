@@ -1,2 +1,2 @@
 @echo off
-cl -wd4577 -Od -Oi /DDEVELOPER_MODE=1 /DDESKTOP=1 /DNOMINMAX /Fe../bin/easy_engine.exe /I../shared /I ../SDL2 /I../libs/gl3w /IE:/include /Zi main.cpp ../libs/gl3w/GL/gl3w.cpp /link ..\bin\SDL2.lib ..\bin\SDL2main.lib opengl32.lib shlwapi.lib /SUBSYSTEM:WINDOWS ./myres.res
+cl -wd4577 -Od -Oi /DDEVELOPER_MODE=1 /DDESKTOP=1 /DNOMINMAX /Fe../bin/easy_engine.exe /I../shared /I ../SDL2 /I../libs/gl3w /IE:/include /Zi main.cpp ../libs/gl3w/GL/gl3w.cpp /link ..\bin\SDL2.lib ..\bin\SDL2main.lib Winmm.lib opengl32.lib shlwapi.lib /SUBSYSTEM:WINDOWS ./myres.res
