@@ -162,11 +162,11 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 				}
 			}
 			// renderEnableDepthTest(RenderGroup *group);
-			renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, 2), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-		 	outputText_with_cursor(&globalDebugFont, 0, height, 1.5f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont.fontHeight, resolution.x, height + 0.4f*globalDebugFont.fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
+			renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, NEAR_CLIP_PLANE + 0.3f), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+		 	outputText_with_cursor(&globalDebugFont, 0, height, NEAR_CLIP_PLANE + 0.1f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont.fontHeight, resolution.x, height + 0.4f*globalDebugFont.fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
 			
 			V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, resolution.x, height - globalDebugFont.fontHeight), &globalDebugFont, 1, resolution, relativeSize);
-			outputText(&globalDebugFont, 0, height - globalDebugFont.fontHeight - bounds.y, 1.5f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
+			outputTextNoBacking(&globalDebugFont, 0, height - globalDebugFont.fontHeight - bounds.y, NEAR_CLIP_PLANE + 0.1f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
 		}
 	}
 

@@ -1,5 +1,6 @@
-#define PRINT_FRAME_RATE 0
+#define PRINT_FRAME_RATE 1
 static bool globalDebugWriteShaders = false;
+
 
 typedef struct {
 	unsigned int frameBackBufferId;
@@ -16,7 +17,7 @@ typedef struct {
 	SDL_AudioSpec audioSpec;
 	float dt;
 	float idealFrameTime;
-	unsigned int lastTime;
+	s64 lastTime;
 
 	bool firstFrame;
 	//
@@ -119,6 +120,8 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 }
 
 void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
+	EasyTime_setupTimeDatums();
+
 	globalLongTermArena = createArena(Kilobytes(200));
 	globalPerFrameArena = createArena(Kilobytes(100));
     assets = (Asset **)pushSize(&globalLongTermArena, GLOBAL_ASSET_ARRAY_SIZE*sizeof(Asset *));
@@ -202,17 +205,19 @@ void easyOS_endProgram(OSAppInfo *appInfo) {
 }
 
 void easyOS_beginFrame(V2 resolution, OSAppInfo *appInfo) {
+	DEBUG_TIME_BLOCK()
 	glViewport(0, 0, resolution.x, resolution.y);
 
 	perFrameArenaMark = takeMemoryMark(&globalPerFrameArena);
 
 	if(appInfo->firstFrame) {
-		appInfo->lastTime = SDL_GetTicks();
+		appInfo->lastTime = EasyTime_GetTimeCount();
 		appInfo->firstFrame = false;
 	}
 }
 
 float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
+	DEBUG_TIME_BLOCK()
 	float screenRatio =  screenDim.x / resolution.x;
 	float h1 = resolution.y * screenRatio;
 	if(h1 > screenDim.y) {
@@ -223,13 +228,42 @@ float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
 	return screenRatio;
 }
 
-static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int compositedFrameBufferId, OSAppInfo *appInfo, bool blackBars) {
+
+typedef struct {
+	GameButton gameButtons[BUTTON_COUNT];
+    
+	V2 mouseP;
+	V2 mouseP_yUp;
+	V2 mouseP_left_up;
+
+	char *inputString;
+    
+	int scrollWheelY;
+} AppKeyStates;
+
+static inline void easyOS_updateHotKeys(AppKeyStates *keyStates) {
+	///////////////////////*********** Update Any Hotkeys **************////////////////////
+
+	if(wasPressed(keyStates->gameButtons, BUTTON_F2)) {
+	    DEBUG_global_DrawFrameRate = !DEBUG_global_DrawFrameRate;
+	}
+	if(wasPressed(keyStates->gameButtons, BUTTON_F3)) {
+	    DEBUG_global_DrawProfiler = !DEBUG_global_DrawProfiler;
+	}
 	
+
+	////////////////////////////////////////////////////////////////////
+
+}
+
+static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int compositedFrameBufferId, OSAppInfo *appInfo, bool blackBars) {
+	DEBUG_TIME_BLOCK()
 	SDL_Window *windowHandle = appInfo->windowHandle;
 	unsigned int backBufferId = appInfo->frameBackBufferId;
 	unsigned int renderbufferId = appInfo->renderBackBufferId;
 	float monitorFrameTime = appInfo->monitorFrameTime; 
 	float dt = appInfo->dt;
+
 
 	////////Letterbox if the ratio isn't correct//
 	float screenRatio = easyOS_getScreenRatio(screenDim, resolution);
@@ -259,13 +293,18 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
 #if !DESKTOP
     glBindRenderbuffer(GL_RENDERBUFFER, renderbufferId);
 #endif
-    SDL_GL_SwapWindow(windowHandle);
-    
-    unsigned int now = SDL_GetTicks();
-    float timeInFrameMilliSeconds = (now - appInfo->lastTime);
-    //TODO: Do our own wait if Vsync isn't on. 
+    {
+    	DEBUG_TIME_BLOCK_NAMED("SwapWindow")
+    	SDL_GL_SwapWindow(windowHandle); 
+	}
+	
+    s64 now = EasyTime_GetTimeCount();
+
     //NOTE: This is us choosing the best frame time within the intervals of possible frame rates!!!
-    dt = timeInFrameMilliSeconds / 1000.0f;
+    float acutalDt = dt = EasyTime_GetSecondsElapsed(now, appInfo->lastTime);
+
+#define GUESS_FRAME_RATE 0
+#if GUESS_FRAME_RATE
     float frameRates[] = {monitorFrameTime*1.0f, monitorFrameTime*2.0f, monitorFrameTime*3.0f, monitorFrameTime*4.0f};
     float smallestDiff = 0;
     bool set = false;
@@ -282,31 +321,35 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
             newRate = val;
         }
     }
+#else 
+    float newRate = acutalDt;
+#endif
+
+
+    // bool vsyncEnabled = true; //TODO:  Actually check if vsync is enabled by the user
+    // if(!vsyncEnabled) {
+    // 	while(EasyTime_GetSecondsElapsed(now, appInfo->lastTime) < newRate) {
+    // 		now = EasyTime_GetTimeCount();
+    // 	}
+    // } 
+   
     dt = appInfo->dt = newRate; //set the actual dt
 
     globalTimeSinceStart += dt;
 
 #if PRINT_FRAME_RATE
-    printf("%f\n", 1.0f / (dt)); 
+    printf("%f\n", acutalDt); 
 #endif
     appInfo->lastTime = now;
 
+    {
+    DEBUG_TIME_BLOCK_NAMED("release Memory Mark")
     releaseMemoryMark(&perFrameArenaMark);
+	}
 }
 
-typedef struct {
-	GameButton gameButtons[BUTTON_COUNT];
-    
-	V2 mouseP;
-	V2 mouseP_yUp;
-	V2 mouseP_left_up;
-
-	char *inputString;
-    
-	int scrollWheelY;
-} AppKeyStates;
-
 static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V2 *screenDim, bool *running, bool stretched) {
+	DEBUG_TIME_BLOCK()
 	//Save state of last frame game buttons 
 	bool mouseWasDown = isDown(state->gameButtons, BUTTON_LEFT_MOUSE);
 	bool mouseWasDownRight = isDown(state->gameButtons, BUTTON_RIGHT_MOUSE);
@@ -434,6 +477,24 @@ static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V
 	            } break;
 	            case SDLK_F1: {
 	                buttonType = BUTTON_F1;
+	            } break;
+	             case SDLK_F2: {
+	                buttonType = BUTTON_F2;
+	            } break;
+	             case SDLK_F3: {
+	                buttonType = BUTTON_F3;
+	            } break;
+	             case SDLK_F4: {
+	                buttonType = BUTTON_F4;
+	            } break;
+	             case SDLK_F5: {
+	                buttonType = BUTTON_F5;
+	            } break;
+	             case SDLK_F6: {
+	                buttonType = BUTTON_F6;
+	            } break;
+	             case SDLK_F7: {
+	                buttonType = BUTTON_F7;
 	            } break;
 	            case SDLK_LGUI: {
 	                // buttonType = BUTTON_COMMAND;

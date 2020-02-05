@@ -40,15 +40,6 @@ float min(float a, float b) {
 #define arrayCount(array1) (sizeof(array1) / sizeof(array1[0]))
 #endif 
 
-#define invalidCodePathStr(msg) { printf(msg); exit(0); }
-#if DEVELOPER_MODE //turn off for crash assert
-// #define assert(statement) if(!(statement)) { int *a = 0; a = 0;}
-#define assert(statement) if(!(statement)) {printf("Something went wrong at %d in %s\n", __LINE__, __FILE__);  int *a = 0; *a = 0;}
-#define assertStr(statement, str) if(!(statement)) { printf("%s\n", str); } assert(statement); 
-#else
-#define assert(statement) 
-#define assertStr(statement, str)
-#endif
 
 #include <limits.h>
 
@@ -338,6 +329,12 @@ typedef enum {
     BUTTON_8,
     BUTTON_9,
     BUTTON_F1,
+    BUTTON_F2,
+    BUTTON_F3,
+    BUTTON_F4,
+    BUTTON_F5,
+    BUTTON_F6,
+    BUTTON_F7,
     BUTTON_Z,
     BUTTON_R,
     BUTTON_COMMAND,

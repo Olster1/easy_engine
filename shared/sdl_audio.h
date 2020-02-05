@@ -10,6 +10,7 @@ typedef enum {
     AUDIO_FLAG_MENU,
     AUDIO_FLAG_MAIN,
     AUDIO_FLAG_START_SCREEN,
+    AUDIO_FLAG_SCORE_CARD,
     AUDIO_FLAG_COUNT,
 } SoundType;
 
@@ -54,7 +55,7 @@ static VolumeLerp channelVolumesLerps_[AUDIO_CHANNEL_COUNT] = {};
 
 static bool globalChannelsState_[AUDIO_CHANNEL_COUNT] = {true, true};
 
-static float parentChannelVolumes_[AUDIO_FLAG_COUNT] = {1, 1, 1, 1};
+static float parentChannelVolumes_[AUDIO_FLAG_COUNT] = {1, 1, 1, 1, 1};
 static VolumeLerp parentChannelVolumesLerps_[AUDIO_FLAG_COUNT] = {};
 
 static SoundType globalSoundActiveType_ = AUDIO_FLAG_NULL;
@@ -264,6 +265,12 @@ PlayingSound *pushSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundT
 PlayingSound *playMenuSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundToPlay, AudioChannel channel) {
     PlayingSound *result = playSound(arena, wavFile, nextSoundToPlay, channel);
     result->soundType = AUDIO_FLAG_MENU;
+    return result;
+}
+
+PlayingSound *playScoreBoardSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundToPlay, AudioChannel channel) {
+    PlayingSound *result = playSound(arena, wavFile, nextSoundToPlay, channel);
+    result->soundType = AUDIO_FLAG_SCORE_CARD;
     return result;
 }
 

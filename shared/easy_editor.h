@@ -260,7 +260,7 @@ static inline void easyEditor_endWindow(EasyEditor *e) {
 	assert(e->currentWindow);
 	EasyEditorState *w = e->currentWindow;
 	Rect2f bounds = rect2fMinMax(w->topCorner.x - EASY_EDITOR_MARGIN, w->topCorner.y - e->font->fontHeight, w->maxX + EASY_EDITOR_MARGIN, w->at.y); 
-	renderDrawRect(bounds, 5.1f, COLOR_BLACK, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+	renderDrawRect(bounds, 10, COLOR_BLACK, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
 
 	int lineNumber = w->id.lineNumber;
 	char *fileName = w->id.fileName;

@@ -45,11 +45,24 @@ static void transitionCallBackRestartRound(void *data_) {
     cleanUpEntities(data->entityManager, data->gameVariables);
     myGame_beginRound(data->gameVariables, data->entityManager, false, data->player);
 
+
     //NOTE(ol): Right now just using malloc & free
     free(data);
 }
 
 
+static void transitionCallBack(void *data_) {
+    MyTransitionData *data = (MyTransitionData *)data_;
+
+    data->gameState->lastGameMode = data->gameState->currentGameMode;
+    data->gameState->currentGameMode = data->newMode;
+
+    setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
+    setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
+
+    //NOTE(ol): Right now just using malloc & free
+    free(data);
+}
 
 static EasyTerrain *initTerrain(EasyModel fern, EasyModel grass) {
     //TERRAIN STUFF
@@ -115,6 +128,7 @@ int main(int argc, char *args[]) {
         ////INIT FONTS
         char *fontName = concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena);
         Font mainFont = initFont(fontName, 88);
+        Font smallMainFont = initFont(fontName, 52);
 
         char *fontName1 = concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena);
         
@@ -215,8 +229,16 @@ int main(int argc, char *args[]) {
 
     turnTimerOff(&gameState->animationTimer);
 
-    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_END_ROUND;//MY_GAME_MODE_PLAY;
+    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_START_MENU;
     setSoundType(AUDIO_FLAG_SCORE_CARD);
+
+    ///////////////////////*********** Tutorials **************////////////////////
+    gameState->tutorialMode = true;
+    for(int i = 0; i < arrayCount(gameState->gameInstructionsHaveRun); ++i) {
+            gameState->gameInstructionsHaveRun[i] = false;
+    }
+    gameState->instructionType = GAME_INSTRUCTION_NULL;
+    ////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////////////////////      
 
@@ -355,7 +377,8 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                 gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
                 gameState->currentGameMode == MY_GAME_MODE_SCORE ||
-                gameState->currentGameMode == MY_GAME_MODE_END_ROUND) {
+                gameState->currentGameMode == MY_GAME_MODE_END_ROUND ||
+                gameState->currentGameMode == MY_GAME_MODE_INSTRUCTION_CARD) {
                 updateFlags |= MY_ENTITIES_RENDER;
             }
 
@@ -496,7 +519,10 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                     }
 
-                    outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, 1.0f, resolution, "The Period Game", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                    Texture *bloodDrop = findTextureAsset("blood_droplet.PNG");
+                    renderTextureCentreDim(bloodDrop, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*bloodDrop->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
+                    outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, NEAR_CLIP_PLANE, resolution, "The Period Game", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
                 } break;
                 case MY_GAME_MODE_PLAY: {
                     if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE)) {
@@ -512,6 +538,67 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                     }
 
                     outputTextNoBacking(&mainFont, resolution.x / 2, resolution.y / 2, zCoord, resolution, "IS PAUSED!", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                } break;
+                case MY_GAME_MODE_INSTRUCTION_CARD: {
+
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
+                        gameState->animationTimer = initTimer(0.5f, false);
+                        gameState->isIn = false;
+                    }
+
+                    float xAt = 0;
+
+                    if(isOn(&gameState->animationTimer)) {
+                        TimerReturnInfo timerInfo = updateTimer(&gameState->animationTimer, appInfo.dt);    
+
+                        if(gameState->isIn) {
+                            xAt = lerp(-resolution.x, timerInfo.canonicalVal, 0);
+                        } else {
+                            xAt = lerp(0, timerInfo.canonicalVal, resolution.x);
+                        }
+
+                        if(timerInfo.finished) {
+                            turnTimerOff(&gameState->animationTimer);
+                            if(!gameState->isIn) {
+                                gameState->lastGameMode = gameState->currentGameMode;
+                                gameState->currentGameMode = MY_GAME_MODE_PLAY;
+                            }
+                        }
+                    }
+
+                    Texture *imageToDisplay = 0;
+                    char *stringToDisplay = "(null)";
+                    switch (gameState->instructionType) {
+                        case GAME_INSTRUCTION_DROPLET: {
+                            imageToDisplay = findTextureAsset("blood_droplet.PNG");
+                            stringToDisplay = "The aim is to collect blood droplets as you go.";
+                        } break;
+                        case GAME_INSTRUCTION_CHOCOLATE: {
+                            imageToDisplay = findTextureAsset("choc_bar.png");
+                            stringToDisplay = "Chocolate helps you move fast through each lane, & dodge obstacles.";
+                        } break;
+                        case GAME_INSTRUCTION_TOILET: {
+                            imageToDisplay = findTextureAsset("toilet1.png");
+                            stringToDisplay = "Look out for places to empty your cup. If you crash before you do, you'll lose your points.";
+                        } break;
+                        case GAME_INSTRUCTION_CRAMP: {
+                            imageToDisplay = findTextureAsset("cramp.PNG");
+                            stringToDisplay = "Ouch! Watch out for these little guys, they pack a punch. You can also press SpaceBar to shoot them. You'll also lose a set of underpants.";
+                        } break;
+                        default: {
+                            assert(false);
+                        }
+                    }
+                    
+                    renderTextureCentreDim(imageToDisplay, v3(xAt+0.3f*resolution.x, 0.5f*resolution.y, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*imageToDisplay->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+
+                    Rect2f m = rect2fMinDim(xAt+0.5*resolution.x, 0.1*resolution.y, 0.3*resolution.x, resolution.y);
+
+                    V2 bounds = getBounds(stringToDisplay, m, &smallMainFont, 1, resolution, appInfo.screenRelativeSize);
+
+                    renderDrawRectCenterDim(v3(xAt, 0, 1), v2_scale(0.7f, v2(resolution.x, resolution.y)), COLOR_WHITE, 0, mat4(), OrthoMatrixToScreen(resolution.x, resolution.y));
+                    
+                    outputTextNoBacking(&smallMainFont, m.min.x, 0.5f*resolution.y - 0.5f*bounds.y + 1.1f*smallMainFont.fontHeight, NEAR_CLIP_PLANE, resolution, stringToDisplay, m, COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
                 } break;
                 case MY_GAME_MODE_END_ROUND: {
 
@@ -716,7 +803,6 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, hasBlackBars);
             
             DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame)
-
             DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame)
             easyOS_endKeyState(&keyStates);
         }

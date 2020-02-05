@@ -8,11 +8,15 @@
 #include "easy_types.h"
 // #include <string.h>
 
-
+#include "easy_assert.h"
+#include "easy_debug_variables.h"
+#include "easy_profiler.h"
 #include "easy.h"
 
 static char* globalExeBasePath;
 
+
+#include "easy_time.h"
 #include "easy_files.h"
 #include "easy_math.h"
 #include "easy_error.h"
@@ -43,7 +47,6 @@ static char* globalExeBasePath;
 // #include "easy_skeleton.h"
 
 
-#include "easy_debug_variables.h"
 #include "easy_color.h"
 #include "easy_transition.h"
 
@@ -64,5 +67,6 @@ static char* globalExeBasePath;
 #include "easy_physics.h"
 
 #include "easy_write.h"
+#include "easy_profiler_draw.h"
 
 

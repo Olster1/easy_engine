@@ -205,6 +205,8 @@ static void pushDirectionOntoList(MoveDirection dir, Entity *e) {
 }
 
 static MoveDirection pullDirectionOffList(Entity *e) {
+	assert(e->type == ENTITY_PLAYER);
+
 	MoveOption *op = e->moveList.prev;
 	MoveDirection res = ENTITY_MOVE_NULL;
 
@@ -270,6 +272,15 @@ static void MyEntity_MarkForDeletion(EasyTransform *T) {
 	T->markForDeletion = true;
 }
 
+inline static void easyEntity_emptyMoveList(Entity *e) {
+	assert(e->type == ENTITY_PLAYER);
+
+	while(e->moveList.next != &e->moveList) {
+		//keep pulling them all off
+		pullDirectionOffList(e);
+	}
+} 
+
 ////////////////////////////////////////////////////////////////////
 
 
@@ -311,10 +322,30 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 					if(DEBUG_global_movePlayer) {
 						if(wasPressed(keyStates->gameButtons, BUTTON_LEFT)) {
 							newDirection = ENTITY_MOVE_LEFT;
-							// pushDirectionOntoList(ENTITY_MOVE_LEFT, e);
 						} else if(wasPressed(keyStates->gameButtons, BUTTON_RIGHT)) {
-							// pushDirectionOntoList(ENTITY_MOVE_RIGHT, e);
 							newDirection = ENTITY_MOVE_RIGHT;
+						}
+					}
+
+					
+					if(!isOn(&e->moveTimer)) {
+						//NOTE(ollie): If we are finished moving we are going to check any moves are on the list
+						MoveDirection dir = pullDirectionOffList(e);
+
+						if(dir != ENTITY_MOVE_NULL) {
+							if(dir == ENTITY_MOVE_RIGHT && e->laneIndex < (MAX_LANE_COUNT - 1)) {
+								e->startLane = e->laneIndex;
+								e->laneIndex++;
+								turnTimerOn(&e->moveTimer);
+								e->moveDirection = dir;
+							}
+							if(dir == ENTITY_MOVE_LEFT && e->laneIndex > 0) {
+								e->startLane = e->laneIndex;
+								e->laneIndex--;
+								turnTimerOn(&e->moveTimer);
+								e->moveDirection = dir;
+							}
+							
 						}
 					}
 
@@ -332,9 +363,13 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 									if(isOn(&e->moveTimer)) {
 										assert(e->moveDirection == ENTITY_MOVE_LEFT);
 										e->moveTimer.value_ = e->moveTimer.period - e->moveTimer.value_;
+										easyEntity_emptyMoveList(e);
 									} else {
 										turnTimerOn(&e->moveTimer);
 									}
+								} else {
+									//Already moving in that direction, so add it to the list
+									pushDirectionOntoList(newDirection, e);
 								}
 								e->moveDirection = ENTITY_MOVE_RIGHT;
 							}
@@ -349,9 +384,13 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 									if(isOn(&e->moveTimer)) {
 										assert(e->moveDirection == ENTITY_MOVE_RIGHT);
 										e->moveTimer.value_ = e->moveTimer.period - e->moveTimer.value_;
+										easyEntity_emptyMoveList(e);
 									} else {
 										turnTimerOn(&e->moveTimer);
 									}
+								} else {
+									//Already moving in that direction, so add it to the list
+									pushDirectionOntoList(ENTITY_MOVE_LEFT, e);
 								}
 								e->moveDirection = ENTITY_MOVE_LEFT;
 							}
@@ -435,6 +474,18 @@ void easyEntity_endRound(MyEntityManager *manager) {
 	}
 }
 
+static inline void myEntity_addInstructionCard(MyGameState *gameState, GameInstructionType instructionType) {
+	if(gameState->tutorialMode && !gameState->gameInstructionsHaveRun[instructionType]) {
+		gameState->gameInstructionsHaveRun[instructionType] = true;
+		gameState->instructionType = instructionType;
+		
+		gameState->animationTimer = initTimer(0.5f, false);
+		gameState->isIn = true;
+
+		gameState->currentGameMode = MY_GAME_MODE_INSTRUCTION_CARD;
+	}
+}
+
 ///////////////////////************ Post collision update *************////////////////////
 
 static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
@@ -491,6 +542,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								info.e->dropletCount = 0;
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("flush.wav"), 0, AUDIO_FOREGROUND);
+
+								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_TOILET);
 							}					
 						}
 					} break;
@@ -508,6 +561,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								playGameSound(&globalLongTermArena, easyAudio_findSound("bite.wav"), 0, AUDIO_FOREGROUND);
 
 								turnTimerOn(&e->fadeTimer); //chocBar dissapears
+
+								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CHOCOLATE);
 							}					
 						}
 					} break;
@@ -523,6 +578,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								info.e->dropletCount++;
 
 								turnTimerOn(&e->fadeTimer);
+
+								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_DROPLET);
 							}					
 						}
 
@@ -550,6 +607,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("splatSound.wav"), 0, AUDIO_FOREGROUND);
 
+								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
+
 								if(info.e->healthPoints < 0) {
 									player->healthPoints = player->maxHealthPoints;
 									//check game state
@@ -562,13 +621,12 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 									setSoundType(AUDIO_FLAG_SCORE_CARD);
 
-									gameStateVariables->pointLoadTimer = initTimer(0.3f*player->dropletCountStore, false);
+									gameStateVariables->pointLoadTimer = initTimer(0.1f*player->dropletCountStore, false);
 									gameStateVariables->lastCount = 0;
 
 									gameState->animationTimer = initTimer(0.5f, false);
 									gameState->isIn = true;
 
-									// easyEntity_endRound(manager);
 								}
 
 								//NOTE(ollie): Cramp is removed after it fades out

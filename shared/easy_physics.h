@@ -545,13 +545,12 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 
 
 static void EasyPhysics_UpdateWorld(EasyPhysics_World *world, float dt) {
-
 	world->physicsTime += dt;
-	float timeInterval = PHYSICS_TIME_STEP;
-	while(world->physicsTime > 0.00000001f) {
-		float t = min(timeInterval, world->physicsTime);
-	    ProcessPhysics(&world->colliders, &world->rigidBodies, t);
-	    world->physicsTime -= t;
+	int dividend = world->physicsTime / PHYSICS_TIME_STEP;
+	float timeInterval = world->physicsTime / (float)dividend;//PHYSICS_TIME_STEP; 
+	while(world->physicsTime >= timeInterval) {
+	    ProcessPhysics(&world->colliders, &world->rigidBodies, timeInterval);
+	    world->physicsTime -= timeInterval;
 	}
 
 	///////////////////////************ Post process collisions *************////////////////////
