@@ -1,7 +1,6 @@
-level: {
-	**d**
-	**d**
-	**d**
-	**d**
-	*****
+cameraZ: -5;
+items: {
+	PALM_TREE: v3(3, 3, 0)
+	OAK_TREE: v3(3, 3, 0)
+
 }

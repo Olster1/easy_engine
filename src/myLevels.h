@@ -1,7 +1,7 @@
 
 static char *global_periodRoom0 = "\
-**d**\n\
-**d**\n\
+**d*i\n\
+**d*i\n\
 **d**\n\
 **d**\n\
 *****\n\

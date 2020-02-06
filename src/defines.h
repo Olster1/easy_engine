@@ -31,4 +31,5 @@ typedef enum {
 	ENTITY_ROOM,
 	ENTITY_CRAMP,
 	ENTITY_SCENERY,
+	ENTITY_STAR,
 } EntityType;

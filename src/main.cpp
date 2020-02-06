@@ -280,7 +280,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             
             renderEnableDepthTest(globalRenderGroup);
             renderEnableCulling(globalRenderGroup);
-            setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD);
+            setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA);
             renderSetViewPort(0, 0, resolution.x, resolution.y);
 
             if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
@@ -391,9 +391,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 float xWidth = resolution.x;
                 float xHeight = xWidth*aspectRatio;
 
-                renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
-                drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
-                renderClearDepthBuffer(toneMappedBuffer.bufferId);
+                // renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
+                // drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                // renderClearDepthBuffer(toneMappedBuffer.bufferId);
 
                 ////////////////////////////////////////////////////////////////////
 

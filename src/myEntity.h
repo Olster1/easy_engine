@@ -92,6 +92,11 @@ typedef struct {
 
 			int dropletCountStore;
 			MoveDirection moveDirection;
+
+			//NOTE(ollie): This is for the player flashing when hurt, & can't get hurt if it's on
+			Timer hurtTimer; 
+			Timer invincibleTimer;
+
 		};
 		struct { //Bullet
 			Timer lifespanTimer;
@@ -417,6 +422,28 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 					////////////////////////////////////////////////////////////////////
 
+					///////////////////////************ Update the hurt & invincible timers *************////////////////////
+
+					if(isOn(&e->hurtTimer)) {
+						TimerReturnInfo info = updateTimer(&e->hurtTimer, dt);
+
+						e->colorTint.w = smoothStep01010(1, info.canonicalVal, 0);
+						e->colorTint.x = e->colorTint.y = e->colorTint.z = 1;
+						if(info.finished) {
+							turnTimerOff(&e->hurtTimer);
+							e->colorTint.w = 1;
+						}
+					}
+					////////////////////////////////////////////////////////////////////
+					if(isOn(&e->invincibleTimer)) {
+						TimerReturnInfo info = updateTimer(&e->invincibleTimer, dt);
+						e->colorTint = COLOR_BLUE;
+						if(info.finished) {
+							turnTimerOff(&e->invincibleTimer);
+							e->colorTint = COLOR_WHITE;
+						}
+					}
+
 				} break;
 				case ENTITY_BULLET: {
 					// e->rb->accumTorque = v3(0, 0, 30.0f);
@@ -433,6 +460,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 					
 				} break;	
 				case ENTITY_CRAMP: {
+
+				} break;
+				case ENTITY_STAR: {
 
 				} break;
 				case ENTITY_SCENERY: {
@@ -485,6 +515,62 @@ static inline void myEntity_addInstructionCard(MyGameState *gameState, GameInstr
 		gameState->currentGameMode = MY_GAME_MODE_INSTRUCTION_CARD;
 	}
 }
+
+static inline void myEntity_checkHealthPoints(Entity *player, MyGameState *gameState, MyGameStateVariables *gameStateVariables) {
+	if(player->healthPoints < 0) {
+		assert(player->type == ENTITY_PLAYER);
+
+		player->healthPoints = player->maxHealthPoints;
+		//check game state
+
+		gameState->lastGameMode = gameState->currentGameMode;
+		gameState->currentGameMode = MY_GAME_MODE_END_ROUND;
+
+		setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
+		setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
+
+		setSoundType(AUDIO_FLAG_SCORE_CARD);
+
+		gameStateVariables->pointLoadTimer = initTimer(0.1f*player->dropletCountStore, false);
+		gameStateVariables->lastCount = 0;
+
+		gameState->animationTimer = initTimer(0.5f, false);
+		gameState->isIn = true;
+
+	}
+}
+
+static inline void myEntity_decreasePlayerHealthPoint(Entity *player, MyGameStateVariables *gameStateVariables) {
+	assert(player->type == ENTITY_PLAYER);
+
+	player->healthPoints--;
+	
+	assert(gameStateVariables->liveTimerCount < arrayCount(gameStateVariables->liveTimers));
+	Timer *healthTimer = gameStateVariables->liveTimers + gameStateVariables->liveTimerCount++;
+
+	*healthTimer = initTimer(0.5f, false);
+	turnTimerOn(healthTimer);
+
+	turnTimerOff(&player->invincibleTimer);
+	turnTimerOn(&player->hurtTimer);
+
+
+	player->laneIndex = 2;
+	player->T.pos.x = getLaneX(player->laneIndex);
+	turnTimerOff(&player->moveTimer);
+	easyEntity_emptyMoveList(player);
+}
+
+static inline bool myEntity_canPlayerBeHurt(Entity *player) {
+	assert(player->type == ENTITY_PLAYER);
+	bool result = true;
+
+	if(isOn(&player->invincibleTimer) || isOn(&player->hurtTimer)) {
+		result = false;
+	}
+
+	return result;
+}	
 
 ///////////////////////************ Post collision update *************////////////////////
 
@@ -585,49 +671,66 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 					} break;
 					case ENTITY_SCENERY: {
-					
+					// 	if(e->collider->collisionCount > 0) {
+					// 		MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_STAY);	
+
+					// 		if(info.found) {
+					// 			assert(info.e->type == ENTITY_PLAYER);
+					// 			Entity *player = info.e;
+
+					// 			if(myEntity_canPlayerBeHurt(player)) {
+					// 				playGameSound(&globalLongTermArena, easyAudio_findSound("splatSound.wav"), 0, AUDIO_FOREGROUND);
+					// 				myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
+					// 				myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+					// 			}
+					// 		}
+					// 	}
+					} break;
+					case ENTITY_STAR: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+
+							///////////////////////*********** Collision with Player **************////////////////////
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_STAY);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								Entity *player = info.e;
+
+								if(!isOn(&player->invincibleTimer)) {
+
+									playGameSound(&globalLongTermArena, easyAudio_findSound("starSound.wav"), 0, AUDIO_FOREGROUND);
+									
+									turnTimerOn(&player->invincibleTimer);
+
+									////////////////////////////////////////////////////////////////////
+
+									//NOTE(ollie): Cramp is removed after it fades out
+									turnTimerOn(&e->fadeTimer);
+								}
+							}
+						} 
 					} break;
 					case ENTITY_CRAMP: {
 						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
 
 							///////////////////////*********** Collision with Player **************////////////////////
-							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_STAY);	
 
 							if(info.found) {
 								assert(info.e->type == ENTITY_PLAYER);
 								Entity *player = info.e;
-								player->healthPoints--;
-								
-								assert(gameStateVariables->liveTimerCount < arrayCount(gameStateVariables->liveTimers));
-
-								Timer *healthTimer = gameStateVariables->liveTimers + gameStateVariables->liveTimerCount++;
-
-								*healthTimer = initTimer(0.5f, false);
-								turnTimerOn(healthTimer);
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("splatSound.wav"), 0, AUDIO_FOREGROUND);
+								
 
-								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
-
-								if(info.e->healthPoints < 0) {
-									player->healthPoints = player->maxHealthPoints;
-									//check game state
-
-									gameState->lastGameMode = gameState->currentGameMode;
-									gameState->currentGameMode = MY_GAME_MODE_END_ROUND;
-
-									setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
-									setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
-
-									setSoundType(AUDIO_FLAG_SCORE_CARD);
-
-									gameStateVariables->pointLoadTimer = initTimer(0.1f*player->dropletCountStore, false);
-									gameStateVariables->lastCount = 0;
-
-									gameState->animationTimer = initTimer(0.5f, false);
-									gameState->isIn = true;
-
+								///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
+								if(myEntity_canPlayerBeHurt(player)) {
+									myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
+									myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+									myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
 								}
+
+								////////////////////////////////////////////////////////////////////
 
 								//NOTE(ollie): Cramp is removed after it fades out
 								turnTimerOn(&e->fadeTimer);
@@ -768,6 +871,13 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
 
+
+	e->hurtTimer = initTimer(2.0f, false);
+	// turnTimerOff(&e->hurtTimer);
+	e->invincibleTimer = initTimer(6.0f, false);
+	turnTimerOff(&e->invincibleTimer);
+
+
 }
 static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, Texture *empty,  Texture *halfEmpty) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
@@ -776,7 +886,6 @@ static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, T
 	turnTimerOff(&e->moveTimer);
 
 	e->name = "Player";
-	
 
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
@@ -959,6 +1068,41 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
 
 ////////////////////////////////////////////////////////////////////
 
+//NOTE(ollie): Star
+static Entity *initStar(MyEntityManager *m, V3 pos, Entity *parent) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+	Texture *sprite = findTextureAsset("coinGold.png");
+
+	e->name = "Star";
+	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+	if(parent) e->T.parent = &parent->T;
+
+	e->active = true;
+#if DEBUG_ENTITY_COLOR
+	e->colorTint = COLOR_BLUE;
+#else 
+	e->colorTint = COLOR_WHITE;
+#endif
+	
+	e->type = ENTITY_STAR;
+
+	e->sprite = sprite;
+	e->model = 0;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	////Physics 
+	e->rb = 0;
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+
+	/////
+
+	return e;
+
+}
+
+
 
 //NOTE(ollie): Bucket
 static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
@@ -1112,6 +1256,9 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 			case 't': { //toilet
 				initBucket(entityManager, findTextureAsset("toilet1.png"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
+			} break;
+			case 'i': {
+				initStar(entityManager, v3(posAt.x, posAt.y, LAYER0), room);
 			} break;
 			default: {
 
