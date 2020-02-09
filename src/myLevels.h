@@ -1,9 +1,9 @@
 
 static char *global_periodRoom0 = "\
-**d*i\n\
-**d*i\n\
 **d**\n\
-**d**\n\
+*****\n\
+*****\n\
+*****\n\
 *****\n\
 ";
 
@@ -12,7 +12,7 @@ c** d*\n\
 t***d*\n\
 *** d*\n\
 e** d*\n\
-*****\n\
+i****\n\
 ";
 
 static char *global_periodRoom2 = "\
@@ -66,8 +66,9 @@ static char *global_periodLevelStrings[] = { global_periodRoom0,
 											};
 
 static inline int myLevels_getLevel(int lastLevel) {
-	int r = (int)randomBetween(0, arrayCount(global_periodLevelStrings));
+	int r = (int)randomBetween(1, arrayCount(global_periodLevelStrings));
 
+	assert(r != 0);
 	if(r >= arrayCount(global_periodLevelStrings)) r -= 1;
 
 	return r;
@@ -77,4 +78,6 @@ static inline char *myLevels_getLevelForIndex(int i) {
 	assert(i >= 0 && i < arrayCount(global_periodLevelStrings));
 	return global_periodLevelStrings[i];
 }
+
+
 

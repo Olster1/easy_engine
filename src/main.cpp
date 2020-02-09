@@ -1,13 +1,14 @@
 #include "defines.h"
 #include "easy_headers.h"
 
-#include "myGameState.h"
+ #include "myGameState.h"
 #include "myLevels.h"
 #include "myEntity.h"
+#include "mySaveLoad.h"
 #include "myTransitions.h"
 
 
-static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player) {
+static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
     gameVariables->roomSpeed = -1.0f;
     gameVariables->playerMoveSpeed = 0.3f;
 
@@ -20,14 +21,24 @@ static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityMa
     setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
     setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
 
+    gameVariables->boostTimer = initTimer(1.0f, false); 
+    turnTimerOff(&gameVariables->boostTimer);
+
+    cam->pos.x = 0;
+    cam->pos.y = 0;
+    cam->pos.z = -12;
+
+    
+    gameVariables->cachedSpeed = 0;
+
     if(createPlayer) {
         player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
     } else {
         resetPlayer(player, gameVariables,findTextureAsset("cup_empty.png"));
     }
 
-    gameVariables->mostRecentRoom = myLevels_generateLevel(global_periodRoom0, entityManager, v3(0, 0, 0));
-    gameVariables->lastRoomCreated = myLevels_generateLevel(global_periodRoom1, entityManager, v3(0, 5, 0));
+    gameVariables->mostRecentRoom = myLevels_loadLevel(0, entityManager, v3(0, 0, 0));
+    gameVariables->lastRoomCreated = myLevels_loadLevel(1, entityManager, v3(0, 5, 0));
 
     return player;
 }
@@ -43,7 +54,7 @@ static void transitionCallBackRestartRound(void *data_) {
 
     easyEntity_endRound(data->entityManager);
     cleanUpEntities(data->entityManager, data->gameVariables);
-    myGame_beginRound(data->gameVariables, data->entityManager, false, data->player);
+    myGame_beginRound(data->gameVariables, data->entityManager, false, data->player, data->camera);
 
 
     //NOTE(ol): Right now just using malloc & free
@@ -170,7 +181,7 @@ int main(int argc, char *args[]) {
 
 
         EasyCamera camera;
-        easy3d_initCamera(&camera, v3(0, 0, -12));
+        easy3d_initCamera(&camera, v3(0, 0, 0));
 
         globalRenderGroup->skybox = initSkyBox();
 
@@ -195,6 +206,9 @@ int main(int argc, char *args[]) {
 
         easy3d_loadMtl("models/Palm_Tree.mtl");
         easy3d_loadObj("models/Palm_Tree.obj", 0);
+
+        int modelLoadedCount = 6;
+        char *modelsLoaded[64] = {"Crystal.obj", "grass.obj", "fern.obj", "tower.obj", "Oak_Tree.obj", "Palm_Tree.obj"};
         
         // EasyTerrain *terrain = initTerrain(fern, grass);
 
@@ -223,22 +237,9 @@ int main(int argc, char *args[]) {
 
     MyGameStateVariables gameVariables = {};
     
-    Entity *player = myGame_beginRound(&gameVariables, entityManager, true, 0);
+    Entity *player = myGame_beginRound(&gameVariables, entityManager, true, 0, &camera);
 
-    MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
-
-    turnTimerOff(&gameState->animationTimer);
-
-    gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_START_MENU;
-    setSoundType(AUDIO_FLAG_SCORE_CARD);
-
-    ///////////////////////*********** Tutorials **************////////////////////
-    gameState->tutorialMode = true;
-    for(int i = 0; i < arrayCount(gameState->gameInstructionsHaveRun); ++i) {
-            gameState->gameInstructionsHaveRun[i] = false;
-    }
-    gameState->instructionType = GAME_INSTRUCTION_NULL;
-    ////////////////////////////////////////////////////////////////////
+    MyGameState *gameState = myGame_initGameState(); 
 
 ////////////////////////////////////////////////////////////////////      
 
@@ -378,7 +379,8 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
                 gameState->currentGameMode == MY_GAME_MODE_SCORE ||
                 gameState->currentGameMode == MY_GAME_MODE_END_ROUND ||
-                gameState->currentGameMode == MY_GAME_MODE_INSTRUCTION_CARD) {
+                gameState->currentGameMode == MY_GAME_MODE_INSTRUCTION_CARD ||
+                gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
                 updateFlags |= MY_ENTITIES_RENDER;
             }
 
@@ -405,93 +407,99 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
 
-                ///////////////////////************ Draw the lives *************////////////////////
-
-                Texture *bloodSplat = findTextureAsset("blood_splat.png");
-                Texture *underpants = findTextureAsset("underwear.png");
-
-                float f0 = easyRender_getTextureAspectRatio_HOverW(bloodSplat);
-                float f1 = easyRender_getTextureAspectRatio_HOverW(underpants);
-
-                float xAt = 0.1f*resolution.x;
-                float yAt = 0.4f*resolution.y;
-                float increment = 0.08f*resolution.x;
-
-                outputText(&mainFont, xAt - 1*increment, yAt + 0.1f*increment, 1.0f, resolution, "Lives: ", InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
-
-                xAt += increment;
-                for(int liveIndex = 0; liveIndex < player->maxHealthPoints; ++liveIndex) {
-
-                    float w1 = 0.05f*resolution.x;
-                    float h1 = w1*f0;
-                    float h2 = w1*f1;
-                    renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE + 0.1f), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-
-                    Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
-                    if(liveIndex < gameVariables.liveTimerCount) {
-                        float canVal = 1.0f;
-
-                        if(isOn(liveTimer)) {
-                            TimerReturnInfo timerInfo = updateTimer(liveTimer, appInfo.dt);    
-
-                            canVal = timerInfo.canonicalVal;
-                            if(timerInfo.finished) {
-                                turnTimerOff(liveTimer);
-                            }
-                        }
-                        
-                        renderTextureCentreDim(bloodSplat, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE), v2_scale(canVal, v2(w1, h1)), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));    
-                                
-                    }
-                    
-                }
+                
 
                 ////////////////////////////////////////////////////////////////////
-
-
 
                 updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
 
                 cleanUpEntities(entityManager, &gameVariables);
 
-                ///////////////////////************ Draw the choc meter *************////////////////////
+                bool shouldDrawHUD = true;
 
-                float canonicalVal = 1.0f - inverse_lerp(gameVariables.minPlayerMoveSpeed, gameVariables.playerMoveSpeed, gameVariables.maxPlayerMoveSpeed);
-                assert(canonicalVal >= 0.0f && canonicalVal <= 1.0f);
+                if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) shouldDrawHUD = false;
 
-                float barWidth = 0.15f*resolution.x;
-                float barHeight = 0.1f*resolution.y;
-                renderDrawRect(rect2fMinDim(barWidth, barHeight, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
-                renderDrawRect(rect2fMinDim(barWidth, barHeight, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, COLOR_GREEN, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                if(shouldDrawHUD) {
+                    ///////////////////////************ Draw the lives *************////////////////////
 
-                ////////////////////////////////////////////////////////////////////
+                    Texture *bloodSplat = findTextureAsset("blood_splat.png");
+                    Texture *underpants = findTextureAsset("underwear.png");
 
-                ///////////////////////*********** Draw the ui points board**************////////////////////
-                char buffer[512];
-                // sprintf(buffer, "%d", player->healthPoints);
+                    float f0 = easyRender_getTextureAspectRatio_HOverW(bloodSplat);
+                    float f1 = easyRender_getTextureAspectRatio_HOverW(underpants);
 
-                Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
-                aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
-                xWidth = 0.05f*resolution.x;
-                xHeight = xWidth*aspectRatio;
-                renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-                sprintf(buffer, "%d", player->dropletCount);
-                outputText(&mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+                    float xAt = 0.1f*resolution.x;
+                    float yAt = 0.4f*resolution.y;
+                    float increment = 0.08f*resolution.x;
+
+                    outputText(&mainFont, xAt - 1*increment, yAt + 0.1f*increment, 1.0f, resolution, "Lives: ", InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+
+                    xAt += increment;
+                    for(int liveIndex = 0; liveIndex < player->maxHealthPoints; ++liveIndex) {
+
+                        float w1 = 0.05f*resolution.x;
+                        float h1 = w1*f0;
+                        float h2 = w1*f1;
+                        renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE + 0.1f), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+
+                        Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
+                        if(liveIndex < gameVariables.liveTimerCount) {
+                            float canVal = 1.0f;
+
+                            if(isOn(liveTimer)) {
+                                TimerReturnInfo timerInfo = updateTimer(liveTimer, appInfo.dt);    
+
+                                canVal = timerInfo.canonicalVal;
+                                if(timerInfo.finished) {
+                                    turnTimerOff(liveTimer);
+                                }
+                            }
+                            
+                            renderTextureCentreDim(bloodSplat, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE), v2_scale(canVal, v2(w1, h1)), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));    
+                                    
+                        }
+                        
+                    }
+
+                    ///////////////////////************ Draw the choc meter *************////////////////////
+
+                    float canonicalVal = 1.0f - inverse_lerp(gameVariables.minPlayerMoveSpeed, gameVariables.playerMoveSpeed, gameVariables.maxPlayerMoveSpeed);
+                    assert(canonicalVal >= 0.0f && canonicalVal <= 1.0f);
+
+                    float barWidth = 0.15f*resolution.x;
+                    float barHeight = 0.1f*resolution.y;
+                    renderDrawRect(rect2fMinDim(barWidth, barHeight, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                    renderDrawRect(rect2fMinDim(barWidth, barHeight, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, COLOR_GREEN, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+
+                    ////////////////////////////////////////////////////////////////////
+
+                    ///////////////////////*********** Draw the ui points board**************////////////////////
+                    char buffer[512];
+                    // sprintf(buffer, "%d", player->healthPoints);
+
+                    Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
+                    aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
+                    xWidth = 0.05f*resolution.x;
+                    xHeight = xWidth*aspectRatio;
+                    renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                    sprintf(buffer, "%d", player->dropletCount);
+                    outputText(&mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
 
 
-                Texture *cupTexture = (player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
-                
-                aspectRatio = (float)cupTexture->height / (float)cupTexture->width;
-                xWidth = 0.05f*resolution.x;
-                xHeight = xWidth*aspectRatio;
+                    Texture *cupTexture = (player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
+                    
+                    aspectRatio = (float)cupTexture->height / (float)cupTexture->width;
+                    xWidth = 0.05f*resolution.x;
+                    xHeight = xWidth*aspectRatio;
 
-                renderTextureCentreDim(cupTexture, v3(0.1f*resolution.x, 0.25f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-                sprintf(buffer, "%d", player->dropletCountStore);
-                outputText(&mainFont, 0.15f*resolution.x, 0.25f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+                    renderTextureCentreDim(cupTexture, v3(0.1f*resolution.x, 0.25f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                    sprintf(buffer, "%d", player->dropletCountStore);
+                    outputText(&mainFont, 0.15f*resolution.x, 0.25f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
 
-                ////////////////////////////////////////////////////////////////////
+                    ////////////////////////////////////////////////////////////////////
+                }
 
-                if(gameState->currentGameMode != MY_GAME_MODE_PLAY) {
+                if(gameState->currentGameMode != MY_GAME_MODE_PLAY && gameState->currentGameMode != MY_GAME_MODE_EDIT_LEVEL) {
                     drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
                     easyRender_blurBuffer(&toneMappedBuffer, &toneMappedBuffer, 0);
 
@@ -512,9 +520,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
             switch (gameState->currentGameMode) {
                 case MY_GAME_MODE_START_MENU: {
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
 
-                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY);
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera);
                         EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
 
                     }
@@ -541,7 +549,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 } break;
                 case MY_GAME_MODE_INSTRUCTION_CARD: {
 
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER)) {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
                         gameState->animationTimer = initTimer(0.5f, false);
                         gameState->isIn = false;
                     }
@@ -602,8 +610,8 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 } break;
                 case MY_GAME_MODE_END_ROUND: {
 
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(transitionState)) {
-                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY);
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(transitionState) && !easyConsole_isConsoleOpen(&console)) {
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera);
                         data->entityManager = entityManager;
                         data->gameVariables = &gameVariables;
                         data->player = player;
@@ -679,6 +687,98 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 case MY_GAME_MODE_START: {
 
                 } break;
+                case MY_GAME_MODE_EDIT_LEVEL: {
+                    float zAtInViewSpace = -1 * camera.pos.z;
+
+                    if(isDown(keyStates.gameButtons, BUTTON_R)) {
+                        DEBUG_global_CamNoRotate = false;
+                    } else {
+                        DEBUG_global_CamNoRotate = true;
+                    }
+
+                    easyEditor_startWindow(editor, "Editor Selection", 100, 400);
+                    
+                    int modelSelected = easyEditor_pushList(editor, "Model: ", modelsLoaded, modelLoadedCount);
+
+                    char str[256];
+                    sprintf(str, "%d", modelSelected);
+
+                    //TODO(ollie): Get this to be more reliable!! it crashes right now
+                    // easyConsole_addToStream(&console, str);
+                    if(easyEditor_pushButton(editor, "Save Room")) {
+                        easyFlashText_addText(&globalFlashTextManager, "SAVED");
+                        myLevels_saveLevel(gameState->currentLevelEditing, entityManager);
+                    }
+                    
+                    easyEditor_endWindow(editor); //might not actually need this
+
+                    if(wasPressed(keyStates.gameButtons, BUTTON_F6)) {
+                        gameState->currentGameMode = MY_GAME_MODE_PLAY;
+                        easyEntity_endRound(entityManager);
+                        cleanUpEntities(entityManager, &gameVariables);
+                        myGame_beginRound(&gameVariables, entityManager, false, player, &camera);
+
+                        //NOTE(ollie): Revert back to game settings
+                        DEBUG_global_IsFlyMode = false;
+                        DEBUG_global_CameraMoveXY = false;
+                    }
+
+                    if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE) && !editor->isHovering) {
+
+                        if(isDown(keyStates.gameButtons, BUTTON_SHIFT)) {
+                            //NOTE(ollie): Create a new model
+                            assert(modelSelected < modelLoadedCount);
+                            EasyModel *model = findModelAsset_Safe(modelsLoaded[modelSelected]);
+
+                            if(model) {
+                                gameState->holdingEntity = true;
+                                //NOTE(ollie): It should exist since we are pulling 
+                                //             from an array that has the loaded models in It
+                                Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
+                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
+                                Entity *newEntity = initScenery1x1(entityManager, modelsLoaded[modelSelected], model, worldP, 0);
+                                gameState->hotEntity = newEntity;
+                            }
+                        } else {
+                            //NOTE(ollie): Try grabbing one
+                            //cast ray against entities
+                        }
+                    }
+
+                    if(wasReleased(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                        gameState->holdingEntity = false;
+                    }
+
+                    if(gameState->hotEntity) {
+                        Entity *hotEntity = (Entity *)gameState->hotEntity;
+                        EasyTransform *T = &hotEntity->T;
+
+                        if(gameState->holdingEntity) {
+                            //NOTE(ollie): Set the entity position 
+                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
+                            T->pos = worldP;
+                        }
+
+                        easyEditor_startWindow(editor, "Entity", 600, 300);
+
+                        easyEditor_pushFloat3(editor, "Position:", &T->pos.x, &T->pos.y, &T->pos.z);
+                        easyEditor_pushFloat3(editor, "Rotation:", &T->Q.i, &T->Q.j, &T->Q.k);
+                        easyEditor_pushFloat1(editor, "Scale:", &T->scale.x);
+                        T->scale.y = T->scale.z = T->scale.x;
+
+                        easyEditor_pushColor(editor, "Color: ", &hotEntity->colorTint);
+                        
+                        if(easyEditor_pushButton(editor, "Delete")) {
+                            easyFlashText_addText(&globalFlashTextManager, "Deleted");
+                            MyEntity_MarkForDeletion(&hotEntity->T);
+                            gameState->hotEntity = 0;
+                            gameState->holdingEntity = false;
+                        }
+                        
+                        easyEditor_endWindow(editor); //might not actually need this
+
+                    }
+                } break;
                 default: {
                     assert(false);
                 }
@@ -722,6 +822,25 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         easyConsole_addToStream(&console, buffer);
                     } else if(stringsMatchNullN("movePlayer", token.at, token.size)) { 
                         DEBUG_global_movePlayer = !DEBUG_global_movePlayer;
+                    } else if(stringsMatchNullN("edit", token.at, token.size)) {
+                        token = easyConsole_seeNextToken(&console);
+                        if(token.type == TOKEN_INTEGER) {
+                            token = easyConsole_getNextToken(&console);
+                            int levelToLoad = token.intVal;
+
+                            gameState->currentGameMode = MY_GAME_MODE_EDIT_LEVEL;
+                            easyEntity_endRound(entityManager);
+                            cleanUpEntities(entityManager, &gameVariables);
+
+                            myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0));
+                            easyConsole_addToStream(&console, "loaded level");
+
+                            DEBUG_global_IsFlyMode = true;
+                            DEBUG_global_CameraMoveXY = true;
+
+                        } else {
+                            easyConsole_addToStream(&console, "must pass a number");
+                        }
                     } else {
                         easyConsole_parseDefault(&console, token);
                     }
@@ -731,9 +850,10 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             }
 //////////////////////////////////////////////////////////////////////////////////////////////
 
-/////////////////////// DRAWING & UPDATE IN GAME EDITOR /////////////////////////////////                    
+/////////////////////// DRAWING & UPDATE IN GAME EDITOR ///////////////////////////////// 
+                   
             if(inEditor) {
-                easyEditor_startWindow(editor, "Lister Panel");
+                easyEditor_startWindow(editor, "Lister Panel", 100, 100);
                 {
                     easyEditor_pushSlider(editor, "Level move speed: ", &gameVariables.roomSpeed, -3.0f, -0.5f);
                     easyEditor_pushSlider(editor, "Player move speed: ", &gameVariables.playerMoveSpeed, 0.1f, 1.0f);
@@ -770,8 +890,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 easyEditor_endWindow(editor); //might not actuall need this
                 
 
-                easyEditor_endEditorForFrame(editor);
+                
             }
+            easyEditor_endEditorForFrame(editor);
 
             easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
 

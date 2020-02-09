@@ -24,7 +24,6 @@
 #define MY_ROOM_HEIGHT 5
 #define DEBUG_ENTITY_COLOR 0
 
-
 #define CHOC_INCREMENT 0.1f
 
 
@@ -96,6 +95,8 @@ typedef struct {
 			//NOTE(ollie): This is for the player flashing when hurt, & can't get hurt if it's on
 			Timer hurtTimer; 
 			Timer invincibleTimer;
+			Timer restartToMiddleTimer;
+			float lastValueForTimer;
 
 		};
 		struct { //Bullet
@@ -153,6 +154,11 @@ typedef struct {
 	//NOTE(ollie): For making the score screen have a loading feel to it
 	Timer pointLoadTimer;
 	int lastCount; //So we can make a click noise when it changes
+	//
+
+	//NOTE(ollie): Boost pad 
+	float cachedSpeed;
+	Timer boostTimer;
 	//
 
 } MyGameStateVariables;
@@ -285,6 +291,26 @@ inline static void easyEntity_emptyMoveList(Entity *e) {
 		pullDirectionOffList(e);
 	}
 } 
+
+
+static inline void myEntity_setPlayerPosToMiddle(Entity *player) {
+	player->laneIndex = 2;
+	player->T.pos.x = getLaneX(player->laneIndex);
+	turnTimerOff(&player->moveTimer);
+}
+
+static inline void myEntity_restartPlayerInMiddle(Entity *player) {
+	turnTimerOff(&player->moveTimer);
+	easyEntity_emptyMoveList(player);
+	if(player->laneIndex == 2) { //already in the middle
+		myEntity_setPlayerPosToMiddle(player);
+	} else {
+		//NOTE(ollie): Fade out to the middle
+		turnTimerOn(&player->restartToMiddleTimer);	
+	}
+	
+}
+
 
 ////////////////////////////////////////////////////////////////////
 
@@ -424,7 +450,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 					///////////////////////************ Update the hurt & invincible timers *************////////////////////
 
-					if(isOn(&e->hurtTimer)) {
+					if(isOn(&e->hurtTimer) && !isOn(&e->restartToMiddleTimer)) {
 						TimerReturnInfo info = updateTimer(&e->hurtTimer, dt);
 
 						e->colorTint.w = smoothStep01010(1, info.canonicalVal, 0);
@@ -437,12 +463,53 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 					////////////////////////////////////////////////////////////////////
 					if(isOn(&e->invincibleTimer)) {
 						TimerReturnInfo info = updateTimer(&e->invincibleTimer, dt);
-						e->colorTint = COLOR_BLUE;
+
+						float hueVal = 10*info.canonicalVal*360.0f;
+
+						hueVal -= ((int)(hueVal / 360.0f))*360;
+
+						e->colorTint = easyColor_hsvToRgb(hueVal, 1, 1);
 						if(info.finished) {
 							turnTimerOff(&e->invincibleTimer);
 							e->colorTint = COLOR_WHITE;
+							variables->roomSpeed = variables->cachedSpeed;
 						}
 					}
+					////////////////////////////////////////////////////////////////////
+					if(isOn(&e->restartToMiddleTimer)) {
+						TimerReturnInfo info = updateTimer(&e->restartToMiddleTimer, dt);
+						
+						float t = info.canonicalVal;
+						if(t < 0.5f) {
+							e->colorTint.w = lerp(1, t / 0.5f, 0);	
+						} else {
+							e->colorTint.w = lerp(0, (t - 0.5f) / 0.5f, 1);
+							if(e->lastValueForTimer < 0.5f) {
+								myEntity_setPlayerPosToMiddle(e);	
+							}
+							
+						}
+
+						e->lastValueForTimer = info.canonicalVal;
+						
+						if(info.finished) {
+							turnTimerOff(&e->restartToMiddleTimer);
+							e->colorTint = COLOR_WHITE;
+						}
+					}
+
+					////////////////////////////////////////////////////////////////////
+					if(isOn(&variables->boostTimer)) {
+						TimerReturnInfo info = updateTimer(&variables->boostTimer, dt);
+						if(info.finished) {
+							turnTimerOff(&variables->boostTimer);
+							variables->roomSpeed = variables->cachedSpeed;
+						}
+					}
+
+					
+					
+
 
 				} break;
 				case ENTITY_BULLET: {
@@ -554,11 +621,8 @@ static inline void myEntity_decreasePlayerHealthPoint(Entity *player, MyGameStat
 	turnTimerOff(&player->invincibleTimer);
 	turnTimerOn(&player->hurtTimer);
 
+	myEntity_restartPlayerInMiddle(player);
 
-	player->laneIndex = 2;
-	player->T.pos.x = getLaneX(player->laneIndex);
-	turnTimerOff(&player->moveTimer);
-	easyEntity_emptyMoveList(player);
 }
 
 static inline bool myEntity_canPlayerBeHurt(Entity *player) {
@@ -571,6 +635,16 @@ static inline bool myEntity_canPlayerBeHurt(Entity *player) {
 
 	return result;
 }	
+
+static inline void myEntity_startBoostPad(MyGameStateVariables *gameStateVariables, bool turnBoostTimerOn) {
+	if(turnBoostTimerOn) {
+		turnTimerOn(&gameStateVariables->boostTimer);	
+	}
+	
+	gameStateVariables->cachedSpeed = gameStateVariables->roomSpeed;
+	gameStateVariables->roomSpeed *= 2;
+
+}
 
 ///////////////////////************ Post collision update *************////////////////////
 
@@ -698,6 +772,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 								if(!isOn(&player->invincibleTimer)) {
 
+									myEntity_startBoostPad(gameStateVariables, false);
 									playGameSound(&globalLongTermArena, easyAudio_findSound("starSound.wav"), 0, AUDIO_FOREGROUND);
 									
 									turnTimerOn(&player->invincibleTimer);
@@ -873,9 +948,12 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
 
 
 	e->hurtTimer = initTimer(2.0f, false);
-	// turnTimerOff(&e->hurtTimer);
-	e->invincibleTimer = initTimer(6.0f, false);
+	turnTimerOff(&e->hurtTimer);
+	e->invincibleTimer = initTimer(2.0f, false);
 	turnTimerOff(&e->invincibleTimer);
+
+	e->restartToMiddleTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->restartToMiddleTimer);
 
 
 }
@@ -1211,7 +1289,7 @@ static int myLevels_getLevelWidth(char *level) {
 }
 
 
-static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManager, V3 roomPos) {
+static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManager, V3 roomPos) {
 	Entity *room = initRoom(entityManager, roomPos);
 
 	char *at = level;
@@ -1272,8 +1350,9 @@ static Entity *myLevels_generateLevel(char *level, MyEntityManager *entityManage
 
 }
 
-////////////////////////////////////////////////////////////////////
 
+///////////////////////************ Function declarations*************////////////////////
+static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos);
 
 ///////////////////////*************  Clean up at end of frame ************////////////////////
 
@@ -1313,10 +1392,9 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
 				initBullet(manager, findTextureAsset("tablet.png"), info.pos);
 			} break;
 			case ENTITY_ROOM: {
-				variables->lastLevelIndex = myLevels_getLevel(variables->lastLevelIndex); 
-				//Only have two rooms at a time
+				int randomLevel = variables->lastLevelIndex = myLevels_getLevel(variables->lastLevelIndex); 
 				variables->mostRecentRoom = variables->lastRoomCreated;
-				variables->lastRoomCreated = myLevels_generateLevel(myLevels_getLevelForIndex(variables->lastLevelIndex), manager, info.pos);
+				variables->lastRoomCreated = myLevels_loadLevel(randomLevel, manager, info.pos);
 			
 			} break;
 			default: {
