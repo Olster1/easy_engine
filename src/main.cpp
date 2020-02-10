@@ -740,9 +740,55 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                                 gameState->hotEntity = newEntity;
                             }
                         } else {
-                            //NOTE(ollie): Try grabbing one
-                            //cast ray against entities
+                           
+
+                     
                         }
+                    }
+
+                    if(!gameState->holdingEntity) {
+                        //NOTE(ollie): Try grabbing one
+                        //cast ray against entities
+                        EasyPhysics_RayCastAABB3f_Info rayInfo = {};
+                        rayInfo.hitT = INFINITY;
+                        rayInfo.didHit = false;
+
+                        Entity *entityHit = 0;
+
+                        //NOTE(ollie): Build the ray
+                        Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
+                        
+
+                        for(int i = 0; i < entityManager->entities.count; ++i) {
+                            Entity *e = (Entity *)getElement(&entityManager->entities, i);
+                            if(e && e->active) { //can be null
+
+                                if(e->type == ENTITY_SCENERY && e->model) {
+                                    e->colorTint = COLOR_WHITE;
+
+                                    V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
+                                    V3 rayDirection = v3_minus(worldP, camera.pos);
+
+                                    EasyPhysics_RayCastAABB3f_Info newRayInfo = EasyPhysics_CastRayAgainstAABB3f(easyTransform_getWorldRotation(&e->T), easyTransform_getWorldPos(&e->T), easyTransform_getWorldScale(&e->T), e->model->bounds, rayDirection, camera.pos);
+                                    
+                                    if(newRayInfo.didHit && newRayInfo.hitT < rayInfo.hitT && newRayInfo.hitT > 0.0f) {
+                                        rayInfo = newRayInfo;
+                                        entityHit = e;
+
+                                    }
+                                }
+                            }
+                        }
+
+                        if(rayInfo.didHit) {
+                            entityHit->colorTint = COLOR_BLUE;
+                            if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                                gameState->holdingEntity = true;
+                                gameState->hotEntity = entityHit;    
+                            }
+                            
+
+                        }   
                     }
 
                     if(wasReleased(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
@@ -755,7 +801,14 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                         if(gameState->holdingEntity) {
                             //NOTE(ollie): Set the entity position 
-                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
+                            
+                            ///////////////////////*********** Working out the z from camera **************////////////////////
+                            V3 entPos = easyTransform_getWorldPos(T);
+                            V3 zAxis = normalizeV3(easyMath_getZAxis(quaternionToMatrix(camera.orientation)));
+                            float zFromCamera = dotV3(v3_minus(entPos, camera.pos), zAxis);
+                            ////////////////////////////////////////////////////////////////////
+
+                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zFromCamera, easy3d_getViewToWorld(&camera));
                             T->pos = worldP;
                         }
 
