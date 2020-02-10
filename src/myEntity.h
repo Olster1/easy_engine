@@ -311,6 +311,14 @@ static inline void myEntity_restartPlayerInMiddle(Entity *player) {
 	
 }
 
+static inline void myEntity_spinEntity(Entity *e) {
+	if(e->rb) {
+		e->rb->dA = v3(0, 13, 0);
+	} else {
+		assert(false);
+	}
+}
+
 
 ////////////////////////////////////////////////////////////////////
 
@@ -521,6 +529,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				case ENTITY_DROPLET: {
 
 				} break;
+				case ENTITY_UNDERPANTS: {
+
+				} break;
 				case ENTITY_ROOM: {
 					//NOTE(ollie): move downwards
 					e->rb->dP.y = variables->roomSpeed;
@@ -598,7 +609,7 @@ static inline void myEntity_checkHealthPoints(Entity *player, MyGameState *gameS
 
 		setSoundType(AUDIO_FLAG_SCORE_CARD);
 
-		gameStateVariables->pointLoadTimer = initTimer(0.1f*player->dropletCountStore, false);
+		gameStateVariables->pointLoadTimer = initTimer(0.3f*player->dropletCountStore, false);
 		gameStateVariables->lastCount = 0;
 
 		gameState->animationTimer = initTimer(0.5f, false);
@@ -704,6 +715,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								playGameSound(&globalLongTermArena, easyAudio_findSound("flush.wav"), 0, AUDIO_FOREGROUND);
 
 								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_TOILET);
+
+								myEntity_spinEntity(e);
 							}					
 						}
 					} break;
@@ -721,6 +734,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								playGameSound(&globalLongTermArena, easyAudio_findSound("bite.wav"), 0, AUDIO_FOREGROUND);
 
 								turnTimerOn(&e->fadeTimer); //chocBar dissapears
+								myEntity_spinEntity(e);
 
 								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CHOCOLATE);
 							}					
@@ -738,8 +752,41 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								info.e->dropletCount++;
 
 								turnTimerOn(&e->fadeTimer);
+								myEntity_spinEntity(e);
+								playGameSound(&globalLongTermArena, easyAudio_findSound("ting.wav"), 0, AUDIO_FOREGROUND);
+								
 
 								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_DROPLET);
+							}					
+						}
+
+					} break;
+					case ENTITY_UNDERPANTS: {
+						assert(e->T.parent);
+						assert(e->T.parent->parent == 0);
+						
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								info.e->dropletCount++;
+
+								Entity *player = info.e;
+
+								turnTimerOn(&e->fadeTimer);
+								myEntity_spinEntity(e);
+								playGameSound(&globalLongTermArena, easyAudio_findSound("ting.wav"), 0, AUDIO_FOREGROUND);
+									
+								if(player->healthPoints < player->maxHealthPoints) {
+									//can take one back
+									player->healthPoints++;
+									
+									assert(gameStateVariables->liveTimerCount > 0);
+									gameStateVariables->liveTimerCount--; //revert the live timer
+								}
+
+								myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_UNDERPANTS);
 							}					
 						}
 
@@ -779,8 +826,9 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 									////////////////////////////////////////////////////////////////////
 
-									//NOTE(ollie): Cramp is removed after it fades out
+									//NOTE(ollie): Star is removed after it fades out
 									turnTimerOn(&e->fadeTimer);
+									myEntity_spinEntity(e);
 								}
 							}
 						} 
@@ -796,7 +844,6 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								Entity *player = info.e;
 
 								playGameSound(&globalLongTermArena, easyAudio_findSound("splatSound.wav"), 0, AUDIO_FOREGROUND);
-								
 
 								///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
 								if(myEntity_canPlayerBeHurt(player)) {
@@ -809,6 +856,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
 								//NOTE(ollie): Cramp is removed after it fades out
 								turnTimerOn(&e->fadeTimer);
+								myEntity_spinEntity(e);
 							}	
 
 							///////////////////////*********** Collision with Bullet **************////////////////////
@@ -1003,7 +1051,8 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 	e->name = "Bullet";
 	pos.z = LAYER1;
-	easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+	float scale = 0.4f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale*sprite->aspectRatio_h_over_w, 1)); 
 	assert(!e->T.parent);
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
@@ -1058,7 +1107,41 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 
 	////Physics 
 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+	/////
+
+	return e;
+}
+
+////////////////////////////////////////////////////////////////////
+
+//NOTE(ollie): Underpants
+
+static Entity *initUnderpants(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+
+	e->name = "Underpants";
+	float width = 0.6f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(width, width*sprite->aspectRatio_h_over_w, 1)); 
+	if(parent) e->T.parent = &parent->T;
+	
+	e->active = true;
+	#if DEBUG_ENTITY_COLOR
+		e->colorTint = COLOR_PINK;
+	#else 
+		e->colorTint = COLOR_WHITE;
+	#endif
+	e->type = ENTITY_UNDERPANTS;
+
+	e->sprite = sprite;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	////Physics 
+
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
 	/////
 
@@ -1099,7 +1182,7 @@ static Entity *initScenery1x1(MyEntityManager *m, char *name, EasyModel *model, 
 	turnTimerOff(&e->fadeTimer);
 
 	////Physics 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(getDimRect3f(model->bounds).x, 0, 0)); //only the x bounds is actually used for circle types
 
 	/////
@@ -1135,7 +1218,7 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
 	turnTimerOff(&e->fadeTimer);
 
 	////Physics 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
 
 	/////
@@ -1171,10 +1254,13 @@ static Entity *initStar(MyEntityManager *m, V3 pos, Entity *parent) {
 	turnTimerOff(&e->fadeTimer);
 
 	////Physics 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
 
 	/////
+
+	//spin the star around
+	e->rb->dA = v3(0, 0, 5);
 
 	return e;
 
@@ -1203,7 +1289,7 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *p
 	turnTimerOff(&e->fadeTimer);
 
 	////Physics 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
 
 	/////
@@ -1232,7 +1318,7 @@ static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 	turnTimerOff(&e->fadeTimer);
 
 	////Physics 
-	e->rb = 0;
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
 	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
 
 	/////
@@ -1317,6 +1403,10 @@ static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManag
 			} break;
 			case 'd': { //droplet
 				initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
+				posAt.x++;
+			} break;
+			case 'u': {
+				initUnderpants(entityManager, findTextureAsset("underwear.png"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 's': { //droplet

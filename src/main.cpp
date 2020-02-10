@@ -442,8 +442,10 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         float h2 = w1*f1;
                         renderTextureCentreDim(underpants, v3(xAt + increment*liveIndex, yAt, NEAR_CLIP_PLANE + 0.1f), v2(w1, h2), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
 
-                        Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
+                        
                         if(liveIndex < gameVariables.liveTimerCount) {
+                            Timer *liveTimer = &gameVariables.liveTimers[liveIndex]; 
+                            
                             float canVal = 1.0f;
 
                             if(isOn(liveTimer)) {
@@ -592,6 +594,10 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         case GAME_INSTRUCTION_CRAMP: {
                             imageToDisplay = findTextureAsset("cramp.PNG");
                             stringToDisplay = "Ouch! Watch out for these little guys, they pack a punch. You can also press SpaceBar to shoot them. You'll also lose a set of underpants.";
+                        } break;
+                        case GAME_INSTRUCTION_UNDERPANTS: {
+                            imageToDisplay = findTextureAsset("underwear.png");
+                            stringToDisplay = "You can find clean underpants on your journey. This will give you another life.";
                         } break;
                         default: {
                             assert(false);
@@ -801,7 +807,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                         if(gameState->holdingEntity) {
                             //NOTE(ollie): Set the entity position 
-                            
+
                             ///////////////////////*********** Working out the z from camera **************////////////////////
                             V3 entPos = easyTransform_getWorldPos(T);
                             V3 zAxis = normalizeV3(easyMath_getZAxis(quaternionToMatrix(camera.orientation)));
@@ -815,7 +821,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         easyEditor_startWindow(editor, "Entity", 600, 300);
 
                         easyEditor_pushFloat3(editor, "Position:", &T->pos.x, &T->pos.y, &T->pos.z);
+
                         easyEditor_pushFloat3(editor, "Rotation:", &T->Q.i, &T->Q.j, &T->Q.k);
+
                         easyEditor_pushFloat1(editor, "Scale:", &T->scale.x);
                         T->scale.y = T->scale.z = T->scale.x;
 

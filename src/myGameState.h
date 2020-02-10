@@ -16,6 +16,7 @@ typedef enum {
 	GAME_INSTRUCTION_CHOCOLATE,
 	GAME_INSTRUCTION_TOILET,
 	GAME_INSTRUCTION_CRAMP,
+	GAME_INSTRUCTION_UNDERPANTS,
 
 	////////////////////////////////////////////////////////////////////
 	GAME_INSTRUCTION_COUNT,
@@ -65,7 +66,7 @@ static inline MyGameState *myGame_initGameState() {
 	setSoundType(AUDIO_FLAG_SCORE_CARD);
 
 	///////////////////////*********** Tutorials **************////////////////////
-	gameState->tutorialMode = true;
+	gameState->tutorialMode = false;
 	for(int i = 0; i < arrayCount(gameState->gameInstructionsHaveRun); ++i) {
 	        gameState->gameInstructionsHaveRun[i] = false;
 	}
