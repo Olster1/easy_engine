@@ -21,6 +21,10 @@
 #define LAYER1 0.1f
 #define LAYER2 0.2f
 #define LAYER3 0.3f
+#define LAYER4 0.8f
+
+static float globalTileScale = 0.9f;
+
 #define MY_ROOM_HEIGHT 5
 #define DEBUG_ENTITY_COLOR 0
 
@@ -144,8 +148,6 @@ typedef struct {
 	Entity *lastRoomCreated; //the one at the back
 	int lastLevelIndex;
 
-	//NOTE(ollie): For camera easing
-	float cameraTargetPos;
 
 	//NOTE(ollie): This is for splatting the blood splat
 	int liveTimerCount;
@@ -160,6 +162,23 @@ typedef struct {
 	float cachedSpeed;
 	Timer boostTimer;
 	//
+
+	///////////////////////************* For editor level for lerping the camera ************////////////////////
+	MyGameState_ViewAngle angleType;
+	float angleDegreesAltitude;
+	Timer lerpTimer; //NOTE(ollie): Lerping between positions
+
+	//NOTE(ollie): Camera positions
+	V3 centerPos;
+	V3 targetCenterPos; //we ease towards the target position & update the center position using the keys
+
+	V3 startPos; //of lerp
+
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): For camera easing
+	float cameraDistance;
+	float cameraTargetPos;
 
 } MyGameStateVariables;
 
@@ -317,6 +336,11 @@ static inline void myEntity_spinEntity(Entity *e) {
 	} else {
 		assert(false);
 	}
+}
+
+static inline Entity *MyEntity_findEntityByName(char *name) {
+	assert(false);//not implemented
+	return 0;
 }
 
 
@@ -533,8 +557,12 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 				} break;
 				case ENTITY_ROOM: {
-					//NOTE(ollie): move downwards
-					e->rb->dP.y = variables->roomSpeed;
+					if(!DEBUG_global_PauseGame) {
+						//NOTE(ollie): move downwards
+						// e->rb->dP.y = -3;//variables->roomSpeed;	
+
+						e->T.pos.y += dt*variables->roomSpeed;
+					}
 					
 				} break;	
 				case ENTITY_CRAMP: {
@@ -544,6 +572,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 				} break;
 				case ENTITY_SCENERY: {
+
+				} break;
+				case ENTITY_TILE: {
 
 				} break;
 				case ENTITY_CHOC_BAR: {
@@ -672,7 +703,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 			assert(!e->updatedFrame);
 			e->updatedFrame = true;
 			
-			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
+			
 			// if(e->type != ENTITY_ROOM && e->type != ENTITY_PLAYER) assert(e->rb == 0);
 
 			if(flags & MY_ENTITIES_UPDATE) {
@@ -790,6 +821,13 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 							}					
 						}
 
+					} break;
+					case ENTITY_TILE: {
+						if(easyTransform_getWorldPos(&e->T).y < 0) {
+							e->T.pos.z -= dt;
+
+						}
+						e->T.scale = v3(globalTileScale, globalTileScale, globalTileScale);
 					} break;
 					case ENTITY_SCENERY: {
 					// 	if(e->collider->collisionCount > 0) {
@@ -920,13 +958,25 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 				}
 			}
 
+			
+			
+			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
+			
+
+			
+
 			if(e->sprite && (flags & (u32)MY_ENTITIES_RENDER)) {
 				renderDrawSprite(renderGroup, e->sprite, e->colorTint);
 			}	
 
 			if(e->model && (flags & (u32)MY_ENTITIES_RENDER)) {
 				renderSetShader(renderGroup, &phongProgram);
-				renderModel(renderGroup, e->model, e->colorTint);
+				if(e->type == ENTITY_TILE) {
+					renderDrawCube(globalRenderGroup, &globalWhiteMaterial, COLOR_WHITE);
+				} else {
+					renderModel(renderGroup, e->model, e->colorTint);	
+				}
+				
 				renderSetShader(renderGroup, mainShader);
 			}	
 
@@ -983,7 +1033,11 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
 	e->moveTimer = initTimer(variables->playerMoveSpeed, false);
 	turnTimerOff(&e->moveTimer);
 
-	easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(1, tex->aspectRatio_h_over_w, 1)); 
+
+	float scale = 0.2f;
+	easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(scale, scale*tex->aspectRatio_h_over_w, scale)); 
+	e->T.Q = eulerAnglesToQuaternion(0, 0.5f*PI32, 0);
+
 	e->active = true;
 	e->moveDirection = ENTITY_MOVE_NULL;
 	e->laneIndex = 2;
@@ -1027,6 +1081,9 @@ static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, T
 
 	e->sprites[0] = empty;
 	e->sprites[1] = halfEmpty;
+
+	e->model = findModelAsset("SmallSpaceFighter.obj");
+
 
 
 	e->fadeTimer = initTimer(0.3f, false);
@@ -1360,6 +1417,44 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
 	return e;
 
 }
+//NOTE(ollie): Tile
+static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+		assert(!e->updatedFrame);
+		assert(!e->updatedPhysics);
+
+		e->name = "Tile";
+		easyTransform_initTransform(&e->T, pos); 
+		if(parent) e->T.parent = &parent->T;
+
+		//NOTE(ollie): Set the transform 
+		float scale = globalTileScale;
+		e->T.scale = v3(scale, scale, scale);
+		e->T.Q = eulerAnglesToQuaternion(0, -0.5f*PI32, 0);
+
+
+		e->active = true;
+		#if DEBUG_ENTITY_COLOR
+				e->colorTint = COLOR_BLUE;
+			#else 
+				e->colorTint = COLOR_WHITE;
+			#endif
+		e->type = ENTITY_TILE;
+
+		e->model = 0;
+
+		e->fadeTimer = initTimer(0.3f, false);
+		turnTimerOff(&e->fadeTimer);
+
+		////Physics 
+		e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+		e->collider = 0;//EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(getDimRect3f(e->model->bounds).x, 0, 0)); //only the x bounds is actually used for circle types
+
+		/////
+
+		return e;
+}
+
 
 static int myLevels_getLevelWidth(char *level) {
 	char *at = level;
@@ -1387,6 +1482,7 @@ static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManag
 	while(*at != '\0') {
 		switch(*at) {
 			case '*': { //empty space
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				posAt.x++;
 			} break;
 			case '\n': { //empty space
@@ -1394,38 +1490,47 @@ static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManag
 				posAt.x = startX;
 			} break;
 			case 'e': { //choc bar
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'c': { //cramp
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'd': { //droplet
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'u': {
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initUnderpants(entityManager, findTextureAsset("underwear.png"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 's': { //droplet
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initScenery1x1(entityManager, "Crystal", findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'q': { //droplet
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initScenery1x1(entityManager, "Oak Tree", findModelAsset("Oak_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'w': { //droplet
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initScenery1x1(entityManager, "Palm Tree", findModelAsset("Palm_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 't': { //toilet
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initBucket(entityManager, findTextureAsset("toilet1.png"), v3(posAt.x, posAt.y, LAYER0), room);
 				posAt.x++;
 			} break;
 			case 'i': {
+				initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
 				initStar(entityManager, v3(posAt.x, posAt.y, LAYER0), room);
 			} break;
 			default: {

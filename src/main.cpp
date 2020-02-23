@@ -6,30 +6,168 @@
 #include "myEntity.h"
 #include "mySaveLoad.h"
 #include "myTransitions.h"
+#include "myDialogue.h"
 
 
-static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
+///////////////////////************ Init Game State *************////////////////////
+//NOTE(ollie): Go straight to editing the level or actually play the level
+
+/*
+MY_GAME_MODE_START_MENU,
+MY_GAME_MODE_LEVEL_SELECTOR,
+MY_GAME_MODE_PLAY,
+MY_GAME_MODE_PAUSE,
+MY_GAME_MODE_SCORE,
+MY_GAME_MODE_END_ROUND,
+MY_GAME_MODE_INSTRUCTION_CARD,
+MY_GAME_MODE_START,
+MY_GAME_MODE_EDIT_LEVEL
+*/
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_EDIT_LEVEL
+
+//If we are editing a level, the level we want to enter into on startup
+#define LEVEL_TO_LOAD 0
+
+static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, EasyCamera *cam) {
+    //NOTE(ollie): This is only called once on startup 
+    // THIS IS NOT THE FUNCTION FOR INITING A ROUND
+
+    MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
+
+    ///////////////////////************* Editor stuff ************////////////////////
+    gameState->currentLevelEditing = 0;
+    gameState->hotEntity = 0;
+    gameState->holdingEntity = false;
+    ////////////////////////////////////////////////////////////////////
+
+    turnTimerOff(&gameState->animationTimer);
+    gameState->isIn = false;
+
+    gameState->currentGameMode = gameState->lastGameMode = GAME_STATE_TO_LOAD;
+
+    if(GAME_STATE_TO_LOAD == MY_GAME_MODE_EDIT_LEVEL) {
+        //NOTE(ollie): We aren't begining a round so we need to create a level,
+        // See beginRound func to see us using this function again. 
+        myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0));
+
+        DEBUG_global_IsFlyMode = true;
+        DEBUG_global_CameraMoveXY = true;
+
+        cam->pos.z = -12;
+    }
+
+    setSoundType(AUDIO_FLAG_SCORE_CARD);
+
+    ///////////////////////*********** Tutorials **************////////////////////
+    gameState->tutorialMode = false;
+    for(int i = 0; i < arrayCount(gameState->gameInstructionsHaveRun); ++i) {
+            gameState->gameInstructionsHaveRun[i] = false;
+    }
+    gameState->instructionType = GAME_INSTRUCTION_NULL;
+    ////////////////////////////////////////////////////////////////////
+
+    gameState->altitudeSliderAt = 1.0f;
+    gameState->holdingAltitudeSlider = false;
+
+    ////////////////////////////////////////////////////////////////////
+
+    return gameState;
+} 
+
+static Quaternion myGame_getCameraOrientation(V3 cameraPos, V3 targetPos) {
+    Matrix4 m = easy3d_lookAt(cameraPos, targetPos, v3(0, 0, -1));
+
+    //since the matrix that lookat gives back is from world to view, we actually want the 
+    //transpose the camera orientation is defined in world space i.e. is view to world (the reverse)
+    m = mat4_transpose(m);
+
+    Quaternion result = easyMath_normalizeQuaternion(easyMath_matrix4ToQuaternion(m));
+
+    return result;
+}
+
+static V3 myGame_getCameraPosition(float altitudeDegrees, MyGameState_ViewAngle type) {
+    float altitudeRadians = TAU32 * (altitudeDegrees / 360.0f);
+    V3 yAxis = v3_scale(sin(altitudeRadians), v3(0, 0, -1)); //-ve z direction for the y axis
+    V3 xAxis = v3(0, 0, 0);
+    switch(type) {
+        case MY_VIEW_ANGLE_BOTTOM: {
+            xAxis = v3(0, -1, 0);
+        } break;
+        case MY_VIEW_ANGLE_RIGHT: {
+            xAxis = v3(1, 0, 0);
+        } break;
+        case MY_VIEW_ANGLE_TOP: {
+            xAxis = v3(0, 1, 0);
+        } break;
+        case MY_VIEW_ANGLE_LEFT: {
+            xAxis = v3(-1, 0, 0);
+        } break;
+    }
+    xAxis = v3_scale(cos(altitudeRadians), xAxis); 
+
+    V3 result = v3_plus(xAxis, yAxis);
+
+    return result;
+}
+
+
+static V3 myGame_getCameraGlobalPosition(MyGameStateVariables *gameVariables, float distanceFromCamera) {
+    V3 targetPos = myGame_getCameraPosition(gameVariables->angleDegreesAltitude, gameVariables->angleType);
+    V3 relPos = v3_scale(distanceFromCamera, normalizeV3(targetPos));
+    V3 result = v3_plus(relPos, gameVariables->centerPos);
+    return result;
+}
+
+
+static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyCamera *cam) {
     gameVariables->roomSpeed = -1.0f;
     gameVariables->playerMoveSpeed = 0.3f;
 
     gameVariables->minPlayerMoveSpeed = 0.1f;
     gameVariables->maxPlayerMoveSpeed = 1.0f;
 
-    gameVariables->cameraTargetPos = -6.0f;
+    
     gameVariables->liveTimerCount = 0;
-
-    setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
-    setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
 
     gameVariables->boostTimer = initTimer(1.0f, false); 
     turnTimerOff(&gameVariables->boostTimer);
 
-    cam->pos.x = 0;
-    cam->pos.y = 0;
-    cam->pos.z = -12;
+    ///////////////////////************ Editor State *************////////////////////
 
+    gameVariables->angleType = MY_VIEW_ANGLE_BOTTOM;
+    gameVariables->angleDegreesAltitude = 89.0f; //degrees
+    gameVariables->lerpTimer = initTimer(1.0f, false);
+    turnTimerOff(&gameVariables->lerpTimer) ;
+
+    gameVariables->targetCenterPos = v3(0, 0, 0);
+    gameVariables->centerPos = v3(0, 0, 0);
+    gameVariables->startPos = v3(0, 0, 0);
+
+    ////////////////////////////////////////////////////////////////////
+    //NOTE(ollie): Setup camera's initial position
+    gameVariables->cameraDistance = 12;
+    cam->pos = v3_scale(gameVariables->cameraDistance, myGame_getCameraPosition(gameVariables->angleDegreesAltitude, gameVariables->angleType)); 
+
+    cam->orientation = myGame_getCameraOrientation(cam->pos, v3(0, 0, 0));
+
+    gameVariables->cameraTargetPos = 6.0f;
     
+    ////////////////////////////////////////////////////////////////////
+
     gameVariables->cachedSpeed = 0;
+
+    gameVariables->mostRecentRoom = 0;
+    gameVariables->lastRoomCreated = 0;
+}
+
+
+static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
+
+    setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
+    setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
+
+    myGame_resetGameVariables(gameVariables, cam);
 
     if(createPlayer) {
         player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
@@ -107,8 +245,7 @@ static EasySkyBox *initSkyBox() {
 }
 
 int main(int argc, char *args[]) {
-
-    DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame)
+    DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame, "Main: Intial setup");
 
     if(argc > 1) {
         for(int i = 0; i < argc; i++) {
@@ -122,14 +259,16 @@ int main(int argc, char *args[]) {
     V2 screenDim = v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
     V2 resolution = v2(DEFINES_RESOLUTION_X, DEFINES_RESOLUTION_Y);
 
-
     // screenDim = resolution;
     bool fullscreen = false;
     OSAppInfo appInfo = easyOS_createApp("Easy Engine", &screenDim, fullscreen);
 
     if(appInfo.valid) {
+        EasyTime_setupTimeDatums();
+       
         
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
+
         
         loadAndAddImagesToAssets("img/");
 
@@ -146,6 +285,11 @@ int main(int argc, char *args[]) {
         //Set the debug font 
         globalDebugFont = initFont(fontName1, 32);
         ///
+
+        char *minerDialogue = concatInArena(globalExeBasePath, "/../src/dialogue/test.txt", &globalPerFrameArena);
+
+        myDialogue_compileProgram(minerDialogue);
+        exit(0);
 
 //******** CREATE THE FRAME BUFFERS ********///
 
@@ -185,6 +329,9 @@ int main(int argc, char *args[]) {
 
         globalRenderGroup->skybox = initSkyBox();
 
+#define LOAD_MODELS_AUTOMATICALLY 1
+///////////////////////************* Loading the models ************////////////////////
+#if !LOAD_MODELS_AUTOMATICALLY
         easy3d_loadMtl("models/terrain/fern.mtl");
         EasyModel fern = {};
         easy3d_loadObj("models/terrain/fern.obj", &fern);
@@ -207,9 +354,31 @@ int main(int argc, char *args[]) {
         easy3d_loadMtl("models/Palm_Tree.mtl");
         easy3d_loadObj("models/Palm_Tree.obj", 0);
 
+        easy3d_loadMtl("models/tile.mtl");
+        easy3d_loadObj("models/tile.obj", 0);        
+
         int modelLoadedCount = 6;
-        char *modelsLoaded[64] = {"Crystal.obj", "grass.obj", "fern.obj", "tower.obj", "Oak_Tree.obj", "Palm_Tree.obj"};
-        
+        char *modelsLoaded[] = {"Crystal.obj", "grass.obj", "fern.obj", "tower.obj", "Oak_Tree.obj", "Palm_Tree.obj"};
+#else  
+        char *modelDirs[] = { "models/"};
+
+        EasyAssetLoader_AssetArray allModelsForEditor = {};
+        allModelsForEditor.count = 0;
+        allModelsForEditor.assetType = ASSET_MODEL;
+
+        for(int dirIndex = 0; dirIndex < arrayCount(modelDirs); ++dirIndex) {
+            char *dir = modelDirs[dirIndex];
+            //NOTE(ollie): Load materials first
+            char *fileTypes[] = { "mtl" };
+            easyAssetLoader_loadAndAddAssets(0, dir, fileTypes, arrayCount(fileTypes), ASSET_MATERIAL);
+            
+            //NOTE(ollie): Then load models
+            fileTypes[0] = "obj";
+            easyAssetLoader_loadAndAddAssets(&allModelsForEditor, dir, fileTypes, arrayCount(fileTypes), ASSET_MODEL);
+            
+        }
+#endif
+
         // EasyTerrain *terrain = initTerrain(fern, grass);
 
         EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
@@ -236,16 +405,21 @@ int main(int argc, char *args[]) {
 
 
     MyGameStateVariables gameVariables = {};
+        
+    Entity *player = 0;
+    if(GAME_STATE_TO_LOAD != MY_GAME_MODE_EDIT_LEVEL) {
+        player = myGame_beginRound(&gameVariables, entityManager, true, 0, &camera);
+    } else {
+        myGame_resetGameVariables(&gameVariables, &camera);
+        player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));    
+    }
     
-    Entity *player = myGame_beginRound(&gameVariables, entityManager, true, 0, &camera);
-
-    MyGameState *gameState = myGame_initGameState(); 
+    MyGameState *gameState = myGame_initGameState(entityManager, &camera); 
 
 ////////////////////////////////////////////////////////////////////      
 
 
-///////////////////////************ Setup level stuff*************////////////////////
-
+///////////////////////************ Setup Audio Sound tracks *************////////////////////
 
 EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo_track.wav"), 0, AUDIO_BACKGROUND));
 EasySound_LoopSound(playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("ambient1.wav"), 0, AUDIO_BACKGROUND));
@@ -264,13 +438,12 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
         EasyTransform T;
         easyTransform_initTransform(&T, v3(0, 0, 0));
 
-        EasyProfile_ProfilerState *profilerState = EasyProfiler_initProfiler(); 
+        EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfiler(); 
 
 
 ///////////************************/////////////////
         while(running) {
-            {
-        
+
             easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
             easyOS_beginFrame(resolution, &appInfo);
             
@@ -299,9 +472,174 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 if(DEBUG_global_CamNoRotate) camMove = easyCamera_removeFlag(camMove, EASY_CAMERA_ROTATE);
                     
             }
-             
+
             easy3d_updateCamera(&camera, &keyStates, 1, cameraMovePower, appInfo.dt, camMove);
 
+            camMove = EASY_CAMERA_MOVE_NULL;
+
+            // EasyRay r = {};
+            // r.origin = camera.pos;
+            // r.direction = EasyCamera_getZAxis(&camera);
+
+            // EasyPlane p = {};
+            // p.normal = v3(0, 0, -1);
+
+            // float tAt = 0;
+
+            // if(!isOn(&gameVariables.lerpTimer)) {
+            //     bool didHit = easyMath_castRayAgainstPlane(r, p, &gameVariables.centerPos, &tAt); //set the center pos
+            //     assert(didHit && tAt >= 0); //should always be looking towards the center 
+            // }
+            // printf("point that got hit: %f %f %f \n", gameVariables.centerPos.x, gameVariables.centerPos.y, gameVariables.centerPos.z);
+
+
+            if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
+
+                V2 movePower = v2(0, 0);
+                float power = 10;
+                ///////////////////////************* Move the center position ************////////////////////
+                if(isDown(keyStates.gameButtons, BUTTON_RIGHT)) {
+                    movePower.x = power;
+                }
+                if(isDown(keyStates.gameButtons, BUTTON_LEFT)) {
+                    movePower.x = -power;
+                }
+                if(isDown(keyStates.gameButtons, BUTTON_UP)) {
+                    movePower.y = power;
+                }
+                if(isDown(keyStates.gameButtons, BUTTON_DOWN)) {
+                    movePower.y = -power;
+                }
+
+                V3 forwardAxis = EasyCamera_getZAxis(&camera);
+                //NOTE(ollie): Slam the z axis since we don't want to move in that axis 
+                forwardAxis.z = 0; 
+                //NOTE(ollie): Normalize the axis so all acceleration is equal strength (i.e. doesn;t matter the angle we're looking)
+                forwardAxis = normalizeV3(forwardAxis);
+
+                //NOTE(ollie): Up axis is the negative z-axis
+                V3 upAxis = v3(0, 0, -1); 
+
+                //NOTE(ollie): Get perindicular axis
+                V3 rightAxis = v3_crossProduct(upAxis, forwardAxis);
+                //NOTE(ollie): Slam the z axis again
+                rightAxis.z = 0;
+                rightAxis = normalizeV3(rightAxis);
+                assert(getLengthV3(rightAxis) > 0.0f);
+
+                V3 cameraMoveDirection = v3_plus(v3_scale(appInfo.dt*movePower.y, forwardAxis), v3_scale(appInfo.dt*movePower.x, rightAxis));
+                
+                //NOTE(ollie): Set the target center position
+                gameVariables.targetCenterPos = v3_plus(gameVariables.targetCenterPos, cameraMoveDirection);
+
+                printf("target center pos: %f %f %f \n", gameVariables.targetCenterPos.x, gameVariables.targetCenterPos.y, gameVariables.targetCenterPos.z);
+
+                //NOTE(ollie): Update the center position
+                gameVariables.centerPos = lerpV3(gameVariables.centerPos, 4.0f*appInfo.dt, gameVariables.targetCenterPos);
+
+                if(!isOn(&gameVariables.lerpTimer)) {
+                    camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
+                }
+                printf("center pos: %f %f %f \n", gameVariables.centerPos.x, gameVariables.centerPos.y, gameVariables.centerPos.z);
+
+                ///////////////////////*********** Altitude slider **************////////////////////
+                float sliderSize = 0.05f*resolution.x;
+                float sliderMin = 0.2f*resolution.y;
+                float sliderMax = 0.8f*resolution.y;
+
+                float sliderScreenPos = lerp(sliderMin, gameState->altitudeSliderAt, sliderMax);
+
+                V4 altitudeColor = COLOR_AQUA;
+                Rect2f altitudeSlider = rect2fMinDim(0, sliderScreenPos, sliderSize, sliderSize);
+                if(inBounds(keyStates.mouseP_left_up, altitudeSlider, BOUNDS_RECT)) {
+                    altitudeColor = COLOR_YELLOW;
+                    if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                        gameState->holdingAltitudeSlider = true; 
+                    }
+                }
+
+                if(gameState->holdingAltitudeSlider) {
+                    altitudeColor = COLOR_BLUE; 
+
+                    //NOTE(ollie): Work out slider's new position
+                    float targetPos = lerp(sliderScreenPos, 0.25f, keyStates.mouseP_left_up.y);
+                    gameState->altitudeSliderAt = (targetPos - sliderMin) / (sliderMax - sliderMin);
+
+                    //NOTE(ollie): Clamp the slider
+                    if(gameState->altitudeSliderAt > 1.0f) {
+                        gameState->altitudeSliderAt = 1.0f;
+                    }
+                    if(gameState->altitudeSliderAt < 0.0f) {
+                        gameState->altitudeSliderAt = 0.0f;
+                    }
+
+                    //NOTE(ollie): Calculate new altitude and set it
+                    gameVariables.angleDegreesAltitude = lerp(1, gameState->altitudeSliderAt, 89.0f);
+
+                    if(!isOn(&gameVariables.lerpTimer)) {
+                        camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
+                        camera.orientation = myGame_getCameraOrientation(camera.pos, gameVariables.centerPos);
+                    }
+
+
+                }
+
+               if(wasReleased(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                   gameState->holdingAltitudeSlider = false;
+                   altitudeColor = COLOR_AQUA;
+               }
+
+
+               //NOTE(ollie): recalculate quad since we change it's position
+               altitudeSlider = rect2fMinDim(0, lerp(sliderMin, gameState->altitudeSliderAt, sliderMax), sliderSize, sliderSize);
+              
+               //NOTE(ollie): Draw the quad
+               renderDrawRect(altitudeSlider, NEAR_CLIP_PLANE + 0.01f, altitudeColor, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+
+               ////////////////////////////////////////////////////////////////////
+
+                if(wasPressed(keyStates.gameButtons, BUTTON_BOARD_LEFT)) {
+                    gameVariables.startPos = myGame_getCameraPosition(gameVariables.angleDegreesAltitude, gameVariables.angleType);
+                    int value = (int)gameVariables.angleType - 1;
+                    if(value < 0) {
+                        value = (int)MY_VIEW_ANGLE_LEFT;
+                    }
+                    gameVariables.angleType = (MyGameState_ViewAngle)value;
+                    ////////////////////////////////////////////////////////////////////
+                    turnTimerOn(&gameVariables.lerpTimer);
+                }
+
+                if(wasPressed(keyStates.gameButtons, BUTTON_BOARD_RIGHT)) {
+                    gameVariables.startPos = myGame_getCameraPosition(gameVariables.angleDegreesAltitude, gameVariables.angleType);
+
+                    int value = (int)gameVariables.angleType + 1;
+                    if(value > (int)MY_VIEW_ANGLE_LEFT) {
+                        value = 0;
+                    }
+                    gameVariables.angleType = (MyGameState_ViewAngle)value;
+                    ////////////////////////////////////////////////////////////////////
+
+                    
+                    turnTimerOn(&gameVariables.lerpTimer);
+                }
+
+                if(isOn(&gameVariables.lerpTimer)) {
+                    TimerReturnInfo timerInfo = updateTimer(&gameVariables.lerpTimer, appInfo.dt);    
+
+                    float canVal = timerInfo.canonicalVal;
+
+                    V3 targetPos = myGame_getCameraPosition(gameVariables.angleDegreesAltitude, gameVariables.angleType);
+                    V3 relPos = v3_scale(gameVariables.cameraDistance, normalizeV3(smoothStep01V3(gameVariables.startPos, canVal, targetPos)));
+                    camera.pos = v3_plus(relPos, gameVariables.centerPos);
+                    camera.orientation = myGame_getCameraOrientation(camera.pos, gameVariables.centerPos);
+
+                    if(timerInfo.finished) {
+                        turnTimerOff(&gameVariables.lerpTimer);
+                    }
+                }
+                  
+            }
+             
             easy_setEyePosition(globalRenderGroup, camera.pos);
 
             // update camera first
@@ -373,7 +711,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 ///////////////////////************ Update entities here *************////////////////////
 
             u32 updateFlags = 0;
-            if(gameState->currentGameMode == MY_GAME_MODE_PLAY && !DEBUG_global_PauseGame) updateFlags |= MY_ENTITIES_UPDATE;
+            if((gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL)) updateFlags |= MY_ENTITIES_UPDATE;
             
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                 gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
@@ -401,7 +739,11 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                 if(updateFlags & MY_ENTITIES_UPDATE) {
                     if(!DEBUG_global_IsFlyMode) {
-                        camera.pos.z = lerp(camera.pos.z, appInfo.dt*1, gameVariables.cameraTargetPos); 
+                        if(!isOn(&gameVariables.lerpTimer)) {
+                            //NOTE(ollie): Update the camera distance 
+                            gameVariables.cameraDistance = lerp(gameVariables.cameraDistance, appInfo.dt*1, gameVariables.cameraTargetPos); 
+                            camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
+                        }
                     }
                     updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, appInfo.dt);
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
@@ -420,6 +762,11 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                 if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) shouldDrawHUD = false;
 
                 if(shouldDrawHUD) {
+                    if(!player) {
+                        player = MyEntity_findEntityByName("Player");
+                    }
+                    
+                    assert(player);
                     ///////////////////////************ Draw the lives *************////////////////////
 
                     Texture *bloodSplat = findTextureAsset("blood_splat.png");
@@ -694,6 +1041,101 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                 } break;
                 case MY_GAME_MODE_EDIT_LEVEL: {
+                    ///////////////////////*********** Draw the HUD **************////////////////////
+
+                    #if 0
+                    //NOTE(ollie): Choose Grid Size
+                    float xAt = 0.1f*resolution.x;
+                    float startXAt = xAt; 
+
+                    float yAt = 0.1f*resolution.y;
+
+                    float imageSize = 0.05*resolution.x;
+                    float imageMargin = 0.5f*imageSize;
+
+                    //SAVE STATE
+                    EasyRender_ShaderAndTransformState state = easyRender_saveShaderAndTransformState(globalRenderGroup);
+                    
+                    renderSetShader(globalRenderGroup, &model3dTo2dImageProgram);
+                    static float angle = 0;
+                    angle += appInfo.dt;
+                    
+                    setViewTransform(globalRenderGroup, easy3d_lookAt(v3(0, 0, -7), v3(0, 0, 0), v3(0, 1, 0)));
+                    float aspectRatio = 1;
+                    setProjectionTransform(globalRenderGroup, projectionMatrixFOV(60, aspectRatio));
+                    Matrix4 orthoMat = OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y);
+
+                    int maxCollums = 6;
+
+                    InfiniteAlloc rectModels = initInfinteAlloc(MyGameState_Rect2fModelInfo);
+                    bool loop = true;
+                    int modelIndex = 0;
+                    while(loop) {
+                        for(int collumIndex = 0; collumIndex < maxCollums && loop; ++collumIndex) {
+                            
+
+                            MyGameState_Rect2fModelInfo data = {};
+                            data.r = rect2fMinDim(xAt, yAt, imageSize, imageSize);
+                            assert(modelIndex < allModelsForEditor.count);
+                            data.m = &allModelsForEditor.array[modelIndex++];
+                            Rect2f imageR = rect2fMinDim(xAt, yAt, imageSize, imageSize);   
+                            
+
+                            addElementInfinteAlloc_notPointer(&rectModels, data);
+
+                            V4 color = COLOR_GREY;
+                            if(inBounds(keyStates.mouseP_left_up, imageR, BOUNDS_RECT)) {
+                                color = COLOR_YELLOW;
+                                if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                                    gameState->modelSelected = modelIndex - 1; //minus one since we already incremented it
+                                }
+                            }
+
+                            renderDrawRect(imageR, 2.0f, color, 0, mat4(), orthoMat);
+                            
+                            if(modelIndex >= allModelsForEditor.count) {
+                                assert(modelIndex == allModelsForEditor.count);
+
+                                loop = false; //no more models to show
+                            }
+                            xAt += imageSize + imageMargin;
+                        }
+                        yAt += imageSize + imageMargin;
+
+                        xAt = startXAt;
+                    }
+
+                    for(int rectIndex = 0; rectIndex < rectModels.count; ++rectIndex) {
+                        MyGameState_Rect2fModelInfo *imageR = getElementFromAlloc(&rectModels, rectIndex, MyGameState_Rect2fModelInfo);
+
+                        EasyAssetLoader_AssetInfo *modelInfo = imageR->m;
+                        EasyModel *model = modelInfo->model;
+                        V3 boundsOffset = v3_scale(modelInfo->scale, easyMath_getRect3fBoundsOffset(model->bounds));
+
+                        //NOTE(ollie): Will have to actually scale the models
+                        Matrix4 scale = Matrix4_scale_uniformly(mat4(), modelInfo->scale);
+                        Matrix4 rotation = mat4_axisAngle(v3(0, 1, 0), angle);
+                        Matrix4 translation = Matrix4_translate(mat4(),  boundsOffset);
+                        setModelTransform(globalRenderGroup, Mat4Mult(rotation, Mat4Mult(translation, scale)));
+                        
+                        easyRender_renderModelAs2dImage(globalRenderGroup, imageR->r, NEAR_CLIP_PLANE, model, COLOR_WHITE, orthoMat);
+
+                    }
+                    
+
+                     //RESTORE STATE
+                     easyRender_restoreShaderAndTransformState(globalRenderGroup, &state);
+
+                     ////////////////////////////////////////////////////////////////////
+#endif
+                    Texture *gridImage = findTextureAsset("grid.png");
+                    V2 dim = v2(0.05f*resolution.x, 0);
+                    dim.y = dim.x*gridImage->aspectRatio_h_over_w;
+
+                    renderTextureCentreDim(gridImage, v3(0.4f*resolution.x, 0.5f*dim.y, NEAR_CLIP_PLANE), dim, COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
+
+                    ////////////////////////////////////////////////////////////////////
+
                     float zAtInViewSpace = -1 * camera.pos.z;
 
                     if(isDown(keyStates.gameButtons, BUTTON_R)) {
@@ -702,12 +1144,9 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         DEBUG_global_CamNoRotate = true;
                     }
 
-                    easyEditor_startWindow(editor, "Editor Selection", 100, 400);
+                    easyEditor_startDockedWindow(editor, "Editor Tools", EASY_EDITOR_DOCK_BOTTOM_RIGHT);
                     
-                    int modelSelected = easyEditor_pushList(editor, "Model: ", modelsLoaded, modelLoadedCount);
-
-                    char str[256];
-                    sprintf(str, "%d", modelSelected);
+                    // int modelSelected = easyEditor_pushList(editor, "Model: ", modelsLoaded, modelLoadedCount);
 
                     //TODO(ollie): Get this to be more reliable!! it crashes right now
                     // easyConsole_addToStream(&console, str);
@@ -733,8 +1172,8 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                         if(isDown(keyStates.gameButtons, BUTTON_SHIFT)) {
                             //NOTE(ollie): Create a new model
-                            assert(modelSelected < modelLoadedCount);
-                            EasyModel *model = findModelAsset_Safe(modelsLoaded[modelSelected]);
+                            assert(gameState->modelSelected < allModelsForEditor.count);
+                            EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
 
                             if(model) {
                                 gameState->holdingEntity = true;
@@ -742,7 +1181,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                                 //             from an array that has the loaded models in It
                                 Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
                                 V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
-                                Entity *newEntity = initScenery1x1(entityManager, modelsLoaded[modelSelected], model, worldP, 0);
+                                Entity *newEntity = initScenery1x1(entityManager, model->name, model, worldP, 0);
                                 gameState->hotEntity = newEntity;
                             }
                         } else {
@@ -750,9 +1189,10 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                      
                         }
-                    }
+                    } 
 
                     if(!gameState->holdingEntity) {
+                       
                         //NOTE(ollie): Try grabbing one
                         //cast ray against entities
                         EasyPhysics_RayCastAABB3f_Info rayInfo = {};
@@ -787,13 +1227,13 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         }
 
                         if(rayInfo.didHit) {
-                            entityHit->colorTint = COLOR_BLUE;
-                            if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
-                                gameState->holdingEntity = true;
-                                gameState->hotEntity = entityHit;    
+                            if(!editor->isHovering) {
+                                entityHit->colorTint = COLOR_BLUE;
+                                if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                                    gameState->holdingEntity = true;
+                                    gameState->hotEntity = entityHit;    
+                                }
                             }
-                            
-
                         }   
                     }
 
@@ -818,11 +1258,32 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                             T->pos = worldP;
                         }
 
-                        easyEditor_startWindow(editor, "Entity", 600, 300);
+                        easyEditor_startDockedWindow(editor, "Entity", EASY_EDITOR_DOCK_BOTTOM_LEFT);
 
                         easyEditor_pushFloat3(editor, "Position:", &T->pos.x, &T->pos.y, &T->pos.z);
 
-                        easyEditor_pushFloat3(editor, "Rotation:", &T->Q.i, &T->Q.j, &T->Q.k);
+                        ////////////////////////////////////////////////////////////////////
+                        //NOTE(ollie): Rotation with euler angles
+
+                        V3 tempEulerAngles = easyMath_QuaternionToEulerAngles(T->Q);
+
+
+                        //NOTE(ollie): Swap to degrees 
+                        tempEulerAngles.x = easyMath_radiansToDegrees(tempEulerAngles.x);
+                        tempEulerAngles.y = easyMath_radiansToDegrees(tempEulerAngles.y);
+                        tempEulerAngles.z = easyMath_radiansToDegrees(tempEulerAngles.z);
+
+                        
+                        easyEditor_pushFloat3(editor, "Rotation:", &tempEulerAngles.x, &tempEulerAngles.y, &tempEulerAngles.z);
+
+                        //NOTE(ollie): Convert back to radians
+                        tempEulerAngles.x = easyMath_degreesToRadians(tempEulerAngles.x);
+                        tempEulerAngles.y = easyMath_degreesToRadians(tempEulerAngles.y);
+                        tempEulerAngles.z = easyMath_degreesToRadians(tempEulerAngles.z);
+
+                        T->Q = eulerAnglesToQuaternion(tempEulerAngles.y, tempEulerAngles.x, tempEulerAngles.z);
+
+                        ////////////////////////////////////////////////////////////////////
 
                         easyEditor_pushFloat1(editor, "Scale:", &T->scale.x);
                         T->scale.y = T->scale.z = T->scale.x;
@@ -832,6 +1293,11 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
                         if(easyEditor_pushButton(editor, "Delete")) {
                             easyFlashText_addText(&globalFlashTextManager, "Deleted");
                             MyEntity_MarkForDeletion(&hotEntity->T);
+                            gameState->hotEntity = 0;
+                            gameState->holdingEntity = false;
+                        }
+
+                        if(easyEditor_pushButton(editor, "Release entity")) {
                             gameState->hotEntity = 0;
                             gameState->holdingEntity = false;
                         }
@@ -921,6 +1387,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
                     easyEditor_pushFloat1(editor, "min player move speed: ", &gameVariables.minPlayerMoveSpeed);
                     easyEditor_pushFloat1(editor, "max player move speed: ", &gameVariables.maxPlayerMoveSpeed);
+                    easyEditor_pushSlider(editor, "Scale: ", &globalTileScale, 0.1f, 1.0f);
 
                 }
                 // static V3 v = {};
@@ -966,7 +1433,6 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
 
             //NOTE(ollie): Make sure the transition is on top
             renderClearDepthBuffer(toneMappedBuffer.bufferId);
-            }
 
             EasyTransition_updateTransitions(transitionState, resolution, appInfo.dt);
             
@@ -975,7 +1441,7 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             ///////////////////////********** Drawing the Profiler Graph ***************////////////////////
             renderClearDepthBuffer(toneMappedBuffer.bufferId);
 
-            EasyProfile_DrawGraph(profilerState, resolution, &keyStates, appInfo.screenRelativeSize);
+            EasyProfile_DrawGraph(profilerState, resolution, &keyStates, appInfo.screenRelativeSize, appInfo.dt);
             
             drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
 
@@ -984,8 +1450,8 @@ setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
             easyOS_updateHotKeys(&keyStates);
             easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, hasBlackBars);
             
-            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame)
-            DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame)
+            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(keyStates.gameButtons, BUTTON_F4))
+            DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame, "Per frame")
             easyOS_endKeyState(&keyStates);
         }
         easyOS_endProgram(&appInfo);

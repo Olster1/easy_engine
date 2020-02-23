@@ -22,6 +22,13 @@ typedef enum {
 	GAME_INSTRUCTION_COUNT,
 } GameInstructionType;
 
+typedef enum {
+	MY_VIEW_ANGLE_BOTTOM = 0,
+	MY_VIEW_ANGLE_RIGHT = 1,
+	MY_VIEW_ANGLE_TOP = 2,
+	MY_VIEW_ANGLE_LEFT = 3,
+} MyGameState_ViewAngle;
+
 typedef struct
 {
 	MyGameMode lastGameMode;
@@ -44,36 +51,20 @@ typedef struct
 	void *hotEntity; //Don't have Entity type here, so just have a void *
 	bool holdingEntity;
 
+
+	///////////////////////************ For the editor level, selecting models from the drop down *************////////////////////
+	int modelSelected;
+
+	//NOTE(ollie): For the altitude slider
+	float altitudeSliderAt;
+	bool holdingAltitudeSlider;
+
 	////////////////////////////////////////////////////////////////////
+
 } MyGameState;
 
 
-
-static inline MyGameState *myGame_initGameState() {
-
-	MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
-
-	///////////////////////************* Editor stuff ************////////////////////
-	gameState->currentLevelEditing = 0;
-	gameState->hotEntity = 0;
-	gameState->holdingEntity = false;
-	////////////////////////////////////////////////////////////////////
-
-	turnTimerOff(&gameState->animationTimer);
-	gameState->isIn = false;
-
-	gameState->currentGameMode = gameState->lastGameMode = MY_GAME_MODE_START_MENU;
-	setSoundType(AUDIO_FLAG_SCORE_CARD);
-
-	///////////////////////*********** Tutorials **************////////////////////
-	gameState->tutorialMode = false;
-	for(int i = 0; i < arrayCount(gameState->gameInstructionsHaveRun); ++i) {
-	        gameState->gameInstructionsHaveRun[i] = false;
-	}
-	gameState->instructionType = GAME_INSTRUCTION_NULL;
-	////////////////////////////////////////////////////////////////////
-
-	return gameState;
-} 
-
-
+typedef struct {
+	Rect2f r;
+	EasyAssetLoader_AssetInfo *m;
+} MyGameState_Rect2fModelInfo;
