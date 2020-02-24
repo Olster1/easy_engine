@@ -12,11 +12,12 @@ vec3 lightDirection = vec3(0, 0, -1); //looking down z-axis
 
 void main (void) {
 	vec4 texColor = texture(tex, texUV_out);
-	float alpha = texColor.w;
+		
+	vec4 preMultAlphaColor = colorOut;
 	
-	vec4 b = colorOut*colorOut.w; //premultply alpha
-	vec4 c = b*texColor;
-	c *= alpha; //pre-multiply alpha
+	vec4 c = preMultAlphaColor*texColor;
+
+	c.rgb *= preMultAlphaColor.a; 
 
 	vec3 normal = normalize(fragNormalInWorld);
 

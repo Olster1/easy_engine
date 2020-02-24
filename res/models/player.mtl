@@ -1,8 +1,0 @@
-newmtl Player
-Ns 96
-Ka 1 1 1
-Kd 1 1 1
-Ks 0.500000 0.500000 0.500000
-
-map_Kd underwear.png
-

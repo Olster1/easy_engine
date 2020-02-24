@@ -1,0 +1,169 @@
+typedef enum {
+    ASSET_TEXTURE,
+    ASSET_SOUND, 
+    ASSET_ANIMATION,
+    ASSET_EVENT,
+    ASSET_MATERIAL,
+    ASSET_MODEL      
+} AssetType;
+
+typedef struct
+{
+    
+} Event;
+
+typedef struct Asset Asset;
+typedef struct Asset {
+    char *name;
+
+	void *file;
+
+	Asset *next;
+} Asset;
+
+#define GLOBAL_ASSET_ARRAY_SIZE 4096
+//NOTE(ol): This gets allocated in the easy_os when starting up the app
+static Asset **assets = 0;
+
+int getAssetHash(char *at, int maxSize) {
+	int hashKey = 0;
+    while(*at) {
+        //Make the hash look up different prime numbers. 
+        hashKey += (*at)*19;
+        at++;
+    }
+    hashKey %= maxSize;
+    return hashKey;
+}
+
+Asset *findAsset(char *fileName) {
+    int hashKey = getAssetHash(fileName, GLOBAL_ASSET_ARRAY_SIZE);
+    
+    Asset *file = assets[hashKey];
+    Asset *result = 0;
+    
+    bool found = false;
+    
+    while(!found && file) {
+        assert(file);
+        assert(file->file);
+        assert(file->name);
+        if(cmpStrNull(fileName, file->name)) {
+            result = file;
+            found = true;
+        } else {
+            file = file->next;
+        }
+    }
+    return result;
+}
+
+inline static EasyModel *findModelAsset_Safe(char *fileName) { 
+    Asset *a = findAsset(fileName); 
+    EasyModel *result = 0;
+    if(a) {
+        result = (EasyModel *)a->file;
+    }
+    return result;
+
+}
+#define findModelAsset(fileName) (EasyModel *)findAsset(fileName)->file
+#define findMaterialAsset(fileName) (EasyMaterial *)findAsset(fileName)->file
+#define findTextureAsset(fileName) (Texture *)findAsset(fileName)->file
+#define findSoundAsset(fileName) (WavFile *)findAsset(fileName)->file
+#define findAnimationAsset(fileName) (AnimationParent *)findAsset(fileName)->file
+#define findEventAsset(fileName) (Event *)findAsset(fileName)->file
+
+
+static Texture *getTextureAsset(Asset *assetPtr) {
+    Texture *result = (Texture *)(assetPtr->file);
+    assert(result);
+    return result;
+}
+
+static WavFile *getSoundAsset(Asset *assetPtr) {
+    WavFile *result = (WavFile *)(assetPtr->file);
+    assert(result);
+    return result;
+}
+
+static AnimationParent *getAnimationAsset(Asset *assetPtr) {
+    AnimationParent *result = (AnimationParent *)(assetPtr->file);
+    assert(result);
+    return result;
+}
+
+static Event *getEventAsset(Asset *assetPtr) {
+    Event *result = (Event *)(assetPtr->file);
+    assert(result);
+    return result;
+}
+
+static Asset *addAsset_(char *fileName, void *asset) { 
+    char *truncName = getFileLastPortion(fileName);
+    int hashKey = getAssetHash(truncName, GLOBAL_ASSET_ARRAY_SIZE);
+    assert(fileName != truncName);
+    Asset **filePtr = assets + hashKey;
+    
+    bool found = false; 
+    Asset *result = 0;
+    while(!found) {
+        Asset *file = *filePtr;
+        if(!file) {
+            file = (Asset *)calloc(sizeof(Asset), 1);
+            file->file = asset;
+            file->name = truncName;
+            file->next = 0;
+            *filePtr = file;
+            result = file;
+            found = true;
+        } else {
+            filePtr = &file->next;
+        }
+    }
+    assert(found);
+    return result;
+}
+
+Asset *addAssetTexture(char *fileName, Texture *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetSound(char *fileName, WavFile *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetEvent(char *fileName, Event *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetMaterial(char *fileName, EasyMaterial *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *addAssetModel(char *fileName, EasyModel *asset) { // we have these for type checking
+    Asset *result = addAsset_(fileName, asset);
+    return result;
+}
+
+Asset *loadImageAsset(char *fileName) {
+    Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR, true);
+    Texture *tex = (Texture *)calloc(sizeof(Texture), 1);
+    memcpy(tex, &texOnStack, sizeof(Texture));
+    Asset *result = addAssetTexture(fileName, tex);
+    assert(result);
+    return result;
+}
+
+Asset *loadSoundAsset(char *fileName, SDL_AudioSpec *audioSpec) {
+    WavFile *sound = (WavFile *)calloc(sizeof(WavFile), 1);
+    loadWavFile(sound, fileName, audioSpec);
+    Asset *result = addAssetSound(fileName, sound);
+    assert(result);
+    //free(fileName);
+    return result;
+}
