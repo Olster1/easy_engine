@@ -259,11 +259,12 @@ char *nullTerminateBuffer(char *result, char *string, int length) {
 #define nullTerminate(string, length) nullTerminateBuffer((char *)malloc(length + 1), string, length)
 #define nullTerminateArena(string, length, arena) nullTerminateBuffer((char *)pushArray(arena, length + 1, char), string, length)
 
-#define concat(a, b) concat_(a, b, 0)
-#define concatInArena(a, b, arena) concat_(a, b, arena)
-char *concat_(char *a, char *b, Arena *arena) {
-    int aLen = strlen(a);
-    int bLen = strlen(b);
+#define concat_withLength(a, aLength, b, bLength) concat_(a, aLength, b, bLength, 0)
+#define concat(a, b) concat_(a, strlen(a), b, strlen(b), 0)
+#define concatInArena(a, b, arena) concat_(a, strlen(a), b, strlen(b), arena)
+char *concat_(char *a, s32 lengthA, char *b, s32 lengthB, Arena *arena) {
+    int aLen = lengthA;
+    int bLen = lengthB;
     
     int newStrLen = aLen + bLen + 1; // +1 for null terminator
     char *newString = 0;

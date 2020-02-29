@@ -13,10 +13,12 @@
 #endif
 
 #include "easy_assert.h"
+#include "easy_logger.h"
 #include "easy_debug_variables.h"
 #include "easy_time.h"
 #include "easy_profiler.h"
 #include "easy.h"
+#include "easy_platform.h"
 
 static char* globalExeBasePath;
 

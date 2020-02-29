@@ -130,7 +130,7 @@ static void easyAst_initAst(EasyAst *ast, Arena *arena, EasyTokenizer *tokenizer
 	ast->parentNode.next = 0;
 	ast->parentNode.child = 0;
 	ast->parentNode.type = EASY_AST_NODE_PARENT;
-	ast->parentNode.precedence = EASY_AST_NODE_PRECEDENCE_PLUS_MINUS;
+	ast->parentNode.precedence = EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE;
 	ast->parentNode.token = {};
 
 	//NOTE(ollie): Set current node to the parent node
@@ -170,7 +170,6 @@ static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyT
 
 	if(currentNode->precedence == precedence || currentNode->precedence > precedence || precedence == EASY_AST_NODE_CURRENT_PRECEDENCE) {
 		//NOTE(ollie): Make sure the current node has a parent
-		// assert(currentNode->parent || currentNode->type == EASY_AST_NODE_PARENT);
 
 		//NOTE(ollie): Set the parent node to the same as the current one
 		node->parent = currentNode->parent;
@@ -180,7 +179,16 @@ static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyT
 
 			assert(currentNode->precedence != EASY_AST_NODE_PRECEDENCE_BRANCH);
 
-			node->precedence = currentNode->precedence; 
+			assert(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS
+					|| currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE);
+
+			if(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE && precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS) {
+				//NOTE(ollie): Drop the node back down to PLUS_MINUS precedence, so if a multiply_divide comes on, it will go to 
+				// 				a new node level. 
+				node->precedence = EASY_AST_NODE_PRECEDENCE_PLUS_MINUS;
+			} else {
+				node->precedence = currentNode->precedence;
+			}
 		}
 
 		//NOTE(ollie): Set the new node to follow on from the last one
@@ -189,23 +197,106 @@ static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyT
 	} else if(currentNode->precedence < precedence || precedence == EASY_AST_NODE_PRECEDENCE_BRANCH) {
 		//NOTE(ollie): Precedence is higher so new brach in the tree
 		
-		//NOTE(ollie): If this node already has a child, move across one node then create the branch
-		if(currentNode->child) {
+		/*NOTE(ollie): 
+			All nodes are created off a blank parent node. So no other node types other than the blank parent nodes
+			should have children. This is to make parsing the ast easier later (since we don't have to check every node if 
+			it has a child, just the parent type nodes.)
+		
+		*/
+		EasyAst_NodePrecedence precedenceForParentNode = EASY_AST_NODE_CURRENT_PRECEDENCE;
+		EasyAst_Node *swapChildWithParentNode = 0;
+
+		if(precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE) {
+			assert(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS);
+
+			switch(currentNode->type) {
+				case EASY_AST_NODE_PRIMITIVE:
+				case EASY_AST_NODE_VARIABLE: {
+					//NOTE(ollie): We want to create a child of the current node.  
+					precedenceForParentNode = EASY_AST_NODE_PRECEDENCE_BRANCH;
+
+					//NOTE(ollie): We want to swap the child with the parent, so we make sure we get the node we are going to swap with
+					swapChildWithParentNode = currentNode;
+					assert(!currentNode->child);
+				} break;
+				default: {
+					easyAst_addError(ast, "What your trying to do isn't supported by the language. Your trying to put multiply/divide after something other then a variable or primitive.", token.lineNumber);
+					//should only be a function here, but don't know how to check
+					//don't do anything
+				}
+			}
+		}
+
+		if(currentNode->child || currentNode->type != EASY_AST_NODE_PARENT) {
 			//NOTE(ollie): Push an empty node 
 			EasyToken emptyToken = {};
-			currentNode = easyAst_pushNode(ast, EASY_AST_NODE_PARENT, emptyToken, EASY_AST_NODE_CURRENT_PRECEDENCE);
-			assert(currentNode = ast->currentNode);
+
+			//NOTE(ollie): A new parent node will go on the same level & become the parent node. 
+			//IMPORTANT(ollie): This is a recursive function into this function, but won't hit this code path because 
+			//					it goes in the current node level because of EASY_AST_NODE_CURRENT_PRECEDENCE.
+			//					_IF_ it however is a multiply or divide your pushing on, we want to bring the last node
+			//					down with it. To do this we push the parent node down to the next level, & then swap the 
+			//					preceding node with it. See the check above for MULTIPLY_DIVIDE NODE.
+
+			currentNode = easyAst_pushNode(ast, EASY_AST_NODE_PARENT, emptyToken, precedenceForParentNode);
+			//NOTE(ollie): make sure the current node in ast is the one we just pushed on
+			assert(currentNode == ast->currentNode);
+
+			if(swapChildWithParentNode) {
+				//NOTE(ollie): We swap the node data to make it easier to parse later.  
+				
+				//NOTE(ollie):Take snapshot of node so we don't lose the data. Ping-pong pattern.  
+				EasyAst_Node tempNode = *currentNode;
+				
+				//NOTE(ollie): Make sure it's a parent node
+				assert(currentNode->type == EASY_AST_NODE_PARENT);
+				assert(swapChildWithParentNode->type == EASY_AST_NODE_PRIMITIVE || swapChildWithParentNode->type == EASY_AST_NODE_VARIABLE);
+
+				//NOTE(ollie): Update the current node
+				currentNode->type = swapChildWithParentNode->type;
+				currentNode->token = swapChildWithParentNode->token;
+				currentNode->precedence = swapChildWithParentNode->precedence;
+
+				assert(currentNode->type == EASY_AST_NODE_PRIMITIVE || currentNode->type == EASY_AST_NODE_VARIABLE);
+
+				swapChildWithParentNode->type = currentNode->type;
+				swapChildWithParentNode->token = currentNode->token;
+				swapChildWithParentNode->precedence = currentNode->precedence;
+
+				assert(swapChildWithParentNode->type == EASY_AST_NODE_PARENT);
+
+				//NOTE(ollie): We want to keep all the parent, child & next relationships intaked, so don't alter these members
+				// EasyAst_Node *parent;
+				// EasyAst_Node *child;
+				// EasyAst_Node *next;
+				////////////////////////////////////////////////////////////////////
+			}
+
+			//NOTE(ollie): Make sure the node we just pushed on doesn't have any children, because we are about to push another node on to the child
 			assert(!currentNode->child);
-		}  
+		} else if(type != EASY_AST_NODE_PARENT) { //the original node can have _no_ children
+			assert(!"This case shouldn't happen. Something went wrong.");
+		}
 
 		if(precedence == EASY_AST_NODE_PRECEDENCE_BRANCH) {
-			//NOTE(ollie): Go back to lowest precedence
-			node->precedence = EASY_AST_NODE_PRECEDENCE_PLUS_MINUS;
+			//NOTE(ollie): Go back to highest math precedence so both multiply_divide & plus_minus can go on
+			node->precedence = EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE;
 		}
 
 		assert(!currentNode->child);	
-		currentNode->child = node;
-		node->parent = currentNode;
+
+		//NOTE(ollie): Here we actually add the node
+		if(swapChildWithParentNode) {
+			//NOTE(ollie): We want to add the new node as a neighbour
+			assert(!currentNode->next);
+			currentNode->next = node;
+		} else {
+			//NOTE(ollie): We want to add the new node as a child
+			currentNode->child = node;
+			node->parent = currentNode;	
+		}
+		
+
 	} 
 
 	//NOTE(ollie): Assign the new node to the current node

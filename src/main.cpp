@@ -6,7 +6,7 @@
 #include "myEntity.h"
 #include "mySaveLoad.h"
 #include "myTransitions.h"
-#include "myDialogue.h"
+// #include "myDialogue.h"
 
 
 ///////////////////////************ Init Game State *************////////////////////
@@ -288,8 +288,8 @@ int main(int argc, char *args[]) {
 
         char *minerDialogue = concatInArena(globalExeBasePath, "/../src/dialogue/test.txt", &globalPerFrameArena);
 
-        myDialogue_compileProgram(minerDialogue);
-        exit(0);
+        // myDialogue_compileProgram(minerDialogue);
+        // exit(0);
 
 //******** CREATE THE FRAME BUFFERS ********///
 

@@ -23,7 +23,7 @@ main() {
 		}
 	}
 	if(optionParam == 2) {
-		run("I've got 20 aether cystals in it, that you could power your ship with.");
+		run("I've got 20 aether cystals in it that you could power your ship with.");
 
 		optionParam = wait_for_options(options2);
 
