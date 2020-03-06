@@ -34,13 +34,21 @@ static char* globalExeBasePath;
 #include "easy_perlin.h"
 
 #include "easy_utf8.h"
-#include "easy_font.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include "easy_timer.h"
-
-
-#include "easy_text_io.h"
 #include "easy_animation.h"
 #include "easy_assets.h"
+#include "easy_text_io.h"
+#include "easy_texture_atlas.h"
+#include "easy_font.h"
+
+
+
+
+
 #include "easy_3d.h"
 #include "easy_terrain.h"
 
@@ -60,8 +68,7 @@ static char* globalExeBasePath;
 #include "easy_editor.h"
 #include "easy_camera.h"
 #include "easy_tile.h"
-#include "easy_texture_atlas.h"
-#include "easy_ui.h"
+// #include "easy_ui.h"
 #include "easy_console.h"
 #include "easy_flash_text.h"
 #include "easy_ast.h"
@@ -72,7 +79,7 @@ static char* globalExeBasePath;
 #include "easy_collision.h"
 #include "easy_physics.h"
 
-#include "easy_write.h"
+// #include "easy_write.h"
 #include "easy_profiler_draw.h"
 
 

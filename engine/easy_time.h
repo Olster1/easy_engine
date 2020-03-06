@@ -45,4 +45,8 @@ inline void EasyTime_setupTimeDatums() {
 	QueryPerformanceFrequency(&GlobalTimeFrequencyDatum);
 	timeBeginPeriod(1);
 }
+
+static inline u64 EasyTime_getTimeStamp() {
+    return (u64)time(NULL);
+}
 #endif

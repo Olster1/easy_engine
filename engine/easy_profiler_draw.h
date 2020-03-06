@@ -209,14 +209,14 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 
 								snprintf(strArray, stringLengthToAlloc, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp, state->lookingAtSingleFrame->millisecondsForFrame, state->lookingAtSingleFrame->drawCount); //for null terminator, just to be sure
 
-								V2 b = getBounds(strArray, rect2fMinDim(0, 0, resolution.x, resolution.y), &globalDebugFont, 1, resolution, screenRelativeSize);
+								V2 b = getBounds(strArray, rect2fMinDim(0, 0, resolution.x, resolution.y), globalDebugFont, 1, resolution, screenRelativeSize);
 
 								float xAt = 0.05*resolution.x;
-								float yAt = 2*globalDebugFont.fontHeight;
+								float yAt = 2*globalDebugFont->fontHeight;
 
-								Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont.fontHeight, resolution.x, resolution.y);
+								Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, resolution.x, resolution.y);
 
-								outputTextNoBacking(&globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strArray, margin, COLOR_BLACK, 1, true, screenRelativeSize);
+								outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strArray, margin, COLOR_BLACK, 1, true, screenRelativeSize);
 
 								////////////////////////////////////////////////////////////////////
 
@@ -293,14 +293,14 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 
 							float textWidth = 0.2f*resolution.x;
 							
-							V2 b = getBounds(strBuffer, rect2fMinDim(0, 0, textWidth, resolution.y), &globalDebugFont, 1, resolution, screenRelativeSize);
+							V2 b = getBounds(strBuffer, rect2fMinDim(0, 0, textWidth, resolution.y), globalDebugFont, 1, resolution, screenRelativeSize);
 
 							float xAt = keyStates->mouseP_left_up.x;
 							float yAt = resolution.y - keyStates->mouseP_left_up.y - b.y + backdropY;
 
-							Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont.fontHeight, textWidth, 2*resolution.y);
+							Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, textWidth, 2*resolution.y);
 
-							outputTextNoBacking(&globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strBuffer, margin, COLOR_BLACK, 1, true, screenRelativeSize);
+							outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strBuffer, margin, COLOR_BLACK, 1, true, screenRelativeSize);
 
 							////////////////////////////////////////////////////////////////////
 

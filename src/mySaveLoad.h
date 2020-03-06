@@ -100,9 +100,11 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                    color = buildV4FromDataObjects(&data, &tokenizer);
 	                }
 	                if(stringsMatchNullN("modelName", token.at, token.size)) {
-	                    char *name = getStringFromDataObjects(&data, &tokenizer);
+	                    char *name = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
 	                    model = findModelAsset_Safe(name);
 	                    assert(model);
+
+	                    releaseInfiniteAlloc(&data);
 	                }
 	            } break;
 	            case TOKEN_CLOSE_BRACKET: {

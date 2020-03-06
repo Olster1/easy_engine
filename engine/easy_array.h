@@ -67,6 +67,7 @@ void expandMemoryArray_(InfiniteAlloc *arena, int count) {
     if((arena->count + count) >= arena->totalCount) {
         int newCount = arena->totalCount + count + 1028;
         void *newMem = calloc(newCount*arena->sizeOfMember, 1);
+        assert(newMem);
         
         if(arena->memory) {
             memcpy(newMem, arena->memory, arena->count*arena->sizeOfMember);

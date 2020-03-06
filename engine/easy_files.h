@@ -70,8 +70,16 @@ char *getFileLastPortion_(char *buffer, int bufferLen, char *at, Arena *arena) {
 #define getFileLastPortionWithBuffer(buffer, bufferLen, at) getFileLastPortion_(buffer, bufferLen, at, 0)
 #define getFileLastPortionWithArena(at, arena) getFileLastPortion_(0, 0, at, arena)
 
-char *getFileLastPortionWithoutExtension(char *name) {
-    char *lastPortion = getFileLastPortion(name);
+#define getFileLastPortionWithoutExtension_arena(name, arena) getFileLastPortionWithoutExtension_(name, arena)
+#define getFileLastPortionWithoutExtension(name) getFileLastPortionWithoutExtension_(name, 0)
+char *getFileLastPortionWithoutExtension_(char *name, Arena *arena) {
+    char *lastPortion = 0;
+    if(arena) {
+        lastPortion = getFileLastPortionWithArena(name, arena);
+    } else {
+        lastPortion = getFileLastPortion(name);
+    }
+    
     char *at = lastPortion;
     while(*at) {
         if(*at == '.') { 
@@ -81,12 +89,24 @@ char *getFileLastPortionWithoutExtension(char *name) {
     }
     
     int length = (int)(at - lastPortion) + 1; //for null termination
-    char *result = (char *)calloc(length, 1);
+
+    char *result = 0;
+    if(arena) {
+        result = pushArray(arena, length, char);
+    } else {
+        result = (char *)calloc(sizeof(char)*length, 1);    
+    }
+    
     
     memcpy(result, lastPortion, length - 1);
     result[length - 1] = '\0';
 
-    free(lastPortion);
+    if(arena) {
+        //do nothing
+    } else {
+        free(lastPortion);    
+    }
+    
     return result;
 }
 

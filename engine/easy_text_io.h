@@ -12,12 +12,13 @@ typedef enum {
     VAR_STRING,
 } VarType;
 
+//TODO(ollie): Get rid of using infinte allocs from the code base, i think this would be a good idea & less error prone
 
 void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType type) {
     char data[1028];
     sprintf(data, "\t%s: ", varName);
     addElementInifinteAllocWithCount_(mem, data, strlen(data));
-
+    
     if(count > 0) {
         if(count > 1 && !(type == VAR_CHAR_STAR || type == VAR_INT || type == VAR_FLOAT)) {
             assert(!"array not handled yet");
@@ -30,7 +31,7 @@ void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType t
                 } else {
                     assert(count > 1);
                     printf("isArray\n");
-
+                    
                     char **val = (char **)val_;
                     char *bracket = "[";
                     addElementInifinteAllocWithCount_(mem, bracket, 1);
@@ -63,7 +64,7 @@ void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType t
                     sprintf(data, "%d", val[0]);
                 } else {
                     assert(count > 1);
-
+                    
                     int *val = (int *)val_;
                     char *bracket = "[";
                     addElementInifinteAllocWithCount_(mem, bracket, 1);
@@ -86,7 +87,7 @@ void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType t
                     sprintf(data, "%f", val[0]);
                 } else {
                     assert(count > 1);
-
+                    
                     float *val = (float *)val_;
                     char *bracket = "[";
                     addElementInifinteAllocWithCount_(mem, bracket, 1);
@@ -126,7 +127,7 @@ void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType t
         }
     }
     addElementInifinteAllocWithCount_(mem, data, strlen(data));
-
+    
     sprintf(data, ";\n");
     addElementInifinteAllocWithCount_(mem, data, strlen(data));
 }
@@ -136,13 +137,13 @@ void addVar_(InfiniteAlloc *mem, void *val_, int count, char *varName, VarType t
 
 typedef struct {
     VarType type;
-
+    
     union {
         struct {
             float floatVal;
         };
         struct {
-            char stringVal[256];
+            char stringVal[16000];
         };
         struct {
             unsigned long intVal;
@@ -168,12 +169,12 @@ InfiniteAlloc getDataObjects(EasyTokenizer *tokenizer) {
                 parsing = false;
             } break;
             case TOKEN_WORD: {
-
+                
             } break;
             case TOKEN_STRING: {
                 DataObject data = {};
                 data.type = VAR_CHAR_STAR;
-                nullTerminateBuffer(data.stringVal, token.at, token.size);
+                nullTerminateBuffer(data.stringVal, token.at, min(token.size, (arrayCount(data.stringVal) - 1)));
                 
                 addElementInifinteAlloc_(&types, &data);
             } break;
@@ -216,7 +217,7 @@ InfiniteAlloc getDataObjects(EasyTokenizer *tokenizer) {
                 addElementInifinteAlloc_(&types, &data);
             } break;
             case TOKEN_COLON: {
-
+                
             } break;
             case TOKEN_OPEN_SQUARE_BRACKET: {
                 isArray = true;
@@ -230,7 +231,7 @@ InfiniteAlloc getDataObjects(EasyTokenizer *tokenizer) {
             }
         }
     }
-
+    
     return types;
 }
 
@@ -250,11 +251,14 @@ V2 buildV2FromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     DataObject *objs = (DataObject *)data->memory;
     assert(objs[0].type == VAR_FLOAT || objs[0].type == VAR_INT);
     assert(objs[1].type == VAR_FLOAT || objs[0].type == VAR_INT);
-
+    
     float a = easyText_getIntOrFloat(objs[0]);
     float b = easyText_getIntOrFloat(objs[1]);
-
+    
     V2 result = v2(a, b);
+
+    releaseInfiniteAlloc(data);
+
     return result;
 }
 
@@ -264,8 +268,10 @@ V3 buildV3FromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     assert(objs[0].type == VAR_FLOAT);
     assert(objs[1].type == VAR_FLOAT);
     assert(objs[2].type == VAR_FLOAT);
-
+    
     V3 result = v3(objs[0].floatVal, objs[1].floatVal, objs[2].floatVal);
+
+    releaseInfiniteAlloc(data);
     return result;
 }
 
@@ -276,18 +282,21 @@ V4 buildV4FromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     assert(objs[1].type == VAR_FLOAT);
     assert(objs[2].type == VAR_FLOAT);
     assert(objs[3].type == VAR_FLOAT);
-
+    
     V4 result = v4(objs[0].floatVal, objs[1].floatVal, objs[2].floatVal, objs[3].floatVal);
+
+    releaseInfiniteAlloc(data);
     return result;
 }
 
-char *getStringFromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
+//NOTE(ollie): Have to release the memory yourself
+char *getStringFromDataObjects_memoryUnsafe(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     *data = getDataObjects(tokenizer);
     DataObject *objs = (DataObject *)data->memory;
     assert(objs[0].type == VAR_CHAR_STAR);
-
+    
     char *result = objs[0].stringVal;
-
+    
     return result;
 }
 
@@ -302,6 +311,8 @@ unsigned long getIntFromDataObjects_(InfiniteAlloc *data, EasyTokenizer *tokeniz
     
     unsigned long result = objs[0].intVal;
 
+    releaseInfiniteAlloc(data);
+    
     return result;
 }
 
@@ -312,6 +323,7 @@ bool getBoolFromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     
     bool result = objs[0].boolVal;
 
+    releaseInfiniteAlloc(data);
     return result;
 }
 
@@ -322,5 +334,7 @@ float getFloatFromDataObjects(InfiniteAlloc *data, EasyTokenizer *tokenizer) {
     assert(objs[0].type == VAR_FLOAT);
     
     float result = objs[0].floatVal;
+
+    releaseInfiniteAlloc(data);
     return result;
 }

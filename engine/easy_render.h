@@ -47,10 +47,8 @@ static bool globalImmediateModeGraphics = false;
 static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
 
 
-#if DEVELOPER_MODE
 static bool DEBUG_drawWireFrame = false;
 static bool DEBUG_drawBounds = false;
-#endif
 
 typedef enum {
     PROJECTION_TYPE(ENUM)
@@ -116,6 +114,7 @@ RenderProgram blurProgram;
 RenderProgram colorWheelProgram;
 RenderProgram circleProgram;
 RenderProgram model3dTo2dImageProgram;
+RenderProgram fontProgram;
 
 
 typedef struct {
@@ -427,7 +426,7 @@ static inline EasyImage loadImage_(char *fileName) {
     DEBUG_TIME_BLOCK()
     EasyImage result;
     result.comp = 4;
-    result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, &result.comp, STBI_rgb_alpha);
+    result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, 0, STBI_rgb_alpha);
     
     if(result.image) {
         // assert(result.comp == 4);
@@ -1597,7 +1596,9 @@ void enableRenderer(int width, int height, Arena *arena) {
 
     model3dTo2dImageProgram = createProgramFromFile(vertex_model_as_2d_image_shader, frag_model_shader, false);
     renderCheckError();
-    
+        
+    fontProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, frag_font_shader, false);
+    renderCheckError();
     
 #endif
 
@@ -1619,8 +1620,9 @@ static inline V4 hexARGBTo01Color(unsigned int color) {
 }
 
 typedef enum {
-    RENDER_TEXTURE_DEFAULT,
-    RENDER_TEXTURE_HDR,
+    RENDER_TEXTURE_DEFAULT = 0 << 0,
+    RENDER_TEXTURE_HDR = 1 << 0,
+    RENDER_TEXTURE_ONE_CHANNEL = 1 << 1,
 } RenderTextureFlag;
 
 
@@ -1652,8 +1654,15 @@ GLuint renderLoadTexture(int width, int height, void *imageData, RenderTextureFl
         internalFormat = GL_RGBA16F; //NOTE: Out HDR buffer
     } 
 
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, pixelType, imageData);
-    renderCheckError();
+    if(flags & RENDER_TEXTURE_ONE_CHANNEL) {
+        // GL_RED
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_ALPHA, pixelType, imageData);
+        renderCheckError();
+    } else {
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, GL_RGBA, pixelType, imageData);
+        renderCheckError();
+    }
+    
     
     glBindTexture(GL_TEXTURE_2D, 0);
     renderCheckError();
@@ -2635,6 +2644,11 @@ void renderDrawRect(Rect2f rect, float zValue, V4 color, float rot, Matrix4 offs
 void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
     V4 colors[4] = {color, color, color, color}; 
     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix, 0);
+}
+
+static void renderGlyphCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
+    V4 colors[4] = {color, color, color, color}; 
+    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &fontProgram, viewMatrix, projectionMatrix, 0);
 }
 
 void renderColorWheel(V3 center, V2 dim, EasyRender_ColorWheel_DataPacket *packet, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {

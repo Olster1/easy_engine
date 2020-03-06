@@ -17,12 +17,12 @@ typedef struct {
 	V2 resolution;
 	float relSize;
 
-	Font *font;
+	EasyFont_Font *font;
 } EasyFlashTextManager;
 
 static EasyFlashTextManager globalFlashTextManager;
 
-static inline void easyFlashText_initManager(EasyFlashTextManager *m, Font *font, V2 resolution, float relSize) {
+static inline void easyFlashText_initManager(EasyFlashTextManager *m, EasyFont_Font *font, V2 resolution, float relSize) {
 	m->textCount = 0;
 	m->font = font;
 	m->resolution = resolution;

@@ -263,5 +263,5 @@ static inline void EasyProfile_MoveToNextFrame(bool hotKeyWasPressed) {
 #define DEBUG_TIME_BLOCK_NAMED(name)
 #define DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(varName, functionName)
 #define DEBUG_TIME_BLOCK_FOR_FRAME_START(varName, functionName)
-#define DEBUG_TIME_BLOCK_FOR_FRAME_END(varName)
+#define DEBUG_TIME_BLOCK_FOR_FRAME_END(varName, hotKeyWasPressed)
 #endif

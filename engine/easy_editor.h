@@ -109,7 +109,7 @@ typedef struct {
 
 	EasyEditorState *currentWindow;
 
-	Font *font;
+	EasyFont_Font *font;
 
 	EasyEditorInteraction interactingWith;
 
@@ -156,7 +156,7 @@ static inline void easyEditor_stopInteracting(EasyEditor *e) {
 	e->interactingWith.id = easyEditor_getNullId();
 }
 
-static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Font *font, Matrix4 orthoMatrix, V2 fuaxResolution, float screenRelSize, AppKeyStates *keyStates) {
+static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, EasyFont_Font *font, Matrix4 orthoMatrix, V2 fuaxResolution, float screenRelSize, AppKeyStates *keyStates) {
 	e->group = group;
 
 	e->stateCount = 0;
