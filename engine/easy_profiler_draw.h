@@ -17,7 +17,6 @@ typedef struct {
 	float zoomLevel;
 	float xOffset; //for the scroll bar
 	bool holdingScrollBar;
-	float scroll_dP; //velocity of scroll
 	float scrollPercent;
 	float grabOffset;
 
@@ -30,15 +29,51 @@ typedef struct {
 	int level;
 } EasyProfile_ProfilerDrawState;
 
-static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 resolution, AppKeyStates *keyStates, float screenRelativeSize, float dt) {
+
+static void sortStringIds(EasyProfiler_DrawCountWithStringId *arr, int arrCount) {
+    DEBUG_TIME_BLOCK()
+    //this is a bubble sort. I think this is typically a bit slow. 
+    bool sorted = false;
+    int max = (arrCount - 1);
+    for (int index = 0; index < max;) {
+        bool incrementIndex = true;
+
+        EasyProfiler_DrawCountWithStringId *infoA = &arr[index];
+        EasyProfiler_DrawCountWithStringId *infoB = &arr[index + 1];
+        assert(infoA && infoB);
+        bool swap = infoA->drawCount < infoB->drawCount;
+        if(swap) {
+            EasyProfiler_DrawCountWithStringId temp = *infoA;
+            *infoA = *infoB;
+            *infoB = temp;
+            sorted = true;
+        }   
+        if(index == (max - 1) && sorted) {
+            index = 0; 
+            sorted = false;
+            incrementIndex = false;
+        }
+        
+        if(incrementIndex) {
+            index++;
+        }
+    }
+}
+
+static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, float aspectRatio_yOverX, AppKeyStates *keyStates, float dt, V2 viewportDim) {
 	DEBUG_TIME_BLOCK()
 	EasyProfiler_State *state = DEBUG_globalEasyEngineProfilerState;
 
 	V4 colors[] = { COLOR_GREEN, COLOR_RED, COLOR_PINK, COLOR_BLUE, COLOR_AQUA, COLOR_YELLOW };
 
+	//NOTE(ollie): We render things to a fake resolution then it just scales when it goes out to the viewport. 
+	float fuaxWidth = 1920;
+	V2 resolution = v2(fuaxWidth, fuaxWidth*aspectRatio_yOverX);
+	float screenRelativeSize = 1.0f;
+
 	
 	if(drawState->firstFrame) {
-		drawState->lastMouseP = keyStates->mouseP_left_up;
+		drawState->lastMouseP = easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution);
 		drawState->firstFrame = false;
 	}
 
@@ -101,11 +136,11 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 
 					Rect2f r = rect2fMinDim(xMin + drawState->xOffset*graphWidth, handleY + backdropY, handleWidth, handleHeight);
 
-					if(inBounds(keyStates->mouseP_left_up, r, BOUNDS_RECT)) {
+					if(inBounds(easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution), r, BOUNDS_RECT)) {
 						color = COLOR_YELLOW;
 						if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 							drawState->holdingScrollBar = true;
-							drawState->grabOffset = keyStates->mouseP_left_up.x - (drawState->xOffset*graphWidth + xMin);
+							drawState->grabOffset = easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution).x - (drawState->xOffset*graphWidth + xMin);
 							assert(drawState->grabOffset >= 0); //xOffset is the start of the handle
 						}					
 					} 
@@ -113,7 +148,7 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 					if(drawState->holdingScrollBar) {
 						color = COLOR_GREEN;
 
-						float goalPos = ((keyStates->mouseP_left_up.x - drawState->grabOffset) - xMin) / graphWidth;
+						float goalPos = ((easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution).x - drawState->grabOffset) - xMin) / graphWidth;
 						//update position
 						drawState->xOffset = lerp(drawState->xOffset, 0.4f, goalPos);
 					}
@@ -122,14 +157,12 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 					//NOTE(ollie): Clamp the min range
 					if(drawState->xOffset < 0) {
 						drawState->xOffset = 0.0f;
-						drawState->scroll_dP = 0;
 					} 
 
 					float maxPercent = ((graphWidth - handleWidth) / graphWidth);
 					//NOTE(ollie): Clamp the max range
 					if(drawState->xOffset > maxPercent) {
 						drawState->xOffset = maxPercent; 
-						drawState->scroll_dP = 0;
 					} 
 
 					//NOTE(ollie): Update the offset when we scroll & the handle changes size
@@ -166,6 +199,147 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 
 					EasyProfile_FrameData *frame = state->lookingAtSingleFrame;
 
+					///////////////////////************ Draw infomration for farame*************////////////////////
+
+					float xAt = 0.05*resolution.x;
+					float yAt = 2*globalDebugFont->fontHeight;
+
+					char *formatString = "Frame Information:\nTotal Milliseconds for frame: %f\n";
+
+					char frameInfoString[1028];
+					snprintf(frameInfoString, arrayCount(frameInfoString), formatString, state->lookingAtSingleFrame->millisecondsForFrame);
+
+					Rect2f fontDim = outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, frameInfoString, rect2fMinDim(xAt, 0, resolution.x, resolution.y), COLOR_BLACK, 1, true, screenRelativeSize);
+
+					yAt += getDim(fontDim).y;
+
+					for(int drawCountIndex = 0; drawCountIndex < arrayCount(frame->drawCounts); ++drawCountIndex) {
+						
+						EasyProfiler_DrawCountInfo *countInfo = &state->lookingAtSingleFrame->drawCounts[drawCountIndex];
+							
+						u32 drawCount = countInfo->drawCount;
+						//NOTE(ollie): If there are actually anything drawn so it's easier to see the information. 
+						if(drawCount > 0) {
+							char drawCountString[512];
+							snprintf(drawCountString, arrayCount(drawCountString), "Draw count for %s: %d\n", EasyRender_ShapeTypeStrings[drawCountIndex], drawCount);
+
+							Rect2f bounds = outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, drawCountString, rect2fMinDim(xAt, 0, resolution.x, resolution.y), COLOR_BLACK, 1, false, screenRelativeSize);
+							V4 highlightColor = COLOR_BLACK;
+
+							if(inBounds(easyInput_mouseToResolution(keyStates, resolution), bounds, BOUNDS_RECT)) {
+								if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+									//NOTE(ollie): Toggle the string ids on or off 
+									countInfo->isOpened = !countInfo->isOpened;
+								}
+								highlightColor = COLOR_GOLD;
+							}
+
+							bounds = outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, drawCountString, rect2fMinDim(xAt, 0, resolution.x, resolution.y), highlightColor, 1, true, screenRelativeSize);
+
+							yAt += getDim(bounds).y;
+
+							if(countInfo->isOpened) {
+								
+								///////////////////////************ Draw scroll handle *************////////////////////
+								float handleHeight = 50;
+								float handleWidth = 50;
+
+								//NOTE(ollie): The drop down is open so get the height of the drop down
+								//NOTE(ollie): We assume each info fits on one line each
+								float scrollWindowHeight = countInfo->uniqueModelCount*globalDebugFont->fontHeight - handleHeight;
+
+								float visibleScrollWindowHeight = 0.2f*resolution.y - handleHeight; 
+
+								bool neededScroll = false;
+								//NOTE(ollie): If you need to scroll
+								if(scrollWindowHeight > visibleScrollWindowHeight) {
+									neededScroll = true;
+									V2 handlePos = v2(0.01*resolution.x, (yAt - globalDebugFont->fontHeight) + visibleScrollWindowHeight*countInfo->scrollAt_01);
+
+									Rect2f scrollHandle = rect2fMinDim(handlePos.x, handlePos.y, handleWidth, handleHeight);
+									
+									V4 handleColor = COLOR_GOLD;
+
+									if(inBounds(easyInput_mouseToResolution(keyStates, resolution), scrollHandle, BOUNDS_RECT)) {
+										handleColor = COLOR_YELLOW;
+										 if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+											//NOTE(ollie): grab the handle
+											countInfo->holdingScrollBar = true;									 	
+										 }
+										
+									}
+
+									if(countInfo->holdingScrollBar) {
+										handleColor = COLOR_GREEN;
+
+										///////////////////////************ Update the handle position *************////////////////////
+										float goalPos = easyInput_mouseToResolution(keyStates, resolution).y - yAt;
+										//update position
+										countInfo->scrollAt_01 = lerp(visibleScrollWindowHeight*countInfo->scrollAt_01, 0.4f, goalPos) / visibleScrollWindowHeight;
+										countInfo->scrollAt_01 = clamp01(countInfo->scrollAt_01);
+
+										////////////////////////////////////////////////////////////////////
+
+										//NOTE(ollie): Let go of the handle
+										if(wasReleased(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+											countInfo->holdingScrollBar = false;
+										}
+									}
+									
+									scrollHandle = rect2fMinDim(handlePos.x, handlePos.y, handleWidth, handleHeight);
+
+									renderDrawRect(scrollHandle, NEAR_CLIP_PLANE, handleColor, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+								}
+									////////////////////////////////////////////////////////////////////
+
+								u32 bookKeepingCount = 0;
+
+								float windowBoundsY = INFINITY;
+								float scrollOffset = 0;
+
+								if(neededScroll) {
+									Rect2f scrollWindow = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, resolution.x, visibleScrollWindowHeight + handleHeight);
+									
+									windowBoundsY = scrollWindow.max.y;
+									easyRender_pushScissors(globalRenderGroup, scrollWindow, NEAR_CLIP_PLANE, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y), viewportDim);
+									scrollOffset = countInfo->scrollAt_01*(scrollWindowHeight - visibleScrollWindowHeight);
+								}
+
+								float cached_yAt = yAt;
+
+								// sort on id->drawCount so shows heightest first
+								sortStringIds(countInfo->ids, countInfo->uniqueModelCount);
+
+								for(int stringIndex = 0; stringIndex < countInfo->uniqueModelCount; ++stringIndex) {
+									EasyProfiler_DrawCountWithStringId *id = &countInfo->ids[stringIndex];
+									//NOTE(ollie): Outside of scroll window
+									if((yAt - scrollOffset) < windowBoundsY) {
+										char *modelFormatString = "%s %d\n";
+
+										char modelString[512];
+										snprintf(modelString, arrayCount(modelString), modelFormatString, id->stringId, id->drawCount);
+
+										float textAtY = yAt - scrollOffset;
+										Rect2f bounds = outputTextNoBacking(globalDebugFont, xAt, textAtY, NEAR_CLIP_PLANE, resolution, modelString, rect2fMinDim(xAt, 0, resolution.x, resolution.y), COLOR_BLUE, 1, true, screenRelativeSize);
+										yAt += getDim(bounds).y;
+									}
+
+									bookKeepingCount += id->drawCount;
+								}
+
+								yAt = cached_yAt + visibleScrollWindowHeight + globalDebugFont->fontHeight;
+
+								//NOTE(ollie): Make sure they equal to each other. 
+								assert(bookKeepingCount == countInfo->drawCount);
+								if(neededScroll) {
+									easyRender_disableScissors(globalRenderGroup);
+								}
+							}
+						}
+					}
+
+					////////////////////////////////////////////////////////////////////
+
 					for(int i = 0; i < frame->timeStampAt; ++i) {
 
 						EasyProfile_TimeStamp ts = frame->data[i];
@@ -196,23 +370,21 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 							Rect2f r = rect2fMinDim(xStart + percentAcross*graphWidth, yStart + level*barHeight + backdropY, barWidth, barHeight);
 
 							V4 color = colors[i % arrayCount(colors)];
-							if(inBounds(keyStates->mouseP_left_up, r, BOUNDS_RECT)) {
+							if(inBounds(easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution), r, BOUNDS_RECT)) {
 
 								///////////////////////*********** Draw the name of it **************////////////////////
 								char digitBuffer[1028] = {};
 								sprintf(digitBuffer, "%d", ts.lineNumber);
 
-								char *formatString = "File name: %s\nFunction name: %s\nLine number: %d\nMilliseonds: %f\nTotal Cycles: %ld\n\n\nFrame Information:\nTotal Milliseconds for frame: %f\nTotal Draw Count for frame: %d\n\n";
-								int stringLengthToAlloc = snprintf(0, 0, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp, state->lookingAtSingleFrame->millisecondsForFrame, state->lookingAtSingleFrame->drawCount) + 1; //for null terminator, just to be sure
+								
+								char *formatString = "File name: %s\n\nFunction name: %s\nLine number: %d\nMilliseonds: %f\nTotal Cycles: %ld\n";
+								int stringLengthToAlloc = snprintf(0, 0, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp) + 1; //for null terminator, just to be sure
 								
 								char *strArray = pushArray(&globalPerFrameArena, stringLengthToAlloc, char);
 
-								snprintf(strArray, stringLengthToAlloc, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp, state->lookingAtSingleFrame->millisecondsForFrame, state->lookingAtSingleFrame->drawCount); //for null terminator, just to be sure
+								snprintf(strArray, stringLengthToAlloc, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp); //for null terminator, just to be sure
 
-								V2 b = getBounds(strArray, rect2fMinDim(0, 0, resolution.x, resolution.y), globalDebugFont, 1, resolution, screenRelativeSize);
-
-								float xAt = 0.05*resolution.x;
-								float yAt = 2*globalDebugFont->fontHeight;
+							
 
 								Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, resolution.x, resolution.y);
 
@@ -284,7 +456,7 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 
 						Rect2f r = rect2fMinDim(xStart + percentForStart*graphWidth, 0.1f*resolution.y + backdropY, percent*graphWidth, 0.1f*resolution.y);
 						
-						if(inBounds(keyStates->mouseP_left_up, r, BOUNDS_RECT) ) {
+						if(inBounds(easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution), r, BOUNDS_RECT) ) {
 							color = COLOR_WHITE;
 
 							///////////////////////*********** Draw milliseconds of it **************////////////////////
@@ -295,8 +467,8 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 							
 							V2 b = getBounds(strBuffer, rect2fMinDim(0, 0, textWidth, resolution.y), globalDebugFont, 1, resolution, screenRelativeSize);
 
-							float xAt = keyStates->mouseP_left_up.x;
-							float yAt = resolution.y - keyStates->mouseP_left_up.y - b.y + backdropY;
+							float xAt = easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution).x;
+							float yAt = resolution.y - easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution).y - b.y + backdropY;
 
 							Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, textWidth, 2*resolution.y);
 
@@ -325,7 +497,7 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, V2 r
 		}
 	}
 
-	drawState->lastMouseP = keyStates->mouseP_left_up;
+	drawState->lastMouseP = easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution);
 
 	if(wasPressed(keyStates->gameButtons, BUTTON_F3)) {
 		if(isOn(&drawState->openTimer)) {
@@ -354,7 +526,6 @@ static EasyProfile_ProfilerDrawState *EasyProfiler_initProfiler() {
 	result->zoomLevel = 1;
 	result->holdingScrollBar = false;
 	result->xOffset = 0;
-	result->scroll_dP = 0;
 	result->lastMouseP =  v2(0, 0);
 	result->firstFrame = true;
 	result->grabOffset = 0;

@@ -36,11 +36,6 @@ float min(float a, float b) {
 #define printf(...) {char str[256]; sprintf_s(str, __VA_ARGS__); OutputDebugString(str); }
 #endif
 
-#if !defined arrayCount
-#define arrayCount(array1) (sizeof(array1) / sizeof(array1[0]))
-#endif 
-
-
 #include <limits.h>
 
 #define fori(Array) for(u32 Index = 0; Index < arrayCount(Array); ++Index)
@@ -66,6 +61,7 @@ float min(float a, float b) {
 #define COLOR_AQUA v4(0, 1, 1, 1)
 #define COLOR_GREY v4(0.5f, 0.5f, 0.5f, 1)
 #define COLOR_LIGHT_GREY v4(0.8f, 0.8f, 0.8f, 1)
+#define COLOR_GOLD v4(1.0f, 0.8f, 0.0f, 1)
 
 #define Kilobytes(size) (size*1024)
 #define Megabytes(size) (Kilobytes(size)*1024) 
@@ -74,14 +70,6 @@ float min(float a, float b) {
 #define zeroStruct(memory, type) zeroSize(memory, sizeof(type))
 #define zeroArray(array) zeroSize(array, sizeof(array))
 
-
-void zeroSize(void *memory, size_t bytes) {
-    char *at = (char *)memory;
-    for(int i = 0; i < bytes; i++) {
-        *at = 0;
-        at++;
-    }
-}
 
 typedef struct MemoryPiece MemoryPiece;
 typedef struct MemoryPiece {
@@ -222,31 +210,6 @@ static Arena globalLongTermArena;
 static Arena globalPerFrameArena;
 static MemoryArenaMark perFrameArenaMark;
 
-bool stringsMatchN(char *a, int aLength, char *b, int bLength) {
-    bool result = true;
-    
-    int indexCount = 0;
-    while(indexCount < aLength && indexCount < bLength) {
-        indexCount++;
-        result &= (*a == *b);
-        a++;
-        b++;
-    }
-    result &= (indexCount == bLength && indexCount == aLength);
-    
-    return result;
-} 
-
-
-bool stringsMatchNullN(char *a, char *b, int bLen) {
-    bool result = stringsMatchN(a, strlen(a), b, bLen);
-    return result;
-}
-
-bool cmpStrNull(char *a, char *b) {
-    bool result = stringsMatchN(a, strlen(a), b, strlen(b));
-    return result;
-}
 
 char *nullTerminateBuffer(char *result, char *string, int length) {
     for(int i = 0; i < length; ++i) {
@@ -291,9 +254,6 @@ char *concat_(char *a, s32 lengthA, char *b, s32 lengthB, Arena *arena) {
         assert(newString[newStrLen - 1 ] == '\0');
     return newString;
 }
-
-#define ENUM(value) value,
-#define STRING(value) #value,
 
 int findEnumValue(char *name, char **names, int nameCount) {
     int result = -1; //not found

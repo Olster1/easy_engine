@@ -134,7 +134,7 @@ inline void setParticleLifeSpan(particle_system *partSys, float value) {
     partSys->creationTimer.period = 1.0f / value;
 }
 
-internal inline void drawAndUpdateParticleSystem(particle_system *System, float dt, V3 Origin, V3 Acceleration, V4 particleTint, V3 camPos, Matrix4 metresToPixels, V2 resolution, bool render) {
+internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_system *System, float dt, V3 Origin, V3 Acceleration, V4 particleTint, bool render) {
     if(System->Active) {
         float particleLifeSpan = 0;
         float GridScale = 0.4f;
@@ -143,13 +143,6 @@ internal inline void drawAndUpdateParticleSystem(particle_system *System, float 
         V3 CelGridOrigin = Origin;
     
         int particlesToCreate = 0;        
-
-        Matrix4 screenMatrix;
-        // if(System->viewType == PERSPECTIVE_MATRIX) {
-        //     screenMatrix = projectionMatrixToScreen(resolution.x, resolution.y);
-        // } else if(System->viewType == ORTHO_MATRIX) {
-            screenMatrix = OrthoMatrixToScreen(resolution.x, resolution.y);
-        // }
 
         if(!System->Set.finished) {
             if(System->Set.type == PARTICLE_SYS_DEFAULT || System->Set.type == PARTICLE_SYS_SCALER) {        
@@ -397,11 +390,11 @@ internal inline void drawAndUpdateParticleSystem(particle_system *System, float 
                 if(Particle->lifeAt >= particleLifeSpan) {
                     Particle->dead = true;
                 }
-
-                RenderInfo renderInfo = calculateRenderInfo(v3_plus(Particle->P, Origin), v3(Particle->scale.x*Set->bitmapScale, Particle->scale.y*Set->bitmapScale, 0), camPos, metresToPixels);
-
                 if(Bitmap && render) {
-                    renderTextureCentreDim(Bitmap, renderInfo.pos, renderInfo.dim.xy, Color, Particle->angle, mat4(), renderInfo.pvm, screenMatrix);    
+                    // v3_plus(Particle->P, Origin), v3(Particle->scale.x*Set->bitmapScale, Particle->scale.y*Set->bitmapScale, 0)
+
+                    renderDrawSprite(group, Bitmap, Color);
+                    // renderTextureCentreDim(Bitmap, renderInfo.pos, renderInfo.dim.xy, Color, Particle->angle, mat4(), renderInfo.pvm, screenMatrix);    
                 } else {
                     //renderDrawRing(&Particle->renderHandle, renderInfo.pos, renderInfo.dim.xy, Color, mat4(), renderInfo.pvm, screenMatrix);                
                 }
@@ -428,7 +421,7 @@ void prewarmParticleSystem(particle_system *System, V3 Acceleration) {
     float dtLeft = System->Set.LifeSpan;
     float dtUpdate = 1.0f / 15.0f;
     while(dtLeft > 0) {
-        drawAndUpdateParticleSystem(System, dtUpdate, v3(0, 0, 0), Acceleration, COLOR_WHITE,  v3(0, 0, 0), mat4(), v2(0, 0), false);
+        drawAndUpdateParticleSystem(0, System, dtUpdate, v3(0, 0, 0), Acceleration, COLOR_WHITE, false);
         dtLeft -= dtUpdate;
         if(dtLeft < dtUpdate) {
             dtUpdate = dtLeft;

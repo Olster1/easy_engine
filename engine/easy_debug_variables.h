@@ -6,4 +6,7 @@ static bool DEBUG_global_DrawFrameRate = false;
 static bool DEBUG_global_DrawProfiler = false;
 static bool DEBUG_global_ProfilePaused = true; //this has to start as true
 static bool DEBUG_global_EditorMode = false;
+static bool DEBUG_global_VsyncIsOn = true;
+static bool DEBUG_global_GuessFramerateFromVsync = true;
+
 

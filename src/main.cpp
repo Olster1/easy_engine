@@ -7,7 +7,8 @@
 #include "mySaveLoad.h"
 #include "myTransitions.h"
 //#include "myDialogue.h"
-
+#include "myOverworld.h"
+#include "myOverworld.c"
 
 ///////////////////////************ Init Game State *************////////////////////
 //NOTE(ollie): Go straight to editing the level or actually play the level
@@ -23,7 +24,7 @@ MY_GAME_MODE_INSTRUCTION_CARD,
 MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_EDIT_LEVEL
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_OVERWORLD //MY_GAME_MODE_EDIT_LEVEL
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -49,14 +50,14 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
         //NOTE(ollie): We aren't begining a round so we need to create a level,
         // See beginRound func to see us using this function again. 
         myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0));
-        
+            
         DEBUG_global_IsFlyMode = true;
         DEBUG_global_CameraMoveXY = true;
         
         cam->pos.z = -12;
     }
     
-    setSoundType(AUDIO_FLAG_SCORE_CARD);
+    setSoundType(AUDIO_FLAG_MAIN);
     
     ///////////////////////*********** Tutorials **************////////////////////
     gameState->tutorialMode = false;
@@ -277,10 +278,10 @@ int main(int argc, char *args[]) {
         
         ////INIT FONTS
         
-        easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena), 0, 255);    
+        // easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena), 0, 255);    
         EasyFont_Font *mainFont = easyFont_loadFontAtlas(concatInArena(globalExeBasePath, "fontAtlas_BebasNeue-Regular", &globalPerFrameArena), &globalLongTermArena);   
         
-        easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena), 0, 255);    
+        // easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena), 0, 255);    
         EasyFont_Font *debugFont = easyFont_loadFontAtlas(concatInArena(globalExeBasePath, "fontAtlas_UbuntuMono-Regular", &globalPerFrameArena), &globalLongTermArena);   
         globalDebugFont = debugFont;
         
@@ -295,6 +296,8 @@ int main(int argc, char *args[]) {
         FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL, 1);
         
         FrameBuffer bloomFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+        
+        FrameBuffer cachedFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
         //////////////////////////////////////////////////
         
         
@@ -311,9 +314,9 @@ int main(int argc, char *args[]) {
         DEBUG_globalEasyConsole = &console;
         
         EasyEditor *editor = pushStruct(&globalLongTermArena, EasyEditor);
-        easyEditor_initEditor(editor, globalRenderGroup, globalDebugFont, OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y), resolution, appInfo.screenRelativeSize, &keyStates);
+        easyEditor_initEditor(editor, globalRenderGroup, globalDebugFont, (resolution.y / resolution.x), &keyStates);
         
-        easyFlashText_initManager(&globalFlashTextManager, mainFont, resolution, appInfo.screenRelativeSize);
+        easyFlashText_initManager(&globalFlashTextManager, mainFont, (resolution.y / resolution.x));
         
         bool inEditor = false;
         
@@ -375,6 +378,19 @@ int main(int argc, char *args[]) {
             easyAssetLoader_loadAndAddAssets(&allModelsForEditor, dir, fileTypes, arrayCount(fileTypes), ASSET_MODEL);
             
         }
+
+        //NOTE(ollie): Max models that the user side can see
+        char *allModelsForEditorNames[256];
+        u32 allModelsForEditorNamesCount = 0;
+
+        for(int modelIndex = 0; modelIndex < allModelsForEditor.count; ++modelIndex) {
+            //NOTE(ollie): Add all the names of the models to a string array
+            assert(allModelsForEditorNamesCount < arrayCount(allModelsForEditorNames));
+            allModelsForEditorNames[allModelsForEditorNamesCount++] = allModelsForEditor.array[modelIndex].model->name;
+        }
+        
+
+
 #endif
         
         // EasyTerrain *terrain = initTerrain(fern, grass);
@@ -422,8 +438,8 @@ int main(int argc, char *args[]) {
         EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo_track.wav"), 0, AUDIO_BACKGROUND));
         EasySound_LoopSound(playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("ambient1.wav"), 0, AUDIO_BACKGROUND));
         
-        setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
-        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
+        setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0);
+        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0);
         ////////////////////////////////////////////////////////////////////  
         
         ////////////*** Variables *****//////
@@ -438,7 +454,8 @@ int main(int argc, char *args[]) {
         
         EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfiler(); 
         
-        
+        MyOverworldState *overworldState = pushStruct(&globalLongTermArena, MyOverworldState);
+                
         ///////////************************/////////////////
         while(running) {
             
@@ -496,17 +513,19 @@ int main(int argc, char *args[]) {
                 V2 movePower = v2(0, 0);
                 float power = 10;
                 ///////////////////////************* Move the center position ************////////////////////
-                if(isDown(keyStates.gameButtons, BUTTON_RIGHT)) {
-                    movePower.x = power;
-                }
-                if(isDown(keyStates.gameButtons, BUTTON_LEFT)) {
-                    movePower.x = -power;
-                }
-                if(isDown(keyStates.gameButtons, BUTTON_UP)) {
-                    movePower.y = power;
-                }
-                if(isDown(keyStates.gameButtons, BUTTON_DOWN)) {
-                    movePower.y = -power;
+                if(!easyConsole_isOpen(&console)) {
+                    if(isDown(keyStates.gameButtons, BUTTON_RIGHT)) {
+                        movePower.x = power;
+                    }
+                    if(isDown(keyStates.gameButtons, BUTTON_LEFT)) {
+                        movePower.x = -power;
+                    }
+                    if(isDown(keyStates.gameButtons, BUTTON_UP)) {
+                        movePower.y = power;
+                    }
+                    if(isDown(keyStates.gameButtons, BUTTON_DOWN)) {
+                        movePower.y = -power;
+                    }
                 }
                 
                 V3 forwardAxis = EasyCamera_getZAxis(&camera);
@@ -678,7 +697,7 @@ int main(int argc, char *args[]) {
             
             drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT));
             
-            easyRender_blurBuffer(&mainFrameBuffer, &bloomFrameBuffer, 1);
+            easyRender_blurBuffer_cachedBuffer(&mainFrameBuffer, &bloomFrameBuffer, &cachedFrameBuffer, 1);
             
             
             //////////////// TONE MAPPING /////////////////////////
@@ -709,7 +728,7 @@ int main(int argc, char *args[]) {
             ///////////////////////************ Update entities here *************////////////////////
             
             u32 updateFlags = 0;
-            if((gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL)) updateFlags |= MY_ENTITIES_UPDATE;
+            if((gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) && !easyConsole_isConsoleOpen(&console)) updateFlags |= MY_ENTITIES_UPDATE;
             
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
@@ -750,9 +769,12 @@ int main(int argc, char *args[]) {
                 
                 
                 ////////////////////////////////////////////////////////////////////
-                
+                    
+                renderDisableBatchOnZ(globalRenderGroup);
                 updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
-                
+                drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                renderEnableBatchOnZ(globalRenderGroup);
+
                 cleanUpEntities(entityManager, &gameVariables);
                 
                 bool shouldDrawHUD = true;
@@ -848,7 +870,7 @@ int main(int argc, char *args[]) {
                 
                 if(gameState->currentGameMode != MY_GAME_MODE_PLAY && gameState->currentGameMode != MY_GAME_MODE_EDIT_LEVEL) {
                     drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
-                    easyRender_blurBuffer(&toneMappedBuffer, &toneMappedBuffer, 0);
+                    easyRender_blurBuffer_cachedBuffer(&toneMappedBuffer, &toneMappedBuffer, &cachedFrameBuffer, 0);
                     
                     renderClearDepthBuffer(toneMappedBuffer.bufferId);
                 }
@@ -1035,6 +1057,10 @@ int main(int argc, char *args[]) {
                 case MY_GAME_MODE_LEVEL_SELECTOR: {
                     
                 } break;
+                case MY_GAME_MODE_OVERWORLD: {
+                    //NOTE(ollie): This is the overworld chooser, where we choose our level
+                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState);
+                } break;    
                 case MY_GAME_MODE_START: {
                     
                 } break;
@@ -1144,7 +1170,8 @@ int main(int argc, char *args[]) {
                     
                     easyEditor_startDockedWindow(editor, "Editor Tools", EASY_EDITOR_DOCK_BOTTOM_RIGHT);
                     
-                    // int modelSelected = easyEditor_pushList(editor, "Model: ", modelsLoaded, modelLoadedCount);
+                    gameState->modelSelected = easyEditor_pushList(editor, "Model: ", allModelsForEditorNames, allModelsForEditorNamesCount);
+                    gameState->entityTypeSelected = easyEditor_pushList(editor, "Entities: ", MyEntity_EntityTypeStrings, arrayCount(MyEntity_EntityTypeStrings));
                     
                     //TODO(ollie): Get this to be more reliable!! it crashes right now
                     // easyConsole_addToStream(&console, str);
@@ -1169,22 +1196,25 @@ int main(int argc, char *args[]) {
                     if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE) && !editor->isHovering) {
                         
                         if(isDown(keyStates.gameButtons, BUTTON_SHIFT)) {
-                            //NOTE(ollie): Create a new model
-                            assert(gameState->modelSelected < allModelsForEditor.count);
-                            EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
                             
-                            if(model) {
-                                gameState->holdingEntity = true;
-                                //NOTE(ollie): It should exist since we are pulling 
-                                //             from an array that has the loaded models in It
-                                Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
-                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
-                                Entity *newEntity = initScenery1x1(entityManager, model->name, model, worldP, 0);
-                                gameState->hotEntity = newEntity;
+                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
+                            
+                            EntityType entTypeToInit = (EntityType)gameState->entityTypeSelected;
+                            if(entTypeToInit == ENTITY_SCENERY) {
+                                assert(gameState->modelSelected < allModelsForEditor.count);
+                                EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
+                                if(model) {            
+                                    gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
+                                }
+                            } else {
+                                gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited);
                             }
-                        } else {
                             
-                            
+
+                            if(gameState->hotEntity) {
+                                //NOTE(ollie): Actually got an entity back from the initEntity function
+                                gameState->holdingEntity = true;
+                            }
                             
                         }
                     } 
@@ -1314,7 +1344,7 @@ int main(int argc, char *args[]) {
             
             
             /////////////////////// DRAWING & UPDATE CONSOLE /////////////////////////////////
-            if(easyConsole_update(&console, &keyStates, appInfo.dt, resolution, appInfo.screenRelativeSize)) {
+            if(easyConsole_update(&console, &keyStates, appInfo.dt, (resolution.y / resolution.x))) {
                 EasyToken token = easyConsole_getNextToken(&console);
                 if(token.type == TOKEN_WORD) {
                     if(stringsMatchNullN("camPower", token.at, token.size)) {
@@ -1439,7 +1469,7 @@ int main(int argc, char *args[]) {
             ///////////////////////********** Drawing the Profiler Graph ***************////////////////////
             renderClearDepthBuffer(toneMappedBuffer.bufferId);
             
-            EasyProfile_DrawGraph(profilerState, resolution, &keyStates, appInfo.screenRelativeSize, appInfo.dt);
+            EasyProfile_DrawGraph(profilerState, (resolution.y / resolution.x), &keyStates, appInfo.dt, resolution);
             
             drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
             

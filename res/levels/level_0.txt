@@ -1,112 +1,131 @@
-	type: "MODEL";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 4.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.903516 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	entityType: "ENTITY_UNDERPANTS";
+	position: 0.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.368250 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	entityType: "ENTITY_CRAMP";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 0.735894 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
 	modelName: "Crystal.obj";
+	entityType: "ENTITY_SCENERY";
 	position: 5.362184 0.778910 0.000000;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.627159 0.627159 0.627159;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "tower.obj";
+	entityType: "ENTITY_SCENERY";
 	position: 18.574244 -3.466549 -0.000011;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.200000 0.200000 0.200000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Oak_Tree.obj";
-	position: -6.906930 4.430646 0.000000;
+	entityType: "ENTITY_SCENERY";
+	position: -8.057512 3.905550 0.009166;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.800000 0.800000 0.800000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: -7.001994 -0.254171 0.000000;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.800000 0.800000 0.800000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: -4.099529 1.352844 0.000000;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.800000 0.800000 0.800000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: 7.919379 5.396529 0.000000;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.800000 0.800000 0.800000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: -0.754941 -2.368416 -0.000003;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.100000 0.100000 0.100000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: 0.169793 -3.019436 -0.000001;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.100000 0.100000 0.100000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Palm_Tree.obj";
+	entityType: "ENTITY_SCENERY";
 	position: 1.474960 -2.209980 -0.000001;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.100000 0.100000 0.100000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Oak_Tree.obj";
-	position: -4.820310 4.848460 -0.000001;
+	entityType: "ENTITY_SCENERY";
+	position: -3.286969 4.125065 0.012626;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.800000 0.800000 0.800000;
-	color: 0.000000 0.000000 1.000000 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "Crystal.obj";
-	position: 1.619939 4.429892 -0.000006;
+	entityType: "ENTITY_SCENERY";
+	position: 8.436213 2.825533 0.028000;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 3.000000 3.000000 3.000000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
 	modelName: "tower.obj";
-	position: 6.555878 -5.217365 -0.000013;
+	entityType: "ENTITY_SCENERY";
+	position: 9.304122 -4.936069 -0.004918;
 	rotation: 0.707107 -0.707107 0.000000 0.000000;
 	scale: 0.100000 0.100000 0.100000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
-	modelName: "ship_dark.obj";
-	position: -10.730064 1.454424 -0.000093;
-	rotation: 0.707107 -0.707107 0.000000 0.000000;
-	scale: 0.100000 0.100000 0.100000;
+	entityType: "ENTITY_BUCKET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 1.000000 1.000000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 
-	type: "MODEL";
-	modelName: "basicCharacter.obj";
-	position: -3.433188 2.578652 -0.000065;
-	rotation: 0.707107 -0.707107 0.000000 0.000000;
-	scale: 0.100000 0.100000 0.100000;
+	entityType: "ENTITY_BUCKET";
+	position: 1.000000 1.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 1.000000 1.000000;
 	color: 1.000000 1.000000 1.000000 1.000000;
 }
 

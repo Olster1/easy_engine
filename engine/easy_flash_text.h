@@ -22,11 +22,13 @@ typedef struct {
 
 static EasyFlashTextManager globalFlashTextManager;
 
-static inline void easyFlashText_initManager(EasyFlashTextManager *m, EasyFont_Font *font, V2 resolution, float relSize) {
+static inline void easyFlashText_initManager(EasyFlashTextManager *m, EasyFont_Font *font, float aspectRatio_yOverX) {
 	m->textCount = 0;
 	m->font = font;
-	m->resolution = resolution;
-	m->relSize = relSize;
+
+	float fuaxWidth = 1920.0f;
+	m->resolution = v2(fuaxWidth, aspectRatio_yOverX*fuaxWidth);
+	m->relSize = 1;
 }	
 
 static inline void easyFlashText_addText(EasyFlashTextManager *m, char *message) {

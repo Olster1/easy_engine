@@ -109,7 +109,11 @@ inline bool easyConsole_isOpen(EasyConsole *c) {
 	
 }
 
-inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt, V2 resolution, float relativeSize) {
+inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt, float aspectRatio_yOverX) {
+
+	float fuaxWidth = 1920;
+	V2 fuaxResolution = v2(fuaxWidth, fuaxWidth*aspectRatio_yOverX);
+
 	bool wasPressed = false;
 	if(wasPressed(keyStates->gameButtons, c->hotkey)) {
 		c->state = (EasyConsoleState)((int)c->state + 1);
@@ -131,13 +135,13 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 	float height = 0;//
 	switch(c->state) {
 		case EASY_CONSOLE_CLOSED: {
-			height = smoothStep01(0.8f*resolution.y, v, 0);
+			height = smoothStep01(0.8f*fuaxResolution.y, v, 0);
 		} break;
 		case EASY_CONSOLE_OPEN_MID: {
-			height = smoothStep01(0, v, 0.3f*resolution.y);
+			height = smoothStep01(0, v, 0.3f*fuaxResolution.y);
 		} break;
 		// case EASY_CONSOLE_OPEN_LARGE: {
-		// 	height = smoothStep01(0.3f*resolution.y, v, 0.8f*resolution.y);
+		// 	height = smoothStep01(0.3f*fuaxResolution.y, v, 0.8f*fuaxResolution.y);
 		// } break;
 		default: {
 			assert(!"shouldn't be here");
@@ -166,11 +170,11 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 				}
 			}
 			// renderEnableDepthTest(RenderGroup *group);
-			renderDrawRectCenterDim(v3(0.5f*resolution.x, 0.5f*height, NEAR_CLIP_PLANE + 0.3f), v2(resolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-		 	outputText_with_cursor(globalDebugFont, 0, height, NEAR_CLIP_PLANE + 0.1f, resolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont->fontHeight, resolution.x, height + 0.4f*globalDebugFont->fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, relativeSize);
+			renderDrawRectCenterDim(v3(0.5f*fuaxResolution.x, 0.5f*height, NEAR_CLIP_PLANE + 0.3f), v2(fuaxResolution.x, height), COLOR_GREY, 0, mat4TopLeftToBottomLeft(fuaxResolution.y), OrthoMatrixToScreen_BottomLeft(fuaxResolution.x, fuaxResolution.y));
+		 	outputText_with_cursor(globalDebugFont, 0, height, NEAR_CLIP_PLANE + 0.1f, fuaxResolution, c->buffer.chars, rect2fMinMax(0, height - globalDebugFont->fontHeight, fuaxResolution.x, height + 0.4f*globalDebugFont->fontHeight), COLOR_WHITE, 1, c->buffer.cursorAt, COLOR_YELLOW, true, 1);
 			
-			V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, resolution.x, height - globalDebugFont->fontHeight), globalDebugFont, 1, resolution, relativeSize);
-			outputTextNoBacking(globalDebugFont, 0, height - globalDebugFont->fontHeight - bounds.y, NEAR_CLIP_PLANE + 0.1f, resolution, c->bufferStream, rect2fMinMax(0, 0, resolution.x, height), COLOR_WHITE, 1, true, relativeSize);
+			V2 bounds = getBounds(c->bufferStream, rect2fMinMax(0, 0, fuaxResolution.x, height - globalDebugFont->fontHeight), globalDebugFont, 1, fuaxResolution, 1);
+			outputTextNoBacking(globalDebugFont, 0, height - globalDebugFont->fontHeight - bounds.y, NEAR_CLIP_PLANE + 0.1f, fuaxResolution, c->bufferStream, rect2fMinMax(0, 0, fuaxResolution.x, height), COLOR_WHITE, 1, true, 1);
 		}
 	}
 
@@ -224,23 +228,58 @@ inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
         easyConsole_addToStream(c, "pause");
         easyConsole_addToStream(c, "framerate");
     } else if(stringsMatchNullN("command", token.at, token.size)) {
+    } else if(stringsMatchNullN("vsync", token.at, token.size)) {
+    	token = easyConsole_getNextToken(c);
+    	if(stringsMatchNullN("on", token.at, token.size)) {
+    	    DEBUG_global_VsyncIsOn = true;
+    	    if(SDL_GL_SetSwapInterval(1) != -1) {
+    	    	//TODO(ollie): This seems to be a bug. Swap to wglSetSwapInterval win32 
+    	    	const char *error = SDL_GetError();
+    	    	easyLogger_addLog("Tried setting vsync, but not supported.");
+    	    }
+    	} else if(stringsMatchNullN("off", token.at, token.size)) {
+    	    DEBUG_global_VsyncIsOn = false;
+    		if(SDL_GL_SetSwapInterval(0) != -1) {
+    			//TODO(ollie): This seems to be a bug. Swap to wglSetSwapInterval win32 
+    			const char *error = SDL_GetError();
+    			easyLogger_addLog("Tried unsetting vsync, but not supported.");
+
+    		}
+    	} else {
+			char helpString[512];
+			snprintf(helpString, arrayCount(helpString), "Vsync is %d\n", DEBUG_global_VsyncIsOn); 
+		    easyConsole_addToStream(c, helpString);
+    	}
+    } else if(stringsMatchNullN("guessframerate", token.at, token.size)) {
+    	token = easyConsole_getNextToken(c);
+    	if(stringsMatchNullN("on", token.at, token.size)) {
+    	    DEBUG_global_GuessFramerateFromVsync = true;
+    	} else if(stringsMatchNullN("off", token.at, token.size)) {
+    	    DEBUG_global_GuessFramerateFromVsync = false;
+    	} else {
+    		char helpString[512];
+    		snprintf(helpString, arrayCount(helpString), "Guess Rate is %d\n", DEBUG_global_GuessFramerateFromVsync); 
+    	    easyConsole_addToStream(c, helpString);
+    	}
+    	
+    } else if(stringsMatchNullN("outsideConsole", token.at, token.size)) {
     	STARTUPINFO startUpInfo = {};
     	_PROCESS_INFORMATION lpProcessInformation;
 
-    	if(!CreateProcessA(
-    	   "c:\\windows\\system32\\cmd.exe",
-    	  "/c mkdir",
-    	  NULL,
-    	  NULL,
-    	  FALSE,
-    	  NORMAL_PRIORITY_CLASS,
-    	  NULL,
-    	  "C://",
-    	  &startUpInfo,
-    	  &lpProcessInformation
-    	)) {
-    		easyConsole_addToStream(c, "parameter not understood");
-    	}
+    	// if(!CreateProcessA(
+    	//    "c:\\windows\\system32\\cmd.exe",
+    	//   "/c mkdir",
+    	//   NULL,
+    	//   NULL,
+    	//   FALSE,
+    	//   NORMAL_PRIORITY_CLASS,
+    	//   NULL,
+    	//   "C://",
+    	//   &startUpInfo,
+    	//   &lpProcessInformation
+    	// )) {
+    	// 	easyConsole_addToStream(c, "parameter not understood");
+    	// }
     } else {
     	easyConsole_addToStream(c, "parameter not understood");
     } 

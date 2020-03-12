@@ -86,3 +86,14 @@ static inline EasyColor_HSV easyColor_rgbToHsv(float r, float g, float b) { //rg
 
     return out;
 }
+
+//alpha is at 24 place
+static inline V4 hexARGBTo01Color(unsigned int color) {
+    V4 result = {};
+    
+    result.x = (float)((color >> 16) & 0xFF) / 255.0f; //red
+    result.z = (float)((color >> 0) & 0xFF) / 255.0f;
+    result.y = (float)((color >> 8) & 0xFF) / 255.0f;
+    result.w = (float)((color >> 24) & 0xFF) / 255.0f;
+    return result;
+}

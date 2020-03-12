@@ -83,12 +83,12 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
     // result.threadContext = SDL_GL_CreateContext(result.windowHandle);
     result.renderContext = SDL_GL_CreateContext(result.windowHandle);
     if(result.renderContext) {
-        
- #if VSYNC_ON
-    	int interval = 1;
- #else 
-    	int interval = 0;
- #endif
+      
+        int interval = 1;
+		if(!DEBUG_global_VsyncIsOn) {
+			interval = 0;    	
+		}
+    
         if(SDL_GL_MakeCurrent(result.windowHandle, result.renderContext) == 0) {
             if(SDL_GL_SetSwapInterval(interval) == 0) {
             } else {
@@ -237,7 +237,8 @@ float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
 
 typedef struct {
 	GameButton gameButtons[BUTTON_COUNT];
-    
+    	
+    V2 mouseP_01;
 	V2 mouseP;
 	V2 mouseP_yUp;
 	V2 mouseP_left_up;
@@ -246,6 +247,16 @@ typedef struct {
     
 	int scrollWheelY;
 } AppKeyStates;
+
+static inline V2 easyInput_mouseToResolution(AppKeyStates *input, V2 resolution) {
+	V2 result = v2(input->mouseP_01.x*resolution.x, input->mouseP_01.y*resolution.y);
+	return result;
+}
+
+static inline V2 easyInput_mouseToResolution_originLeftBottomCorner(AppKeyStates *input, V2 resolution) {
+	V2 result = v2(input->mouseP_01.x*resolution.x, (1.0f - input->mouseP_01.y)*resolution.y);
+	return result;
+}
 
 static inline void easyOS_updateHotKeys(AppKeyStates *keyStates) {
 	///////////////////////*********** Update Any Hotkeys **************////////////////////
@@ -311,35 +322,38 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
     //NOTE: This is us choosing the best frame time within the intervals of possible frame rates!!!
     float acutalDt = dt = EasyTime_GetSecondsElapsed(now, appInfo->lastTime);
 
-#define GUESS_FRAME_RATE 0
-#if GUESS_FRAME_RATE
-    float frameRates[] = {monitorFrameTime*1.0f, monitorFrameTime*2.0f, monitorFrameTime*3.0f, monitorFrameTime*4.0f};
-    float smallestDiff = 0;
-    bool set = false;
     float newRate = monitorFrameTime;
-    for(int i = 0; i < arrayCount(frameRates); ++i) {
-        float val = frameRates[i];
-        float diff = dt - val;
-        if(diff < 0.0f) {
-            diff *= -1;
-        }
-        if(diff < smallestDiff || !set) {
-            set = true;
-            smallestDiff = diff;
-            newRate = val;
-        }
-    }
-#else 
-    float newRate = acutalDt;
-#endif
 
+    if(DEBUG_global_VsyncIsOn) {
+	    if(DEBUG_global_GuessFramerateFromVsync) {
+		    float frameRates[] = {monitorFrameTime*1.0f, monitorFrameTime*2.0f, monitorFrameTime*3.0f, monitorFrameTime*4.0f};
+		    float smallestDiff = 0;
+		    bool set = false;
+		    
+		    for(int i = 0; i < arrayCount(frameRates); ++i) {
+		        float val = frameRates[i];
+		        float diff = dt - val;
+		        if(diff < 0.0f) {
+		            diff *= -1;
+		        }
+		        if(diff < smallestDiff || !set) {
+		            set = true;
+		            smallestDiff = diff;
+		            newRate = val;
+		        }
+		    }
+		} else {
+			newRate = acutalDt;	
+		}
+	} else {
+		newRate = monitorFrameTime;
+		//NOTE(ollie): If vsync isn't on, wait ourselves
+		//Try hit the the montior frame rate.
+		while(EasyTime_GetSecondsElapsed(now, appInfo->lastTime) < monitorFrameTime) {
+			now = EasyTime_GetTimeCount();
+		}
+	}
 
-    // bool vsyncEnabled = true; //TODO:  Actually check if vsync is enabled by the user
-    // if(!vsyncEnabled) {
-    // 	while(EasyTime_GetSecondsElapsed(now, appInfo->lastTime) < newRate) {
-    // 		now = EasyTime_GetTimeCount();
-    // 	}
-    // } 
    
     dt = appInfo->dt = newRate; //set the actual dt
 
@@ -587,6 +601,8 @@ static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V
 
 	float newMouseX = inverse_lerp(wResidue, mouseX, wResidue + screenActualSize.x);
 	float newMouseY = inverse_lerp(yResidue, mouseY, yResidue + screenActualSize.y);
+
+	state->mouseP_01 = v2(newMouseX, newMouseY);
 
 	state->mouseP = v2(newMouseX*resolution.x, newMouseY*resolution.y);
 

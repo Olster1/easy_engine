@@ -53,7 +53,7 @@ char *getFileLastPortion_(char *buffer, int bufferLen, char *at, Arena *arena) {
         if(arena) {
             result = (char *)pushArray(arena, length, char);
         } else {
-            result = (char *)calloc(length, 1);    
+            result = (char *)easyPlatform_allocateMemory(length, EASY_PLATFORM_MEMORY_ZERO);    
         }
         
     } else {
@@ -61,7 +61,7 @@ char *getFileLastPortion_(char *buffer, int bufferLen, char *at, Arena *arena) {
         buffer[length] = '\0'; //null terminate. 
     }
     
-    memcpy(result, recent, length - 1);
+    easyPlatform_copyMemory(result, recent, length - 1);
     result[length - 1] = '\0';
     
     return result;
@@ -94,17 +94,17 @@ char *getFileLastPortionWithoutExtension_(char *name, Arena *arena) {
     if(arena) {
         result = pushArray(arena, length, char);
     } else {
-        result = (char *)calloc(sizeof(char)*length, 1);    
+        result = (char *)easyPlatform_allocateMemory(sizeof(char)*length, EASY_PLATFORM_MEMORY_ZERO);    
     }
     
     
-    memcpy(result, lastPortion, length - 1);
+    easyPlatform_copyMemory(result, lastPortion, length - 1);
     result[length - 1] = '\0';
 
     if(arena) {
         //do nothing
     } else {
-        free(lastPortion);    
+        easyPlatform_freeMemory(lastPortion);    
     }
     
     return result;

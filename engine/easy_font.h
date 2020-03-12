@@ -143,7 +143,7 @@ static void easyFont_createSDFFont(char *fileName, u32 startCodePoint, u32 endCo
         Easy_AtlasElm *atlasElm = (Easy_AtlasElm *)getElementFromAlloc_(&atlasElms, index);
         if(atlasElm->tex.id > 0 && atlasElm->tex.id != globalWhiteTexture.id) {
             //NOTE(ollie): Delete all the textures we allocated
-            renderDeleteTextures(1, &atlasElm->tex.id);
+            renderDeleteTexture(&atlasElm->tex);
         }
     }
 
@@ -234,7 +234,8 @@ static EasyFont_Font *easyFont_loadFontAtlas(char *fileName, Arena *arena) {
                             g->texture.height = imgHeight;
                             g->texture.uvCoords = uvCoords;
                             g->texture.aspectRatio_h_over_w = easyRender_getTextureAspectRatio_HOverW(&g->texture);
-                            
+                            g->texture.name = "glyph";
+
                             g->codepoint = codepoint;
                             g->xOffset = xoffset;
                             g->yOffset = yoffset;
@@ -525,6 +526,7 @@ Rect2f my_stbtt_print_(EasyFont_Font *font, float x, float y, float zAt, V2 reso
                 //NOTE(ollie): Can't draw this glyph so sumbit the batch we've already got
                 drawText = true;
                 increment = false;
+                assert(false);
             }
         }
         
@@ -534,11 +536,6 @@ Rect2f my_stbtt_print_(EasyFont_Font *font, float x, float y, float zAt, V2 reso
             increment = false;
             quadCount = 0;  //empty the quads. We lose the data because we broke the word.  
             hasBeenToNewLine = true;
-        }
-        
-        if(overflowed || unicodePoint == '\n') {
-            x = margin.minX;
-            y += size*font->fontHeight; 
         }
         
         bool lastCharacter = (*(text + unicodeLen) == '\0');
@@ -570,6 +567,12 @@ Rect2f my_stbtt_print_(EasyFont_Font *font, float x, float y, float zAt, V2 reso
             }
             
             quadCount = 0; //empty the quads now that we have finished drawing them
+        }
+
+        //NOTE(ollie): 
+        if(overflowed || unicodePoint == '\n') {
+            x = margin.minX;
+            y += size*font->fontHeight; 
         }
         
         lastXY.x = x;

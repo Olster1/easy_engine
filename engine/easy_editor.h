@@ -3,7 +3,7 @@
 Use example::
 
 
-easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Font *font, Matrix4 orthoMatrix, V2 fuaxResolution, float screenRelSize, AppKeyStates *keyStates);
+easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Font *font, float aspectRatio_yOverX, AppKeyStates *keyStates);
 
 while(running) {
 	easyEditor_startWindow(e)
@@ -156,7 +156,7 @@ static inline void easyEditor_stopInteracting(EasyEditor *e) {
 	e->interactingWith.id = easyEditor_getNullId();
 }
 
-static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, EasyFont_Font *font, Matrix4 orthoMatrix, V2 fuaxResolution, float screenRelSize, AppKeyStates *keyStates) {
+static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, EasyFont_Font *font, float aspectRatio_yOverX, AppKeyStates *keyStates) {
 	e->group = group;
 
 	e->stateCount = 0;
@@ -166,9 +166,14 @@ static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Easy
 
 	easyEditor_stopInteracting(e); //null the interacting with
 
-	e->orthoMatrix = orthoMatrix; 
-	e->fuaxResolution = fuaxResolution;
-	e->screenRelSize = screenRelSize;
+	//NOTE(ollie): This is a default width, so the editor scales idependently of what the game resolution is
+	float fuaxWidth = 1920.0f;
+
+	e->fuaxResolution = v2(fuaxWidth, fuaxWidth*aspectRatio_yOverX);
+
+	e->orthoMatrix = OrthoMatrixToScreen_BottomLeft(e->fuaxResolution.x, e->fuaxResolution.y); 
+	
+	e->screenRelSize = 1;
 	e->keyStates = keyStates;
 	e->isHovering = false;
 	e->isHovering_unstable = false;
@@ -350,12 +355,12 @@ static inline void easyEditor_endWindow(EasyEditor *e) {
 
 	V4 color = COLOR_BLUE;
 
-	if(inBounds(e->keyStates->mouseP, rect, BOUNDS_RECT) && !e->interactingWith.item && w->dockType == EASY_EDITOR_DOCK_NONE) {
+	if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), rect, BOUNDS_RECT) && !e->interactingWith.item && w->dockType == EASY_EDITOR_DOCK_NONE) {
 		color = COLOR_YELLOW;
 		if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 			easyEditor_startInteracting(e, w, lineNumber, fileName, 0, EASY_EDITOR_INTERACT_WINDOW);
 
-			e->interactingWith.dragOffset = v2_minus(e->keyStates->mouseP, w->topCorner);
+			e->interactingWith.dragOffset = v2_minus(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), w->topCorner);
 		} 
 	}
 
@@ -366,12 +371,12 @@ static inline void easyEditor_endWindow(EasyEditor *e) {
 		if(wasReleased(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 			easyEditor_stopInteracting(e);
 		} else {
-			w->topCorner = v2_minus(e->keyStates->mouseP, e->interactingWith.dragOffset);
+			w->topCorner = v2_minus(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), e->interactingWith.dragOffset);
 		}
 	}
 
 
-	if(inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT) || inBounds(e->keyStates->mouseP, rect, BOUNDS_RECT)) {
+	if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT) || inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), rect, BOUNDS_RECT)) {
 		e->isHovering_unstable = true;
 	} 
 	renderDrawRect(rect, 3, color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
@@ -417,7 +422,7 @@ static inline int easyEditor_pushList_(EasyEditor *e, char *name, char **options
 		Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, options[state->dropDownIndex], w->margin, COLOR_BLACK, 1, true, e->screenRelSize);
 		bounds = expandRectf(bounds, v2(EASY_EDITOR_MARGIN, EASY_EDITOR_MARGIN));
 
-		bool hover = inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT);
+		bool hover = inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT);
 		if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, 0)) {
 			e->interactingWith.visitedThisFrame = true;
 			color = COLOR_GREEN;
@@ -462,7 +467,7 @@ static inline int easyEditor_pushList_(EasyEditor *e, char *name, char **options
 			Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, options[optionIndex], w->margin, COLOR_BLACK, 1, true, e->screenRelSize);
 			bounds = expandRectf(bounds, v2(EASY_EDITOR_MARGIN, EASY_EDITOR_MARGIN));
 
-			bool hover = inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT);
+			bool hover = inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT);
 			if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, optionIndex + 1)) { //+ 1 because 0 is taken by the box that can open to display the list 
 				e->interactingWith.visitedThisFrame = true;
 				color = COLOR_GREEN;
@@ -528,7 +533,7 @@ static inline bool easyEditor_pushButton_(EasyEditor *e, char *name, int lineNum
 	w->at.x += getDim(bounds).x;
 
 
-	bool hover = inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT);
+	bool hover = inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT);
 	if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, 0)) {
 		e->interactingWith.visitedThisFrame = true;
 		color = COLOR_GREEN;
@@ -649,7 +654,7 @@ static inline EasyEditor_TextBoxEditInfo easyEditor_renderBoxWithCharacters_(Eas
 
 
 	bounds = expandRectf(bounds, v2(EASY_EDITOR_MARGIN, EASY_EDITOR_MARGIN)); 
-	if(inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT)) {
+	if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT)) {
 		if(!e->interactingWith.item) {
 			color = COLOR_YELLOW;	
 		}
@@ -824,13 +829,13 @@ static inline void easyEditor_pushSlider_(EasyEditor *e, char *name, float *valu
 		if(!isDown(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 			easyEditor_stopInteracting(e);
 		} else {
-			float tVal = (e->keyStates->mouseP.x - w->at.x) / sliderX;
+			float tVal = (easyInput_mouseToResolution(e->keyStates, e->fuaxResolution).x - w->at.x) / sliderX;
 			*value = clamp(min, lerp(min, tVal, max), max);
 		}
 
 		handleColor = COLOR_GREY;
 	} else {
-		if(inBounds(e->keyStates->mouseP, handleRect, BOUNDS_RECT)) {
+		if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), handleRect, BOUNDS_RECT)) {
 			if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 				if(e->interactingWith.item) {
 					easyEditor_stopInteracting(e);	
@@ -926,7 +931,7 @@ static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, i
 
 ///////////////////////***********SET POSITION OF SELECTOR**************////////////////////
 
-			field->coord = v2_minus(e->keyStates->mouseP, center.xy);
+			field->coord = v2_minus(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), center.xy);
 			float length = getLength(field->coord) / radius;
 
 			if(length > 1) { length = 1; }
@@ -935,7 +940,7 @@ static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, i
 			
 		} else {
 			//NOTE: Check whether we are hovering over the button
-			if(inBounds(e->keyStates->mouseP, colorSelectorBounds, BOUNDS_RECT)) {
+			if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), colorSelectorBounds, BOUNDS_RECT)) {
 				selectorColor = COLOR_YELLOW;	
 				
 				if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
@@ -992,7 +997,7 @@ static inline void easyEditor_pushColor_(EasyEditor *e, char *name, V4 *color, i
 	}
 
 
-	if(inBounds(e->keyStates->mouseP, bounds, BOUNDS_RECT)) {
+	if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT)) {
 		if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
 			field->isOpen = !field->isOpen;
 		} 

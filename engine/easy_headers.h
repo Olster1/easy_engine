@@ -16,9 +16,39 @@
 #include "easy_logger.h"
 #include "easy_debug_variables.h"
 #include "easy_time.h"
+
+
+///////////////////////************* From render file, used in the profiler for counting draw calls ************////////////////////
+
+#define EASY_RENDER_SHAPE_TYPE(FUNC)\
+FUNC(SHAPE_RECTANGLE)\
+FUNC(SHAPE_RECTANGLE_GRAD)\
+FUNC(SHAPE_TEXTURE)\
+FUNC(SHAPE_MODEL)\
+FUNC(SHAPE_SKYBOX)\
+FUNC(SHAPE_SKY_QUAD)\
+FUNC(SHAPE_TONE_MAP)\
+FUNC(SHAPE_TERRAIN)\
+FUNC(SHAPE_SHADOW)\
+FUNC(SHAPE_CIRCLE)\
+FUNC(SHAPE_LINE)\
+FUNC(SHAPE_BLUR)\
+FUNC(SHAPE_COLOR_WHEEL)\
+FUNC(SHAPE_MODEL_AS_2D_IMAGE)\
+FUNC(RENDER_SHAPE_COUNT)\
+
+typedef enum {
+	EASY_RENDER_SHAPE_TYPE(ENUM)
+} ShapeType;
+
+static char *EasyRender_ShapeTypeStrings[] = { EASY_RENDER_SHAPE_TYPE(STRING) };
+////////////////////////////////////////////////////////////////////
+
+
+//NOTE(ollie): Above profiler, can't be profiled
+#include "easy_platform.h"
 #include "easy_profiler.h"
 #include "easy.h"
-#include "easy_platform.h"
 
 static char* globalExeBasePath;
 
@@ -29,6 +59,7 @@ static char* globalExeBasePath;
 #include "sdl_audio.h"
 #include "easy_lex.h"
 #include "easy_transform.h"
+#include "easy_color.h"
 #include "easy_render.h"
 
 #include "easy_perlin.h"
@@ -59,8 +90,6 @@ static char* globalExeBasePath;
 #include "easy_string_compile.h"
 // #include "easy_skeleton.h"
 
-
-#include "easy_color.h"
 #include "easy_transition.h"
 
 #include "easy_asset_loader.h"

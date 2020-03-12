@@ -7,7 +7,8 @@ typedef enum {
 	MY_GAME_MODE_END_ROUND,
 	MY_GAME_MODE_INSTRUCTION_CARD,
 	MY_GAME_MODE_START,
-	MY_GAME_MODE_EDIT_LEVEL
+	MY_GAME_MODE_EDIT_LEVEL,
+	MY_GAME_MODE_OVERWORLD
 } MyGameMode;
 
 typedef enum {
@@ -29,6 +30,7 @@ typedef enum {
 	MY_VIEW_ANGLE_LEFT = 3,
 } MyGameState_ViewAngle;
 
+
 typedef struct
 {
 	MyGameMode lastGameMode;
@@ -47,9 +49,12 @@ typedef struct
 
 	///////////////////////************ For editing levels *************////////////////////
 
+	int entityTypeSelected;
 	int currentLevelEditing;
 	void *hotEntity; //Don't have Entity type here, so just have a void *
 	bool holdingEntity;
+
+	void *currentRoomBeingEdited;
 
 
 	///////////////////////************ For the editor level, selecting models from the drop down *************////////////////////

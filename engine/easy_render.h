@@ -3,19 +3,6 @@
 #define NEAR_CLIP_PLANE 0.1f
 #define FAR_CLIP_PLANE 1000.0f
 
-#define PRINT_NUMBER_DRAW_CALLS 0
-
-#if !DESKTOP
-#define GL_TEXTURE_BUFFER                 0x8C2A
-#define RENDER_TEXTURE_BUFFER_ENUM GL_TEXTURE_BUFFER
-#else 
-#define RENDER_TEXTURE_BUFFER_ENUM GL_TEXTURE_BUFFER
-#endif
-
-#if !defined arrayCount
-#define arrayCount(arg) (sizeof(arg) / sizeof(arg[0])) 
-#endif
-
 #if !defined EASY_MATH_H
 #include "easy_math.h"
 #endif
@@ -25,7 +12,7 @@
 
 static float globalTimeSinceStart = 0.0f;
 
-
+//NOTE(ollie): Add the shaders 
 #include "easy_shaders.h"
 
 #define EASY_MAX_LIGHT_COUNT 16
@@ -42,19 +29,20 @@ static float globalTimeSinceStart = 0.0f;
 FUNC(PERSPECTIVE_MATRIX) \
 FUNC(ORTHO_MATRIX) \
 
-static bool globalImmediateModeGraphics = false;
-
-static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
-
-
-static bool DEBUG_drawWireFrame = false;
-static bool DEBUG_drawBounds = false;
 
 typedef enum {
     PROJECTION_TYPE(ENUM)
 } ProjectionType;
 
 static char *ProjectionTypeStrings[] = { PROJECTION_TYPE(STRING) };
+
+static V4 globalSkyColor = v4(0.4f, 0.6f, 2.0f, 1.0f);
+
+static bool DEBUG_drawWireFrame = false;
+static bool DEBUG_drawBounds = false;
+
+
+///////////////////////************* Lights ************////////////////////
 
 typedef enum {
     EASY_LIGHT_DIRECTIONAL,
@@ -84,25 +72,17 @@ typedef struct {
     };
 } EasyLight;
 
-typedef struct {
-    s32 handle;
-    char *name;
-} ShaderVal;
+////////////////////////////////////////////////////////////////////
 
 typedef struct {
     GLuint glProgram;
     GLuint glShaderV;
     GLuint glShaderF;
     
-    ShaderVal uniforms[16];
-    int uniformCount;
-    
-    ShaderVal attribs[16];
-    int attribCount;
-    
     bool valid;
 } RenderProgram;
 
+//NOTE(ollie): Our shaders for the program
 RenderProgram phongProgram;
 RenderProgram glossProgram;
 RenderProgram skyboxProgram;
@@ -115,29 +95,6 @@ RenderProgram colorWheelProgram;
 RenderProgram circleProgram;
 RenderProgram model3dTo2dImageProgram;
 RenderProgram fontProgram;
-
-
-typedef struct {
-    V3 pos;
-    V3 dim; 
-    V3 transformPos;
-    V3 transformDim;
-    Matrix4 pvm;
-} RenderInfo;
-
-RenderInfo calculateRenderInfo(V3 pos, V3 dim, V3 cameraPos, Matrix4 metresToPixels) {
-    DEBUG_TIME_BLOCK()
-    RenderInfo info = {};
-    info.pos = pos;
-    
-    info.pvm = Mat4Mult(metresToPixels, Matrix4_translate(mat4(), v3_scale(-1, cameraPos)));
-    
-    info.transformPos = V4MultMat4(v4(pos.x, pos.y, pos.z, 1), info.pvm).xyz;
-    
-    info.dim = dim;
-    info.transformDim = transformPositionV3(dim, metresToPixels);
-    return info;
-}
 
 FileContents loadShader(char *fileName) {
     DEBUG_TIME_BLOCK()
@@ -170,25 +127,7 @@ static inline Vertex vertex(V3 pos, V3 normal, V2 texUV) {
     return v;
 }
 
-
 #define getOffsetForVertex(attrib) (void *)(&(((Vertex *)(0))->attrib))
-
-typedef enum {
-    SHAPE_RECTANGLE,
-    SHAPE_RECTANGLE_GRAD,
-    SHAPE_TEXTURE,
-    SHAPE_MODEL,
-    SHAPE_SKYBOX,
-    SHAPE_SKY_QUAD,
-    SHAPE_TONE_MAP,
-    SHAPE_TERRAIN,
-    SHAPE_SHADOW,
-    SHAPE_CIRCLE,
-    SHAPE_LINE,
-    SHAPE_BLUR,
-    SHAPE_COLOR_WHEEL,
-    SHAPE_MODEL_AS_2D_IMAGE
-} ShapeType;
 
 typedef enum {
     TEXTURE_FILTER_LINEAR, 
@@ -203,10 +142,13 @@ typedef enum {
 
 typedef struct {
     GLuint vaoHandle;
-    int indexCount; // this is to keep around so opnegl knows how many triangles to draw after the initialization frame
+    int indexCount; // this is to keep around so opengl knows how many triangles to draw after the initialization frame
     bool valid;
     GLuint vboInstanceData; //this is for instancing data
 } VaoHandle;
+
+
+///////////////////////*********** Declare Quad & Cube verticies **************////////////////////
 
 //just has a dim of 1 by 1 and you can rotate, scale etc. by a model matrix
 static Vertex globalQuadPositionData[4] = {
@@ -311,11 +253,17 @@ static unsigned int globalCubeIndicesData[36] =
 static VaoHandle globalCubeVaoHandle = {};
 static VaoHandle globalCubeMapVaoHandle = {};
 
+////////////////////////////////////////////////////////////////////
+
 typedef struct {
     GLuint id;
     int width;
     int height;
     float aspectRatio_h_over_w;
+
+
+    //NOTE(ollie): This is for debugging purposes
+    char *name;
 
     Rect2f uvCoords;
 } Texture;
@@ -485,38 +433,11 @@ Texture loadImage(char *fileName, RenderTextureFilter filter, bool hasMipMaps) {
     
     Texture result = createTextureOnGPU(image.image, image.w, image.h, image.comp, filter, hasMipMaps);
     easy_endImage(&image);
+
+    //NOTE(ollie): Have to free this when we delete a texture
+    result.name = getFileLastPortionWithoutExtension(fileName);
     return result;
 }
-
-
-
-
-// typedef enum {
-//     RENDER_LIGHT_DIRECTIONAL,
-//     RENDER_LIGHT_POINT,
-//     RENDER_LIGHT_FLASHLIGHT
-// } RenderLightType;
-
-// // typedef struct {
-// //     RenderLightType type;
-    
-// //     V3 position; //or direction
-
-// //     V3 ambient;
-// //     V3 diffuse; 
-// //     V3 specular; //Usually black->white mono
-
-// //     //for point light and flash light -> represents the attentuation as you get further away
-// //     float constant;
-// //     float linear;
-// //     float quadratic;
-// //     ///
-
-// //     //for just the flash light -> for the cone of the flash light
-// //     float cutoff;
-// //     float outerCutoff;
-// //     //
-// // } EasyLight;
 
 typedef struct {
     Texture *diffuseMap;
@@ -547,6 +468,7 @@ typedef struct {
     EasyMaterial *material;
 
     Rect3f bounds;
+
 } EasyMesh;
 
 typedef struct {
@@ -591,6 +513,8 @@ static void easy3d_initMaterial(EasyMaterial *mat) {
     mat->specularMap = &globalWhiteTexture;
 }
 
+///////////////////////*********** Shader Packets **************////////////////////
+
 typedef struct {
     int textureCount;
     Texture *textures[4];
@@ -609,6 +533,7 @@ typedef struct {
     float exposure;
 } EasyRender_ToneMap_Bloom_DataPacket;
 
+////////////////////////////////////////////////////////////////////
 
 typedef struct {
     Vertex *triangleData;
@@ -626,6 +551,10 @@ typedef struct {
     Matrix4 mMat;  
     Matrix4 vMat;  //TODOL change to just VM
     Matrix4 pMat; //P of PVM
+
+#if DEVELOPER_MODE
+    char name[128];
+#endif
 
     EasyMaterial *material;
 
@@ -650,11 +579,6 @@ typedef struct {
 } RenderItem;
 
 typedef struct {
-    GLuint tbo; // this is attached to the buffer
-    GLuint buffer;
-} BufferStorage;
-
-typedef struct {
     // GL_TEXTURE_CUBE_MAP_POSITIVE_X //right panel
     // GL_TEXTURE_CUBE_MAP_NEGATIVE_X //left panel
     // GL_TEXTURE_CUBE_MAP_POSITIVE_Y //top panel
@@ -668,8 +592,6 @@ typedef struct {
     //NOTE: This is the handle to the cubemap
     unsigned int gpuHandle;
 } EasySkyBox;
-
-
 
 //Cube Maps have been specified to follow the RenderMan specification 
 //(for whatever reason), and RenderMan assumes the images' origin 
@@ -746,6 +668,8 @@ typedef struct {
 
     float zAt;
 
+    bool testZ;
+
     Matrix4 pMat;
     
     VaoHandle *bufferHandles;
@@ -761,15 +685,14 @@ typedef struct {
     
     int idAt; 
     EasyRenderBatch *batches[RENDER_BATCH_HASH_COUNT];
-    
-    // int lastStorageBufferCount;
-    // BufferStorage lastBufferStorage[512];
 
     //NOTE: you can do a declaritive style of shaders via SetShader
     RenderProgram *currentShader;
     Matrix4 modelTransform;
     Matrix4 viewTransform;
     Matrix4 projectionTransform;
+
+    bool batchOnZ;
 
     bool scissorsEnabled;
     InfiniteAlloc scissorsTests;
@@ -800,12 +723,9 @@ static inline void easyRender_updateSkyQuad(RenderGroup *g, float zoom, float as
     g->cameraToWorldTransform = viewToWorld;
 }
 
-
-
-
 static inline u64 easyRender_getBatchKey(EasyRender_BatchQuery *i) {
     DEBUG_TIME_BLOCK()
-    //TODO(ollie): Handle multiple data packets for the batch 
+
     u64 result = 0;
     result += 19*(intptr_t)i->textureHandle;
     result += 23*(intptr_t)i->bufferHandles;
@@ -817,7 +737,11 @@ static inline u64 easyRender_getBatchKey(EasyRender_BatchQuery *i) {
     result += 3*i->bufferId;
     result += 3*i->depthTest;
     result += 11*i->blendFuncType;
-    result += 11*i->zAt;
+    result += 13*(intptr_t)i->dataPacket;
+
+    if(i->testZ) {
+        result += 11*i->zAt;    
+    }
 
     result %= RENDER_BATCH_HASH_COUNT;
     
@@ -924,6 +848,8 @@ void initRenderGroup(RenderGroup *group) {
     group->skybox = 0;
     group->initied = true;
 
+    group->batchOnZ = true;
+
     group->scissorsEnabled = false;
     group->scissorsTests = initInfinteAlloc(Rect2f);
 
@@ -939,6 +865,7 @@ void initRenderGroup(RenderGroup *group) {
         
         globalWhiteTexture = createTextureOnGPU((unsigned char *)imageData, 32, 32, 4, TEXTURE_FILTER_LINEAR, false);
         globalWhiteTextureInited = true;
+        globalWhiteTexture.name = "white texture";
 
         easy3d_initMaterial(&globalWhiteMaterial);
     } 
@@ -985,50 +912,54 @@ static inline EasyRender_ShaderAndTransformState easyRender_saveShaderAndTransfo
 }
 
 static inline void easyRender_restoreShaderAndTransformState(RenderGroup *g, EasyRender_ShaderAndTransformState *s) {
-
     g->projectionTransform = s->P;
     g->viewTransform = s->V;
     g->modelTransform = s->M;
     g->currentShader = s->shader;
 }
 
-
-
-void setModelTransform(RenderGroup *group, Matrix4 trans) {
+static inline void setModelTransform(RenderGroup *group, Matrix4 trans) {
     group->modelTransform = trans;
 }
 
-void setViewTransform(RenderGroup *group, Matrix4 trans) {
+static inline void setViewTransform(RenderGroup *group, Matrix4 trans) {
     group->viewTransform = trans;
 }
 
-void setProjectionTransform(RenderGroup *group, Matrix4 trans) {
+static inline void setProjectionTransform(RenderGroup *group, Matrix4 trans) {
     group->projectionTransform = trans;
 }
 
-void setFrameBufferId(RenderGroup *group, int bufferId) {
+static inline void setFrameBufferId(RenderGroup *group, int bufferId) {
     group->currentBufferId = bufferId;
     
 }
 
-void renderDisableCulling(RenderGroup *group) {
+static inline void renderDisableCulling(RenderGroup *group) {
     group->cullingEnabled = false;
 }
 
-void renderEnableCulling(RenderGroup *group) {
+static inline void renderEnableCulling(RenderGroup *group) {
     group->cullingEnabled = true;
 }
 
+static inline void renderEnableBatchOnZ(RenderGroup *group) {
+    group->batchOnZ = false;
+}
 
-void renderDisableDepthTest(RenderGroup *group) {
+static inline void renderDisableBatchOnZ(RenderGroup *group) {
+    group->batchOnZ = true;
+}
+
+static inline void renderDisableDepthTest(RenderGroup *group) {
     group->currentDepthTest = false;
 }
 
-void renderEnableDepthTest(RenderGroup *group) {
+static inline void renderEnableDepthTest(RenderGroup *group) {
     group->currentDepthTest = true;
 }
 
-void setBlendFuncType(RenderGroup *group, BlendFuncType type) {
+static inline void setBlendFuncType(RenderGroup *group, BlendFuncType type) {
     group->blendFuncType = type;
 }
 
@@ -1038,7 +969,7 @@ void renderSetViewPort(float x0, float y0, float x1, float y1) {
     glViewport(x0, y0, x1, y1);
 }
 
-RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material, void *dataPacket) {
+static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, char *name, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material, void *dataPacket) {
     DEBUG_TIME_BLOCK()
     assert(group->initied);
         
@@ -1075,9 +1006,14 @@ RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *trian
     query.cullingEnabled = group->cullingEnabled;
     query.bufferHandles = handles;
     query.zAt = zAt;
+    query.testZ = group->batchOnZ;
+    query.dataPacket = dataPacket; 
 
     RenderItem *info = EasyRender_getRenderItem(group, &query);
 
+    #if DEVELOPER_MODE
+    easyPlatform_copyMemory(info->name, name, sizeof(char)*arrayCount(info->name));
+    #endif
     assert(info);
     info->bufferId = group->currentBufferId;
     info->depthTest = group->currentDepthTest;
@@ -1123,6 +1059,8 @@ RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *trian
         assert(info->textureHandle);
         info->textureUVs = texture->uvCoords;
     } 
+
+
 
     info->pMat = pMat;
     info->vMat = vMat;
@@ -1252,108 +1190,6 @@ RenderProgram createRenderProgram(char *vShaderSource, char *fShaderSource) {
     return result;
 }
 
-
-typedef struct {
-    s32 handle;
-    bool valid;
-} ShaderValInfo;
-
-// ShaderValInfo getAttribFromProgram(RenderProgram *prog, char *name) {
-//     ShaderValInfo result = {};
-//     for(int i = 0; i < prog->attribCount; ++i) {
-//         ShaderVal *val = prog->attribs + i;
-//         if(cmpStrNull(name, val->name)) {
-//             result.handle = val->handle;
-//             result.valid = true;
-//             break;
-//         }
-//     }
-//     if(!result.valid) {
-//         printf("%s\n", name);
-//     }
-//     // assert(result.valid);
-//     return result;
-// }
-
-// ShaderValInfo getUniformFromProgram(RenderProgram *prog, char *name) {
-//     ShaderValInfo result = {};
-//     for(int i = 0; i < prog->uniformCount; ++i) {
-//         ShaderVal *val = prog->uniforms + i;
-//         if(cmpStrNull(name, val->name)) {
-//             result.handle = val->handle;
-//             //printf("%d\n", val->handle);
-//             //assert(result.handle > 0);
-//             result.valid = true;
-//             break;
-//         }
-//     }
-//     if(!result.valid) {
-//         printf("%s\n", name);
-//     }
-//     assert(result.valid);
-//     return result;
-// }
-
-GLuint renderGetUniformLocation(RenderProgram *program, char *name) {
-    GLuint result = glGetUniformLocation(program->glProgram, name);
-    renderCheckError();
-    return result;
-}
-
-GLuint renderGetAttribLocation(RenderProgram *program, char *name) {
-    GLuint result = glGetAttribLocation(program->glProgram, name);
-    renderCheckError();
-    return result;
-    
-}
-
-void findAttribsAndUniforms(RenderProgram *prog, char *stream, bool isVertexShader) {
-    DEBUG_TIME_BLOCK()
-    EasyTokenizer tokenizer = lexBeginParsing(stream, EASY_LEX_OPTION_EAT_WHITE_SPACE);
-    bool parsing = true;
-    
-    while(parsing) {
-        char *at = tokenizer.src;
-        EasyToken token = lexGetNextToken(&tokenizer);
-        assert(at != tokenizer.src);
-        switch(token.type) {
-            case TOKEN_NULL_TERMINATOR: {
-                parsing = false;
-            } break;
-            case TOKEN_WORD: {
-                // lexPrintToken(&token);
-                if(stringsMatchNullN("uniform", token.at, token.size)) {
-                    lexGetNextToken(&tokenizer); //the type of it
-                    token = lexGetNextToken(&tokenizer);
-                    char *name = nullTerminate(token.at, token.size);
-                    //printf("Uniform Found: %s\n", name);
-                    assert(prog->uniformCount < arrayCount(prog->uniforms));
-                    ShaderVal *val = prog->uniforms + prog->uniformCount++;
-                    val->name = name;
-                    // printf("%s\n", name);
-                    val->handle = renderGetUniformLocation(prog, name);
-                    
-                }
-                if(stringsMatchNullN("in", token.at, token.size) && isVertexShader) {
-                    lexGetNextToken(&tokenizer); //this is the type
-                    token = lexGetNextToken(&tokenizer);
-                    char *name = nullTerminate(token.at, token.size);
-                    // printf("Attrib Found: %s\n", name);
-                    assert(prog->attribCount < arrayCount(prog->attribs));
-                    ShaderVal *val = prog->attribs + prog->attribCount++;
-                    val->name = name;
-                    val->handle = renderGetAttribLocation(prog, name);
-                    
-                }
-            } break;
-            default: {
-                //don't mind
-            }
-        }
-    }
-}
-
-
 RenderProgram createProgramFromFile(char *vertexShaderFilename, char *fragmentShaderFilename, bool isFileName) {
     DEBUG_TIME_BLOCK()
     char *vertMemory = vertexShaderFilename;
@@ -1463,72 +1299,15 @@ static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 
     return worldP;
 
 }
-
-// static inline V3 screenSpaceToWorldSpaceNew(float FOV_degrees, V2 screenP, V2 resolution, float zAtInViewSpace, Matrix4 cameraToWorld) {
-//     DEBUG_TIME_BLOCK()
-//     V2 screenP_01 = v2(screenP.x / resolution.x, screenP.y / resolution.y);
-//     V2 ndcSpace = v2(lerp(-1, screenP_01.x, 1), lerp(-1, screenP_01.y, 1));
-
-//     float aspectRatio = resolution.x / resolution.y;
-
-//     float FOV_radians = (FOV_degrees*PI32) / 180.0f;
-//     float t = tan(FOV_radians/2);
-//     float r = t*aspectRatio;
-
-
-//     return worldP;
-
-// }
-
-// V2 transformWorldPToScreenP(V2 inputA, float zPos, V2 resolution, V2 screenDim, ProjectionType type) {
-//     Matrix4 projMat;
-//     if(type == ORTHO_MATRIX) {
-//         projMat = OrthoMatrixToScreen(resolution.x, resolution.y);   
-//     } else if(type == PERSPECTIVE_MATRIX) {
-//         projMat = projectionMatrixToScreen(resolution.x, resolution.y);   
-//     }
-//     V4 screenSpace = transformPositionV3ToV4(v2ToV3(inputA, zPos), projMat);
-//     //Homogeneous divide -> does the perspective divide. 
-//     V3 screenSpaceV3 = v3(inputA.x / screenSpace.w, inputA.y / screenSpace.w, screenSpace.z / screenSpace.w);
-    
-//     //Map back onto the screen. 
-//     V2 result = v2_plus(screenSpaceV3.xy, v2_scale(0.5f, resolution));
-//     result.x /= resolution.x;
-//     result.x *= screenDim.x;
-//     result.y /= resolution.y;
-//     result.y *= screenDim.y;
-//     return result;
-// }
-
 void render_enableCullFace() {
-    // glEnable(GL_CULL_FACE); 
-    // glCullFace(GL_BACK);  
-    // glFrontFace(GL_CW);  
-
+    glEnable(GL_CULL_FACE); 
+    glCullFace(GL_BACK);  
+    glFrontFace(GL_CW);  
 }
 
 void render_disableCullFace() {
     glDisable(GL_CULL_FACE);
 }
-// V3 transformScreenPToWorldP(V2 inputA, float zPos, V2 resolution, V2 screenDim, Matrix4 metresToPixels, V3 cameraPos) {
-//     inputA.x /= screenDim.x;
-//     inputA.y /= screenDim.y;
-//     inputA.x *= resolution.x;
-//     inputA.y *= resolution.y;
-    
-//     inputA = v2_minus(inputA, v2_scale(0.5f, resolution));
-    
-//     V4 trans = transformPositionV3ToV4(v2ToV3(inputA, zPos), mat4_transpose(projectionMatrixToScreen(resolution.x, resolution.y)));
-    
-//     inputA.x *= trans.w;
-//     inputA.y *= trans.w;
-    
-//     V3 result = v2ToV3(inputA, zPos);
-//     result = V4MultMat4(v4(result.x, result.y, result.z, 1), mat4_transpose(metresToPixels)).xyz;
-//     result = v3_plus(result, cameraPos);
-    
-//     return result;
-// }
 
 void enableRenderer(int width, int height, Arena *arena) {
     DEBUG_TIME_BLOCK()
@@ -1607,18 +1386,6 @@ void enableRenderer(int width, int height, Arena *arena) {
     ////
 }
 
-
-//alpha is at 24 place
-static inline V4 hexARGBTo01Color(unsigned int color) {
-    V4 result = {};
-    
-    result.x = (float)((color >> 16) & 0xFF) / 255.0f; //red
-    result.z = (float)((color >> 0) & 0xFF) / 255.0f;
-    result.y = (float)((color >> 8) & 0xFF) / 255.0f;
-    result.w = (float)((color >> 24) & 0xFF) / 255.0f;
-    return result;
-}
-
 typedef enum {
     RENDER_TEXTURE_DEFAULT = 0 << 0,
     RENDER_TEXTURE_HDR = 1 << 0,
@@ -1693,11 +1460,7 @@ typedef struct {
 
 } FrameBuffer;
 
-
-
-
-
-void renderReadPixels(u32 bufferId, int x0, int y0,
+static void renderReadPixels(u32 bufferId, int x0, int y0,
                       int x1,
                       int y1,
                       u32 layout,
@@ -1713,15 +1476,22 @@ void renderReadPixels(u32 bufferId, int x0, int y0,
                  stream);
 }
 
-void renderDeleteTextures(int count, GLuint *handle) {
+static inline void renderDeleteTextures(int count, GLuint *handle) {
 	glDeleteTextures(1, handle);
 }
 
-void renderDeleteFramebuffers(int count, GLuint *handle) {
+
+static inline void renderDeleteTexture(Texture *texture) {
+    easyPlatform_freeMemory(texture->name);
+    renderDeleteTextures(1, &texture->id);
+}
+
+
+static inline void renderDeleteFramebuffers(int count, GLuint *handle) {
 	glDeleteFramebuffers(1, handle);
 }
 
-void deleteFrameBuffer(FrameBuffer *frameBuffer) {
+static inline void deleteFrameBuffer(FrameBuffer *frameBuffer) {
     if(frameBuffer->depthId != -1) {
         renderDeleteTextures(1, &frameBuffer->depthId);
     }
@@ -1733,8 +1503,7 @@ void deleteFrameBuffer(FrameBuffer *frameBuffer) {
     }
 }
 
-
-FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuffers) {  
+static FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuffers) {  
     DEBUG_TIME_BLOCK() 
     assert(numColorBuffers <= RENDER_MAX_COLOR_ATTACHMENTS);
     GLuint frameBufferHandle = 1;
@@ -1797,7 +1566,7 @@ FrameBuffer createFrameBuffer(int width, int height, int flags, int numColorBuff
 }
 
 
-FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int sampleCount) {
+static FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int sampleCount) {
     DEBUG_TIME_BLOCK()
 #if !DESKTOP
     FrameBuffer result = createFrameBuffer(width, height, flags);
@@ -1848,7 +1617,7 @@ FrameBuffer createFrameBufferMultiSample(int width, int height, int flags, int s
     return result;
 }
 
-static inline void clearBufferAndBind(GLuint frameBufferId, V4 color, int flags, RenderGroup *g) {
+static void clearBufferAndBind(GLuint frameBufferId, V4 color, int flags, RenderGroup *g) {
     DEBUG_TIME_BLOCK()
     glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)frameBufferId); 
     
@@ -1883,11 +1652,6 @@ static inline void renderSetFrameBuffer(GLuint frameBufferId, RenderGroup *g) {
         setFrameBufferId(g, frameBufferId);
     }
 }
-
-typedef enum {
-    DRAWCALL_SINGLE,
-    DRAWCALL_INSTANCED,   
-} DrawCallType;
 
 static inline void addInstanceAttribForMatrix(int index, GLuint attribLoc, int numOfFloats, size_t offsetForStruct, size_t offsetInStruct, int divisor) {
     DEBUG_TIME_BLOCK()
@@ -1926,18 +1690,18 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
 static void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
     DEBUG_TIME_BLOCK()
     float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
-    pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, 0);
+    pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, "Cube", SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, 0);
 }
 
 static void renderDrawSprite(RenderGroup *group, Texture *sprite, V4 colorTint) {
     DEBUG_TIME_BLOCK()
     //TODO: @speed this is probably pretty expensive to do for every sprite?
     float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
-    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_TEXTURE, sprite, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, 0, 0);
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, sprite->name, SHAPE_TEXTURE, sprite, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, 0, 0);
 }
 
 static void renderDrawQuad(RenderGroup *group, V4 colorTint) {
-    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_TEXTURE, &globalWhiteTexture, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], 0, 0);
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, "Quad", SHAPE_TEXTURE, &globalWhiteTexture, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], 0, 0);
 }
 
 #if DEVELOPER_MODE
@@ -2010,11 +1774,19 @@ static inline void renderDrawCubeOutline(RenderGroup *g, Rect3f b, V4 color) {
 }
 #endif
 
-static inline void renderMesh(RenderGroup *group, EasyMesh *mesh, V4 colorTint, EasyMaterial *material) {  
+static inline void renderMesh(RenderGroup *group, EasyMesh *mesh, V4 colorTint, EasyMaterial *material, char *modelName) {  
     //TODO: @speed this is probably pretty expensive to do for every sprite?
-    float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
+    float sortZ = 0;//Mat4Mult(group->viewTransform, group->modelTransform).val[14];
 
-    pushRenderItem(&mesh->vaoHandle, group, 0, 0, 0, mesh->vaoHandle.indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, 0);
+    char strName[256];
+
+#if DEVELOPER_MODE
+    char *formatString = "%s_%s";
+    s32 stringSize = snprintf(0, 0, formatString, modelName, material->name) + 1;
+    snprintf(strName, stringSize, formatString, modelName, material->name);
+#endif
+
+    pushRenderItem(&mesh->vaoHandle, group, 0, 0, 0, mesh->vaoHandle.indexCount, group->currentShader, strName, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, 0);
 #if DEVELOPER_MODE
     if(DEBUG_drawBounds) {
         renderDrawCubeOutline(group, mesh->bounds, COLOR_PINK);  
@@ -2027,7 +1799,7 @@ static inline void renderTerrain(RenderGroup *group, VaoHandle *bufferHandle, V4
     //TODO: @speed this is probably pretty expensive to do for every sprite?
     float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
 
-    RenderItem * i = pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, &terrainProgram, SHAPE_TERRAIN, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, packet); 
+    RenderItem * i = pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, &terrainProgram, "Terrain", SHAPE_TERRAIN, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, packet); 
 }
 
 static inline void renderModel(RenderGroup *group, EasyModel *model, V4 colorTint) {  
@@ -2036,9 +1808,17 @@ static inline void renderModel(RenderGroup *group, EasyModel *model, V4 colorTin
         VaoHandle *bufferHandle = &thisMesh->vaoHandle;
         
         //TODO: @speed this is probably pretty expensive to do for every sprite?
-        float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
+        float sortZ = 0;//Mat4Mult(group->viewTransform, group->modelTransform).val[14];
 
-        pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, thisMesh->material, 0);
+        char strName[256];
+        
+    #if DEVELOPER_MODE
+        char *formatString = "%s_%s";
+        s32 stringSize = snprintf(0, 0, formatString, model->name, thisMesh->material->name) + 1;
+        snprintf(strName, stringSize, formatString, model->name, thisMesh->material->name);
+    #endif
+
+        pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, strName, SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, thisMesh->material, 0);
 #if DEVELOPER_MODE
         if(DEBUG_drawBounds) {
             renderDrawCubeOutline(group, thisMesh->bounds, COLOR_PINK);  
@@ -2078,11 +1858,18 @@ static inline void easyRender_renderModelAs2dImage(RenderGroup *group, Rect2f sc
         VaoHandle *bufferHandle = &thisMesh->vaoHandle;
         
         //TODO: @speed this is probably pretty expensive to do for every sprite?
-        float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14]; 
+        float sortZ = 0;//Mat4Mult(group->viewTransform, group->modelTransform).val[14]; 
 
-       
 
-        pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, SHAPE_MODEL_AS_2D_IMAGE, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, thisMesh->material, dataPacket);
+        char strName[256];
+        
+    #if DEVELOPER_MODE
+        char *formatString = "%s_%s";
+        s32 stringSize = snprintf(0, 0, formatString, model->name, thisMesh->material->name) + 1;
+        snprintf(strName, stringSize, formatString, model->name, thisMesh->material->name);
+    #endif
+
+        pushRenderItem(bufferHandle, group, 0, 0, 0, bufferHandle->indexCount, group->currentShader, strName, SHAPE_MODEL_AS_2D_IMAGE, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, thisMesh->material, dataPacket);
     }
 
 }
@@ -2124,11 +1911,6 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
         //these can also be retrieved before hand to speed up the process!!!
         GLint vertexAttrib = VERTEX_ATTRIB_LOCATION;
         renderCheckError();
-        // ShaderValInfo texUV_val= 2;
-        // renderCheckError();
-
-        // ShaderValInfo normals = 1;
-        // renderCheckError();
         
         // if(texUV_val.valid) {
             
@@ -2168,6 +1950,12 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
         renderCheckError();
         
         size_t offsetForStruct = sizeof(float)*(16+16+4+4); 
+
+
+        //NOTE(ollie): We preload some data to the buffer so it gets created I guess? I'm not sure but 
+        //NOTE(ollie): this is how Ryan was doing it in Dungeoneer
+        //NOTE(ollie): But didn't work :( 
+        // glBufferData(GL_ARRAY_BUFFER, offsetForStruct, 0, GL_DYNAMIC_DRAW);
         
         //matrix plus vector4 plus vector4
         addInstancingAttrib (mAttrib, 16, offsetForStruct, 0, 1);
@@ -2182,7 +1970,8 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
 
         addInstancingAttrib (UVATLAS_ATTRIB_LOCATION, 4, offsetForStruct, sizeof(float)*36, 1);
         renderCheckError();
-        
+
+
         assert(offsetForStruct == sizeof(float)*40);
         
         glBindVertexArray(0);
@@ -2210,7 +1999,9 @@ void easy_BindTexture(char *uniformName, int slotId, GLint textureId, RenderProg
     renderCheckError();
 }
 
-static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, int colorAttachementId) {
+#define easyRender_blurBuffer_cachedBuffer(src, dest, cachedBuffer, colorAttachementId) easyRender_blurBuffer_(src, dest, cachedBuffer, colorAttachementId)
+#define easyRender_blurBuffer(src, dest, colorAttachementId) easyRender_blurBuffer_(src, dest, 0, colorAttachementId)
+static void easyRender_blurBuffer_(FrameBuffer *src, FrameBuffer *dest, FrameBuffer *cachedBuffer, int colorAttachementId) {
     DEBUG_TIME_BLOCK()
     int blurCount = 10;
     float horizontal = 0.0f;
@@ -2226,8 +2017,15 @@ static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, in
 
     glDepthFunc(GL_ALWAYS);
     
-    ////if the buffer is goim to blurred we can cache this
-    FrameBuffer tempBuffer =  createFrameBuffer(src->width, src->height, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+    FrameBuffer *tempBuffer = cachedBuffer;
+    FrameBuffer tempBuffer_;
+
+    if(!cachedBuffer) {
+        //NOTE(ollie): Create the buffer then assign it to the pointer
+        //NOTE(ollie): This is expensive so we want to create the buffer just once at startup 
+        tempBuffer_ =  createFrameBuffer(src->width, src->height, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+        tempBuffer = &tempBuffer_;
+    }
 
     for (int i = 0; i < blurCount; ++i)
     {
@@ -2235,11 +2033,11 @@ static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, in
         if(i % 2) {
             glBindFramebuffer(GL_FRAMEBUFFER, dest->bufferId); 
             renderCheckError();
-            texId = tempBuffer.textureIds[0];
+            texId = tempBuffer->textureIds[0];
             horizontal = 1.0f;
         } else {
             assert(i != (blurCount - 1));
-            glBindFramebuffer(GL_FRAMEBUFFER, tempBuffer.bufferId); 
+            glBindFramebuffer(GL_FRAMEBUFFER, tempBuffer->bufferId); 
             renderCheckError();
             if(i == 0) {
                 //first time we get the texture from the src
@@ -2269,8 +2067,10 @@ static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, in
     renderCheckError();
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0); 
-    deleteFrameBuffer(&tempBuffer);
 
+    if(!cachedBuffer) {
+        deleteFrameBuffer(tempBuffer);
+    }
 
 #endif
 
@@ -2278,7 +2078,7 @@ static inline void easyRender_blurBuffer(FrameBuffer *src, FrameBuffer *dest, in
 
 
 static V2 globalBlurDir = {};
-void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, DrawCallType drawCallType, int instanceCount, EasyMaterial *material, RenderGroup *group, Matrix4 *projectionTransform, void *dataPacket) {
+void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u32 textureId, int instanceCount, EasyMaterial *material, RenderGroup *group, Matrix4 *projectionTransform, void *dataPacket) {
     DEBUG_TIME_BLOCK()
     assert(bufferHandles);
     assert(bufferHandles->valid);
@@ -2504,22 +2304,16 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
 
     } 
     
-    if(drawCallType == DRAWCALL_SINGLE) {
-        glDrawElements(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0); 
-        renderCheckError();
-    } else if(drawCallType == DRAWCALL_INSTANCED) {
-        
+    glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
+    renderCheckError();
+#if DEVELOPER_MODE
+    if(DEBUG_drawWireFrame) {
+        glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
         glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
         renderCheckError();
-#if DEVELOPER_MODE
-        if(DEBUG_drawWireFrame) {
-            glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-            glDrawElementsInstanced(GL_TRIANGLES, bufferHandles->indexCount, GL_UNSIGNED_INT, 0, instanceCount); 
-            renderCheckError();
-            glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );    
-        }
-#endif
+        glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );    
     }
+#endif
     
     glBindVertexArray(0);
 
@@ -2528,8 +2322,6 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
     renderCheckError();
     
 }
-
-
 void renderDrawBillBoardQuad(RenderGroup *group, EasyMaterial *material, V4 colorTint, V3 scale, V3 upAxis, V3 pos, V3 eyePos) {
     DEBUG_TIME_BLOCK()
     V3 direction = v3_minus(eyePos, pos);
@@ -2538,7 +2330,7 @@ void renderDrawBillBoardQuad(RenderGroup *group, EasyMaterial *material, V4 colo
     V3 zAxis = normalizeV3(v3_crossProduct(rightVec, upAxis));
 
     Matrix4 mT = mat4_xyzwAxis(v3_scale(scale.x, rightVec), v3_scale(scale.y, upAxis), v3_scale(scale.z, zAxis), pos);
-    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, SHAPE_MODEL, 0, mT, group->viewTransform, group->projectionTransform, colorTint, pos.z, material, 0);
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, material->name, SHAPE_MODEL, 0, mT, group->viewTransform, group->projectionTransform, colorTint, pos.z, material, 0);
 }
 
 #define renderDrawRectOutlineCenterDim(center, dim, color, rot, offsetTransform, projectionMatrix) renderDrawRectOutlineCenterDim_(center, dim, color, rot, offsetTransform, projectionMatrix, 0.1f)
@@ -2593,7 +2385,7 @@ void renderDrawRectOutlineCenterDim_(V3 center, V2 dim, V4 color, float rot, Mat
                 0,  0,  1,  0,
                 offset.x, offset.y, 0,  1
             }};
-        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), &textureProgram, SHAPE_RECTANGLE, 0, rotationMat1, rotationMat, projectionMatrix, color, center.z, 0, 0);
+        pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), &textureProgram, "outline rectangle", SHAPE_RECTANGLE, 0, rotationMat1, rotationMat, projectionMatrix, color, center.z, 0, 0);
     }
 }
 
@@ -2602,7 +2394,7 @@ void renderDrawRectOutlineRect2f(Rect2f rect, V4 color, float rot, Matrix4 offse
 }
 
 //
-RenderItem *renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 offsetTransform, Texture *texture, ShapeType type, RenderProgram *program, Matrix4 viewMatrix, Matrix4 projectionMatrix, void *dataPacket) {
+RenderItem *renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, Matrix4 offsetTransform, Texture *texture, ShapeType type, RenderProgram *program, Matrix4 viewMatrix, Matrix4 projectionMatrix, void *dataPacket, char *name) {
     DEBUG_TIME_BLOCK()
     RenderItem *result = 0;
     float a1 = cos(rot);
@@ -2618,52 +2410,40 @@ RenderItem *renderDrawRectCenterDim_(V3 center, V2 dim, V4 *colors, float rot, M
             deltaP.x, deltaP.y, deltaP.z,  1
         }};
     
-    
-    if(globalImmediateModeGraphics) {
-    } else {
-        int indicesCount = arrayCount(globalQuadIndicesData);
-        result = pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), 
-                       globalQuadIndicesData, indicesCount, program, type, texture, rotationMat,
-                       viewMatrix, projectionMatrix, colors[0], center.z, 0, dataPacket);
-    }   
+    int indicesCount = arrayCount(globalQuadIndicesData);
+    result = pushRenderItem(&globalQuadVaoHandle, globalRenderGroup, globalQuadPositionData, arrayCount(globalQuadPositionData), 
+                   globalQuadIndicesData, indicesCount, program, name, type, texture, rotationMat,
+                   viewMatrix, projectionMatrix, colors[0], center.z, 0, dataPacket);
 
     return result; 
 }
 
 void renderDrawRectCenterDim(V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 projectionMatrix) {
     V4 colors[4] = {color, color, color, color}; 
-    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, 0, SHAPE_RECTANGLE, &textureProgram, mat4(), projectionMatrix, 0);
+    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, 0, SHAPE_RECTANGLE, &textureProgram, mat4(), projectionMatrix, 0, "Rect center dim");
 }
 
 void renderDrawRect(Rect2f rect, float zValue, V4 color, float rot, Matrix4 offsetTransform, Matrix4 projectionMatrix) {
     V4 colors[4] = {color, color, color, color}; 
     renderDrawRectCenterDim_(v2ToV3(getCenter(rect), zValue), getDim(rect), colors, rot, 
-                             offsetTransform, 0, SHAPE_RECTANGLE, &textureProgram, mat4(), projectionMatrix, 0);
+                             offsetTransform, 0, SHAPE_RECTANGLE, &textureProgram, mat4(), projectionMatrix, 0, "Rect");
 }
 
 void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
     V4 colors[4] = {color, color, color, color}; 
-    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix, 0);
+    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram, viewMatrix, projectionMatrix, 0, texture->name);
 }
 
 static void renderGlyphCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
     V4 colors[4] = {color, color, color, color}; 
-    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &fontProgram, viewMatrix, projectionMatrix, 0);
+    renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &fontProgram, viewMatrix, projectionMatrix, 0, texture->name);
 }
 
 void renderColorWheel(V3 center, V2 dim, EasyRender_ColorWheel_DataPacket *packet, Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix) {
     V4 colors[4]; 
-    RenderItem * i = renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix, packet);
+    RenderItem * i = renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix, packet, "color wheel");
 
 }
-
-
-// void renderTextureCentreDim(Texture *texture, V3 center, V2 dim, V4 color, float rot) {
-//     V4 colors[4] = {color, color, color, color}; 
-//     //Matrix4 offsetTransform, Matrix4 viewMatrix, Matrix4 projectionMatrix
-//     renderDrawRectCenterDim_(center, dim, colors, rot, offsetTransform, texture, SHAPE_TEXTURE, &textureProgram);
-// }
-
 void renderDeleteVaoHandle(VaoHandle *handles) {
     DEBUG_TIME_BLOCK()
     glDeleteVertexArrays(1, &handles->vaoHandle);
@@ -2673,29 +2453,6 @@ void renderDeleteVaoHandle(VaoHandle *handles) {
     handles->valid = false;
 }
 
-BufferStorage createBufferStorage(InfiniteAlloc *array) {
-    DEBUG_TIME_BLOCK()
-    BufferStorage result = {};
-    glGenBuffers(1, &result.tbo);
-    renderCheckError();
-    // printf("TBO: %d\n", result.tbo);
-    glBindBuffer(RENDER_TEXTURE_BUFFER_ENUM, result.tbo);
-    renderCheckError();
-    glBufferData(RENDER_TEXTURE_BUFFER_ENUM, array->sizeOfMember*array->count, array->memory, GL_DYNAMIC_DRAW);
-    renderCheckError();
-    
-    glGenTextures(1, &result.buffer);
-    renderCheckError();
-    glBindTexture(RENDER_TEXTURE_BUFFER_ENUM, result.buffer);
-    renderCheckError();
-    
-    glTexBuffer(RENDER_TEXTURE_BUFFER_ENUM, GL_RGBA32F, result.tbo);
-    renderCheckError();
-    
-    return result;
-}
-
-
 // // Instancing data
 // typedef struct {
 //     float pvm[16];
@@ -2704,99 +2461,22 @@ BufferStorage createBufferStorage(InfiniteAlloc *array) {
 // } Easy_InstancePacket;
 
 
-
 //This is using vertex attribs
-void createBufferStorage2(VaoHandle *vao, InfiniteAlloc *array, RenderProgram *program, bool hasUvs) {
+void easyRender_updateInstanceData(VaoHandle *vao, InfiniteAlloc *array, RenderProgram *program, bool hasUvs) {
     glBindVertexArray(vao->vaoHandle);
     renderCheckError();
     glBindBuffer(GL_ARRAY_BUFFER, vao->vboInstanceData);
     renderCheckError();
     
     //send the data to GPU. glBufferData deletes the old one
+    //NOTE(ollie): We were using glBufferData which deletes the old buffer and resends the create a new buffer, but 
+    //NOTE(ollie): I saw on Dungeoneer code using glsubbufferdata is faster because it doesn't have to delete it.
+    // glBufferSubData(GL_ARRAY_BUFFER, 0, array->sizeOfMember*array->count, array->memory);
     glBufferData(GL_ARRAY_BUFFER, array->sizeOfMember*array->count, array->memory, GL_DYNAMIC_DRAW);
     renderCheckError();
     
     glBindVertexArray(0);
     renderCheckError();
-}
-
-void deleteBufferStorage(BufferStorage *store) {
-    // printf("buffer id: %d\n", store->buffer);
-    glDeleteTextures(1, &store->buffer);
-    renderCheckError();
-    
-    // printf("tbo id: %d\n", store->tbo);
-    glDeleteBuffers(1, &store->tbo);
-    renderCheckError();
-}
-
-int cmpRenderItemFunc (const void * a, const void * b) {
-    DEBUG_TIME_BLOCK()
-    RenderItem *itemA = (RenderItem *)a;
-    RenderItem *itemB = (RenderItem *)b;
-    bool result = true;
-    
-    //if(itemA->zAt == itemB->zAt) {
-        if(itemA->textureHandle == itemB->textureHandle) {
-            if(itemA->bufferHandles == itemB->bufferHandles) {
-                if(itemA->program == itemB->program) {
-                    if(itemA->material == itemB->material) {
-                        if(itemA->scissorId == itemB->scissorId) {
-                            if(itemA->cullingEnabled == itemB->cullingEnabled) {
-                                result = false;    
-                            } else {
-                                result = itemA->cullingEnabled != itemB->cullingEnabled;
-                            }
-                        } else {
-                             result = itemA->scissorId > itemB->scissorId;
-                        }
-                    } else {
-                        result = (intptr_t)itemA->material < (intptr_t)itemB->material;
-                    }
-                    
-                } else {
-                    result = (intptr_t)itemA->program > (intptr_t)itemB->program;
-                }
-            } else {
-                result = (intptr_t)itemA->bufferHandles > (intptr_t)itemB->bufferHandles;                
-            }
-        } else {
-            result = (intptr_t)itemA->textureHandle > (intptr_t)itemB->textureHandle;    
-        }
-    // } else {
-    //     result = itemA->zAt < itemB->zAt;
-    // }
-    
-    return result;
-}
-
-void sortItems(InfiniteAlloc *items) {
-    DEBUG_TIME_BLOCK()
-    //this is a bubble sort. I think this is typically a bit slow. 
-    bool sorted = false;
-    int max = (items->count - 1);
-    for (int index = 0; index < max;) {
-        bool incrementIndex = true;
-        RenderItem *infoA = (RenderItem *)getElementFromAlloc_(items, index);
-        RenderItem *infoB = (RenderItem *)getElementFromAlloc_(items, index + 1);
-        assert(infoA && infoB);
-        bool swap = cmpRenderItemFunc(infoA, infoB);
-        if(swap) {
-            RenderItem temp = *infoA;
-            *infoA = *infoB;
-            *infoB = temp;
-            sorted = true;
-        }   
-        if(index == (max - 1) && sorted) {
-            index = 0; 
-            sorted = false;
-            incrementIndex = false;
-        }
-        
-        if(incrementIndex) {
-            index++;
-        }
-    }
 }
 
 int cmpDepthfunc (const void * a, const void * b) {
@@ -2846,7 +2526,7 @@ void beginRenderGroupForFrame(RenderGroup *group) {
     
 }
 
-static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items) {
+static inline void easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items) {
     DEBUG_TIME_BLOCK()
     int drawCallCount = 0;
     if(items->count > 0) {
@@ -2932,27 +2612,26 @@ static inline int easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items)
             
         initVao(info->bufferHandles, info->triangleData, info->triCount, info->indicesData, info->indexCount);
     
-        createBufferStorage2(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
+        easyRender_updateInstanceData(info->bufferHandles, &allInstanceData, info->program, info->textureHandle);
 
         {
-            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, DRAWCALL_INSTANCED, items->count, info->material, group, &info->pMat, info->dataPacket_);
-            drawCallCount++;
+            drawVao(info->bufferHandles, info->program, info->type, info->textureHandle, items->count, info->material, group, &info->pMat, info->dataPacket_);
+#if DEVELOPER_MODE 
+            easyProfiler_addDrawCount(1, (u32)info->type, info->name);
+#endif
             
         }
         
         releaseInfiniteAlloc(&allInstanceData);
     }
-
-    #if DEVELOPER_MODE 
-    DEBUG_globalEasyEngineProfilerState->frames[DEBUG_globalEasyEngineProfilerState->frameAt].drawCount += drawCallCount;
-    #endif
-    return drawCallCount;
 }
 
 static inline void easyRender_EndBatch(EasyRenderBatch *b) {
     DEBUG_TIME_BLOCK()
     assert(b->items.sizeOfMember > 0);
-    memset(b->items.memory, 0, b->items.totalCount*b->items.sizeOfMember);
+    if(b->items.count > 0) {
+        memset(b->items.memory, 0, b->items.count*b->items.sizeOfMember);
+    }
     b->items.count = 0;
 }
 
@@ -2961,7 +2640,7 @@ static inline void easyRender_EndBatch(EasyRenderBatch *b) {
 void renderBlitQuad(RenderGroup *group, void *packet) {
     DEBUG_TIME_BLOCK()
     //TODO This is a hack. 
-    RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, SHAPE_TONE_MAP, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0, packet);
+    RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, "Blit Quad", SHAPE_TONE_MAP, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0, packet);
 }
 
 typedef enum {
@@ -2972,9 +2651,6 @@ typedef enum {
 
 void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
     DEBUG_TIME_BLOCK()
-    // sortItems(group);
-
-    int drawCallCount = 0;
 
     render_enableCullFace();
     
@@ -2983,7 +2659,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
             if(group->batches[i]) {
                 EasyRenderBatch *b = group->batches[i];
                 while(b) {
-                    drawCallCount += easyRender_DrawBatch(group, &b->items);
+                    easyRender_DrawBatch(group, &b->items);
                     easyRender_EndBatch(b);
                     
                     b = b->next;    
@@ -3023,7 +2699,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
         for(int i = 0; i < renderBatches.count; ++i) {
             EasyRenderBatch *b = *((EasyRenderBatch **)getElementFromAlloc_(&renderBatches, i));
             if(b) {
-                drawCallCount += easyRender_DrawBatch(group, &b->items);
+                easyRender_DrawBatch(group, &b->items);
                 easyRender_EndBatch(b);
             }
         }
@@ -3045,20 +2721,17 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
         if(!globalCubeMapVaoHandle.valid) {
             initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData));
         }
-        drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, DRAWCALL_INSTANCED, 1, 0, group, &group->projectionTransform, 0);
+        drawVao(&globalCubeMapVaoHandle, &skyboxProgram, SHAPE_SKYBOX, group->skybox->gpuHandle, 1, 0, group, &group->projectionTransform, 0);
 #else
         if(!globalFullscreenQuadVaoHandle.valid) {
             initVao(&globalFullscreenQuadVaoHandle, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData));
         }
-        drawVao(&globalFullscreenQuadVaoHandle, &skyQuadProgram, SHAPE_SKY_QUAD, 0, DRAWCALL_INSTANCED, 1, 0, group, &group->projectionTransform, 0);
+        drawVao(&globalFullscreenQuadVaoHandle, &skyQuadProgram, SHAPE_SKY_QUAD, 0, 1, 0, group, &group->projectionTransform, 0);
 #endif
         glDepthFunc(GL_LESS);
     }
 
     
-#if PRINT_NUMBER_DRAW_CALLS
-    printf("NUMBER OF DRAW CALLS: %d\n", drawCallCount);
-#endif
     group->idAt = 0;
     group->scissorsTests.count = 0;
     group->scissorsEnabled = false;

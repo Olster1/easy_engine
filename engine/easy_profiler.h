@@ -29,6 +29,31 @@ typedef struct {
 	u64 beginTimeStamp;
 } EasyProfile_TimeStamp;
 
+typedef struct {
+	char stringId[256];
+	u32 drawCount;
+} EasyProfiler_DrawCountWithStringId;
+
+typedef struct {
+	//NOTE(ollie): This is to uniquely identify the models to see whos drawing more than one batch
+	u32 uniqueModelCount;
+	EasyProfiler_DrawCountWithStringId ids[256];
+	/////
+
+	//NOTE(ollie): The total draw count for this SHAPE_TYPE
+	u32 drawCount;
+
+	//NOTE(ollie): This is for when we're drawing it, we can open it and see the string ids 
+	bool isOpened;
+
+	//NOTE(ollie): This is when we're drawing it & want to scroll to see all the data. 
+	bool holdingScrollBar;
+
+	//NOTE(ollie): Where the scroll handle is when we draw it, bewtween 0 & 1
+	//NOTE(ollie): From top of screen (0) down to (1) 
+	float scrollAt_01;
+} EasyProfiler_DrawCountInfo;
+
 #define EASY_PROFILER_SAMPLES_INCREMENT 4096
 
 typedef struct {
@@ -45,7 +70,7 @@ typedef struct {
 	s64 beginTimeCountForFrame; //From query performance counter
 	float millisecondsForFrame;
 
-	u32 drawCount;
+	EasyProfiler_DrawCountInfo drawCounts[RENDER_SHAPE_COUNT];
 	
 } EasyProfile_FrameData;
 
@@ -65,7 +90,7 @@ typedef struct {
 static inline EasyProfiler_State *EasyProfiler_initProfilerState() {
 	//NOTE(ollie): This is a pretty massive struct, not sure what the consequences are 
 	u32 bytes = sizeof(EasyProfiler_State);
-	EasyProfiler_State *result = (EasyProfiler_State *)malloc(bytes);
+	EasyProfiler_State *result = (EasyProfiler_State *)easyPlatform_allocateMemory(bytes, EASY_PLATFORM_MEMORY_NONE);
 
 	//NOTE(ollie): Clear the array to zero. Note: the data * in each frame has to be zero & datacount has to be zero
 	memset(result, 0, bytes);
@@ -85,7 +110,6 @@ static inline EasyProfiler_State *EasyProfiler_initProfilerState() {
 	return result;
 }
 
-static EasyProfiler_State DEBUG_globalEasyEngineProfilerState_ = {};
 static EasyProfiler_State *DEBUG_globalEasyEngineProfilerState;// = &DEBUG_globalEasyEngineProfilerState_;
 
 ////////////////////////////////////////////////////////////////////
@@ -247,8 +271,56 @@ static inline void EasyProfile_MoveToNextFrame(bool hotKeyWasPressed) {
 		frameData->countsForFrame = 0;
 		frameData->beginTimeCountForFrame = 0;
 		frameData->millisecondsForFrame = 0;
-		frameData->drawCount = 0;
-		
+
+		//NOTE(ollie): Clear out draw counts
+		for(int i = 0; i < arrayCount(frameData->drawCounts); ++i) {
+			EasyProfiler_DrawCountInfo *info = &frameData->drawCounts[i];
+
+			info->drawCount = 0;
+			info->isOpened = false;
+			info->holdingScrollBar = false;
+			info->scrollAt_01 = 0;
+
+			for(int stringIdIndex = 0; stringIdIndex < info->uniqueModelCount; ++stringIdIndex) {
+				info->ids[stringIdIndex].drawCount = 0;
+			}
+			info->uniqueModelCount = 0;
+		}
+	}
+}
+
+static inline void easyProfiler_addDrawCount(u32 drawCount, u32 shapeTypeIndexIntoArray, char *stringId) {
+	if(!DEBUG_global_ProfilePaused) {
+		EasyProfiler_DrawCountInfo *info = &DEBUG_globalEasyEngineProfilerState->frames[DEBUG_globalEasyEngineProfilerState->frameAt].drawCounts[shapeTypeIndexIntoArray];
+
+		//NOTE(ollie): Increment overall drawCount
+		info->drawCount += drawCount;
+
+		//NOTE(ollie): Look for the string and add the draw count to it
+		bool found = false;
+		for(int i = 0; i < info->uniqueModelCount && !found; ++i) {
+			EasyProfiler_DrawCountWithStringId *id = &info->ids[i];
+			if(cmpStrNull(id->stringId, stringId)) {
+				id->drawCount += drawCount;
+				found = true;
+				break;
+			}
+		}
+
+		//NOTE(ollie): Not found, so create a new id
+		if(!found) {
+			if(info->uniqueModelCount < arrayCount(info->ids)) {
+				//NOTE(ollie): New one so fill out it's info
+				EasyProfiler_DrawCountWithStringId *id = &info->ids[info->uniqueModelCount++];
+				id->drawCount += drawCount;
+	#if DEVELOPER_MODE
+				easyPlatform_copyMemory(id->stringId, stringId, sizeof(char)*arrayCount(id->stringId));
+	#endif
+			} else {
+				//NOTE(ollie): Buffer to small
+				assert(!"overflow buffer");
+			}
+		}
 	}
 }
 

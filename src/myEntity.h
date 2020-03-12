@@ -35,6 +35,28 @@ static float globalTileScale = 0.9f;
 
 static bool DEBUG_global_movePlayer = true;
 
+#define MY_ENTITY_TYPE(FUNC) \
+FUNC(ENTITY_NULL)\
+FUNC(ENTITY_PLAYER)\
+FUNC(ENTITY_BULLET)\
+FUNC(ENTITY_BUCKET)\
+FUNC(ENTITY_DROPLET)\
+FUNC(ENTITY_CHOC_BAR)\
+FUNC(ENTITY_ROOM)\
+FUNC(ENTITY_CRAMP)\
+FUNC(ENTITY_SCENERY)\
+FUNC(ENTITY_STAR)\
+FUNC(ENTITY_TILE)\
+FUNC(ENTITY_ASTEROID)\
+FUNC(ENTITY_SOUND_CHANGER)\
+FUNC(ENTITY_UNDERPANTS)\
+
+typedef enum {
+	MY_ENTITY_TYPE(ENUM)
+} EntityType;
+
+static char *MyEntity_EntityTypeStrings[] = { MY_ENTITY_TYPE(STRING) };
+
 
 typedef enum {
 	ENTITY_MOVE_NULL,
@@ -105,6 +127,7 @@ typedef struct {
 		};
 		struct { //Bullet
 			Timer lifespanTimer;
+			Timer bulletColorTimer;
 		};
 		struct { //Bucket
 			
@@ -113,6 +136,10 @@ typedef struct {
 			
 		};
 		struct { //Room
+		};
+		struct { //sound changer
+			WavFile *soundToPlay;
+			
 		};
 	};
 
@@ -390,7 +417,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 						}
 					}
 
-					
+
+					///////////////////////************ Get move off list if there are any *************////////////////////
+
 					if(!isOn(&e->moveTimer)) {
 						//NOTE(ollie): If we are finished moving we are going to check any moves are on the list
 						MoveDirection dir = pullDirectionOffList(e);
@@ -400,17 +429,20 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 								e->startLane = e->laneIndex;
 								e->laneIndex++;
 								turnTimerOn(&e->moveTimer);
+								playGameSound(&globalLongTermArena, easyAudio_findSound("boosterSound.wav"), 0, AUDIO_FOREGROUND);
 								e->moveDirection = dir;
 							}
 							if(dir == ENTITY_MOVE_LEFT && e->laneIndex > 0) {
 								e->startLane = e->laneIndex;
 								e->laneIndex--;
 								turnTimerOn(&e->moveTimer);
+								playGameSound(&globalLongTermArena, easyAudio_findSound("boosterSound.wav"), 0, AUDIO_FOREGROUND);
 								e->moveDirection = dir;
 							}
 							
 						}
 					}
+					////////////////////////////////////////////////////////////////////
 
 					if(newDirection != ENTITY_MOVE_NULL) {
 						
@@ -429,6 +461,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 										easyEntity_emptyMoveList(e);
 									} else {
 										turnTimerOn(&e->moveTimer);
+										playGameSound(&globalLongTermArena, easyAudio_findSound("boosterSound.wav"), 0, AUDIO_FOREGROUND);
 									}
 								} else {
 									//Already moving in that direction, so add it to the list
@@ -450,6 +483,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 										easyEntity_emptyMoveList(e);
 									} else {
 										turnTimerOn(&e->moveTimer);
+										playGameSound(&globalLongTermArena, easyAudio_findSound("boosterSound.wav"), 0, AUDIO_FOREGROUND);
 									}
 								} else {
 									//Already moving in that direction, so add it to the list
@@ -462,6 +496,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 						}
 					}
 
+
+
 					//NOTE(ollie): Set the player move speed
 					e->moveTimer.period = variables->playerMoveSpeed;
 
@@ -472,6 +508,15 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 						float b = getLaneX(e->laneIndex);
 
 						e->T.pos.x = lerp(a, info.canonicalVal, b);
+
+						float shipRotation = easyMath_degreesToRadians(smoothStep00(0, info.canonicalVal, 90.0f));
+
+						if(e->moveDirection == ENTITY_MOVE_RIGHT) {
+							shipRotation *= -1;
+						}
+
+						//NOTE(ollie): 0.5f*PI32 is so the ship is around the right way - the resting position
+						e->T.Q = eulerAnglesToQuaternion(shipRotation, 0.5f*PI32, 0);						
 
 						if(info.finished) {
 							turnTimerOff(&e->moveTimer);
@@ -546,6 +591,14 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				} break;
 				case ENTITY_BULLET: {
 					// e->rb->accumTorque = v3(0, 0, 30.0f);
+				} break;
+				case ENTITY_ASTEROID: {
+					if(!DEBUG_global_PauseGame) {
+						e->rb->dP.x = 5;
+					}
+				} break;
+				case ENTITY_SOUND_CHANGER: {
+
 				} break;
 				case ENTITY_BUCKET: {
 
@@ -726,11 +779,27 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 					} break;
 					case ENTITY_BULLET: {
 
-						assert(isOn(&e->lifespanTimer));
 						TimerReturnInfo info = updateTimer(&e->lifespanTimer, dt);
 
+						///////////////////////************ Update the color of the bullet *************////////////////////
+						if(isOn(&e->bulletColorTimer)) {
+							TimerReturnInfo info = updateTimer(&e->bulletColorTimer, dt);
+
+							float hueVal = 10*info.canonicalVal*360.0f;
+
+							hueVal -= ((int)(hueVal / 360.0f))*360;
+
+							e->colorTint = easyColor_hsvToRgb(hueVal, 1, 1);
+
+							if(info.finished) {
+								turnTimerOn(&e->bulletColorTimer);
+							}
+						}
+						////////////////////////////////////////////////////////////////////
+
+
 						if(info.finished) {
-							MyEntity_MarkForDeletion(&e->T);
+							turnTimerOn(&e->fadeTimer);
 						}
 						
 					} break;
@@ -871,6 +940,70 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 							}
 						} 
 					} break;
+					case ENTITY_ASTEROID: {
+						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+
+							///////////////////////*********** Collision with Player **************////////////////////
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_STAY);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								Entity *player = info.e;
+
+								///////////////////////********** Logic for when player hits an asteroid ***************////////////////////
+								
+								//NOTE(ollie): Play explosion of ship sound
+								playGameSound(&globalLongTermArena, easyAudio_findSound("crash_sound.wav"), 0, AUDIO_FOREGROUND);
+
+								///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
+								if(myEntity_canPlayerBeHurt(player)) {
+									myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
+									myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+									myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
+								}
+
+								////////////////////////////////////////////////////////////////////
+
+								//NOTE(ollie): Cramp is removed after it fades out
+								turnTimerOn(&e->fadeTimer);
+								myEntity_spinEntity(e);
+							}	
+
+							///////////////////////*********** Collision with Bullet **************////////////////////
+
+							info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_BULLET, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_BULLET);
+								turnTimerOn(&e->fadeTimer);
+
+								////////////////////////////////////////////////////////////////////
+								//Play particle effects
+								//Spawn smaller rocks
+
+								//NOTE(ollie): Play explosion of rock sound
+								playGameSound(&globalLongTermArena, easyAudio_findSound("crash_sound.wav"), 0, AUDIO_FOREGROUND);
+							
+							}	
+
+							////////////////////////////////////////////////////////////////////					
+						}
+					} break;
+					case ENTITY_SOUND_CHANGER: {
+						if(e->collider->collisionCount > 0) {
+
+							///////////////////////*********** Collision with Player **************////////////////////
+							MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER);	
+
+							if(info.found) {
+								assert(info.e->type == ENTITY_PLAYER);
+								Entity *player = info.e;
+
+								//NOTE(ollie): Change background sound 
+							}	
+						}
+
+					} break;
 					case ENTITY_CRAMP: {
 						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
 
@@ -962,22 +1095,21 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 			
 			setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
 			
+			if(flags & (u32)MY_ENTITIES_RENDER) {
+				if(e->sprite) {
+					renderDrawSprite(renderGroup, e->sprite, e->colorTint);
+				}	
 
-			
-
-			if(e->sprite && (flags & (u32)MY_ENTITIES_RENDER)) {
-				renderDrawSprite(renderGroup, e->sprite, e->colorTint);
-			}	
-
-			if(e->model && (flags & (u32)MY_ENTITIES_RENDER)) {
-				renderSetShader(renderGroup, &phongProgram);
-				if(e->type == ENTITY_TILE) {
-					renderDrawCube(globalRenderGroup, &globalWhiteMaterial, COLOR_WHITE);
-				} else {
-					renderModel(renderGroup, e->model, e->colorTint);	
+				if(e->model || e->type == ENTITY_BULLET || e->type == ENTITY_SOUND_CHANGER) {
+					renderSetShader(renderGroup, &phongProgram);
+					if(e->type == ENTITY_BULLET || e->type == ENTITY_SOUND_CHANGER) {
+						renderDrawCube(globalRenderGroup, &globalWhiteMaterial, e->colorTint);
+					} else {
+						renderModel(renderGroup, e->model, e->colorTint);	
+					}
+					
+					renderSetShader(renderGroup, mainShader);
 				}
-				
-				renderSetShader(renderGroup, mainShader);
 			}	
 
 			///////////////////////************ Debug Collider viewing *************////////////////////
@@ -1103,23 +1235,24 @@ static Entity *initPlayer(MyEntityManager *m, MyGameStateVariables *variables, T
 
 //NOTE(ollie): Bullet
 
-static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
+static Entity *initBullet(MyEntityManager *m, V3 pos) {
 	Entity *e = (Entity *)getEmptyElement(&m->entities);
 
 	e->name = "Bullet";
 	pos.z = LAYER1;
-	float scale = 0.4f;
-	easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale*sprite->aspectRatio_h_over_w, 1)); 
+	float scale = 0.2f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+
 	assert(!e->T.parent);
 	e->active = true;
 	e->colorTint = COLOR_WHITE;
 	e->type = ENTITY_BULLET;
 
-	e->sprite = sprite;
-
-
 	e->lifespanTimer = initTimer(3.0f, false);
 	turnTimerOn(&e->lifespanTimer);	
+
+	e->bulletColorTimer = initTimer(6.0f, false);
+	turnTimerOn(&e->bulletColorTimer);	
 
 	e->fadeTimer = initTimer(0.3f, false);
 	turnTimerOff(&e->fadeTimer);
@@ -1131,11 +1264,76 @@ static Entity *initBullet(MyEntityManager *m, Texture *sprite, V3 pos) {
 
 	/////
 
-	e->rb->dP.y = 1;
-	e->rb->dA = v3(0, 0, 1);
+	e->rb->dP.y = 5;
+	//NOTE(ollie): Rotate around all directions
+	e->rb->dA = v3(1, 1, 0);
 
 	return e;
 }
+////////////////////////////////////////////////////////////////////
+
+//NOTE(ollie): Asteroid
+static Entity *initAsteroid(MyEntityManager *m, V3 pos, EasyModel *model) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+
+	e->name = "Asteroid";
+	float scale = 0.2f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+
+	assert(!e->T.parent);
+	e->active = true;
+	e->colorTint = COLOR_WHITE;
+	e->type = ENTITY_ASTEROID;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	e->model = model;
+
+	////Physics 
+
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+
+	/////
+
+	
+	//NOTE(ollie): Rotate around all directions
+	e->rb->dA = v3(1, 1, 0);
+
+	return e;
+}
+
+
+////////////////////////////////////////////////////////////////////
+
+//NOTE(ollie): Sound changer
+static Entity *initSoundchanger(MyEntityManager *m, V3 pos, WavFile *soundToPlay) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+
+	e->name = "Sound changer";
+	float scale = 0.2f;
+	easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+
+	assert(!e->T.parent);
+	e->active = true;
+	e->colorTint = COLOR_WHITE;
+	e->type = ENTITY_SOUND_CHANGER;
+
+	e->soundToPlay = soundToPlay;
+
+	////Physics 
+
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, 0, EASY_COLLIDER_RECTANGLE, NULL_VECTOR3, true, v3(MAX_LANE_COUNT, 1, 1));
+	/////
+
+	e->rb->dP.x = 5;
+	//NOTE(ollie): Rotate around all directions
+	e->rb->dA = v3(1, 1, 0);
+
+	return e;
+}
+
 
 ////////////////////////////////////////////////////////////////////
 
@@ -1455,6 +1653,55 @@ static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
 		return e;
 }
 
+static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room) {
+	Entity *result = 0;
+
+	//NOTE(ollie): Get the clamped position for the entities that have to be on the board
+	V3 clampedPosition = v3((int)worldP.x, (int)worldP.y, 0);
+
+	//NOTE(ollie): Clamp the position to be inside the lanes
+	clampedPosition.x = clamp(0, clampedPosition.x, MAX_LANE_COUNT);
+	clampedPosition.y = clamp(0, clampedPosition.y, MAX_LANE_COUNT);
+
+	switch(type) {
+		case ENTITY_ASTEROID: {
+			EasyModel *asteroid = findModelAsset_Safe("rock.obj");
+			if(asteroid) {
+				result = initAsteroid(entityManager, worldP, asteroid);	
+			} else {
+				easyConsole_addToStream(DEBUG_globalEasyConsole, "Couldn't find rock model");
+			}
+			
+		} break;
+		case ENTITY_SOUND_CHANGER: {
+
+		} break;
+		case ENTITY_BUCKET: {
+			result = initBucket(entityManager, findTextureAsset("toilet1.png"), clampedPosition, room);
+		} break;
+		case ENTITY_DROPLET: {
+			result = initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), clampedPosition, room);
+		} break;
+		case ENTITY_UNDERPANTS: {
+			result = initUnderpants(entityManager, findTextureAsset("underwear.png"), clampedPosition, room);
+		} break;
+		case ENTITY_CRAMP: {
+			result = initCramp(entityManager, findTextureAsset("cramp.PNG"), clampedPosition, room);
+		} break;
+		case ENTITY_STAR: {
+			result = initStar(entityManager, clampedPosition, room);
+		} break;
+		case ENTITY_CHOC_BAR: {
+			result = initChocBar(entityManager, findTextureAsset("choc_bar.png"), clampedPosition, room);
+		} break;
+		default: {
+			easyConsole_addToStream(DEBUG_globalEasyConsole, "Tried to create entity, but type not handled.");
+
+		}
+	}			
+	return result;
+}
+
 
 static int myLevels_getLevelWidth(char *level) {
 	char *at = level;
@@ -1584,7 +1831,9 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
 
 		switch(info.type) {
 			case ENTITY_BULLET: {
-				initBullet(manager, findTextureAsset("tablet.png"), info.pos);
+				playGameSound(&globalLongTermArena, easyAudio_findSound("blaster1.wav"), 0, AUDIO_FOREGROUND);
+				//NOTE(ollie): Init the bullet a little further so it isn't on the ship
+				initBullet(manager, v3_plus(info.pos, v3(0, 1, 0)));
 			} break;
 			case ENTITY_ROOM: {
 				int randomLevel = variables->lastLevelIndex = myLevels_getLevel(variables->lastLevelIndex); 
