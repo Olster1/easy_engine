@@ -197,7 +197,7 @@ typedef struct {
 	Rect2f dimensions[128];
 } EasyAtlas_Dimensions;
 
-static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *memoryArena, InfiniteAlloc *atlasElms, bool outputImageFile, int EASY_ATLAS_PADDING, int sizeX, int sizeY, EasyAtlas_AtlasType type) {
+static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *memoryArena, InfiniteAlloc *atlasElms, bool outputImageFile, int EASY_ATLAS_PADDING, int sizeX, int sizeY, EasyAtlas_AtlasType type, float scale) {
     
     EasyAtlas_Dimensions result = {};
 
@@ -238,6 +238,10 @@ static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *
 			Easy_AtlasElm *atlasElm = (Easy_AtlasElm *)getElementFromAlloc_(atlasElms, index);
 			if(!atlasElm->added) {
 				Texture texOnStack = atlasElm->tex;
+
+				//NOTE(ollie): Scale by the texture size
+				texOnStack.width *= scale;
+				texOnStack.height *= scale;
                 
 				if(state.sentinel.next != &state.sentinel) {
 					EasyAtlas_BinPartition *bin = easyAtlas_findBestFitBin(&state, &texOnStack, EASY_ATLAS_PADDING);
@@ -373,7 +377,7 @@ static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *
 	return result;
 }
 
-static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilter filter, EasyAtlas_AtlasType type) {
+static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilter filter) {
 	char buffer0[512] = {};
 	sprintf(buffer0, "%s.txt", fileName);
     
@@ -408,6 +412,8 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	        	tex->width = imgWidth;
 	        	tex->height = imgHeight;
 	        	tex->uvCoords = uvCoords;
+	        	tex->aspectRatio_h_over_w = easyRender_getTextureAspectRatio_HOverW(tex);
+	        	tex->name = imageName; 
                 
 	        	Asset *result = addAssetTexture(imageName, tex);
 	        	assert(result);
@@ -416,8 +422,7 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	            if(stringsMatchNullN("name", token.at, token.size)) {
 	                char *string = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
                     int strSize = strlen(string); 
-                    assert(strSize < arrayCount(imageName));
-                    nullTerminateBuffer(imageName, string, strSize);
+                    nullTerminateBuffer(imageName, string, min(arrayCount(imageName) - 1, strSize));
 
                     //NOTE(ollie): release the memory
                     releaseInfiniteAlloc(&data);
@@ -444,7 +449,10 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	}
 }	
 
-static inline void easyAtlas_createTextureAtlas(char *folderName, char *ouputFolderName, SDL_Window *windowHandle, Arena *memoryArena, RenderTextureFilter filter, int padding) {
+#define easyAtlas_createTextureAtlas(folderName, ouputFolderName, memoryArena, filter, padding) easyAtlas_createTextureAtlas_withDownsize(folderName, ouputFolderName, memoryArena, filter, padding, 0)
+static inline void easyAtlas_createTextureAtlas_withDownsize(char *folderName, char *ouputFolderName, Arena *memoryArena, RenderTextureFilter filter, int padding, s32 downSizeGoal) {
+	MemoryArenaMark tempMark = takeMemoryMark(memoryArena);
+
 	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp"};
 	folderName = concat(globalExeBasePath, folderName);
 	ouputFolderName = concat(globalExeBasePath, ouputFolderName);
@@ -452,19 +460,20 @@ static inline void easyAtlas_createTextureAtlas(char *folderName, char *ouputFol
     
 	InfiniteAlloc atlasElms = initInfinteAlloc(Easy_AtlasElm);
     
-	printf("File Coutn: %d\n", fileNames.count);
 	for(int i = 0; i < fileNames.count; ++i) {
 	    char *fullName = fileNames.names[i];
-	    char *shortName = getFileLastPortion(fullName);
+	    char *shortName = getFileLastPortionWithArena(fullName, memoryArena);
 	    if(shortName[0] != '.') { //don't load hidden file 
 	        Asset *asset = findAsset(shortName);
 	        assert(!asset);
             
         	Easy_AtlasElm elm = {};
         	elm.shortName = shortName;
-        	elm.tex = loadImage(fullName, filter, true);
-        	free(fullName);
-            
+        	elm.longName = fullName;
+
+        	elm.tex = loadImage(fullName, TEXTURE_FILTER_LINEAR, true);
+
+        	//NOTE(ollie): Add it to the atlas elements
         	addElementInifinteAllocWithCount_(&atlasElms, &elm, 1);
 	        assert(shortName);
 	    }
@@ -474,10 +483,17 @@ static inline void easyAtlas_createTextureAtlas(char *folderName, char *ouputFol
 	easyAtlas_sortBySize(&atlasElms);
 	stbi_flip_vertically_on_write(true);//flip bytes vertically
     
-	easyAtlas_drawAtlas(ouputFolderName, memoryArena, &atlasElms, true, padding, 4096, 4096, EASY_ATLAS_TEXTURE_ATLAS);
+	easyAtlas_drawAtlas(ouputFolderName, memoryArena, &atlasElms, true, padding, 4096, 4096, EASY_ATLAS_TEXTURE_ATLAS, 0.25f);
     
 	releaseInfiniteAlloc(&atlasElms);
     
 	free(folderName);
 	free(ouputFolderName);
+
+	for(int i = 0; i < fileNames.count; ++i) {
+	    char *fullName = fileNames.names[i];
+	    free(fullName);
+	}
+
+	releaseMemoryMark(&tempMark);
 }

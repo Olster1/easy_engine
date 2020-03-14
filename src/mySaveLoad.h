@@ -47,8 +47,8 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager) {
 
 }
 
-#define LOAD_FROM_STRING 0 //we want to eventually get rid of this & load everything from a file
-static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos) {
+#define LOAD_FROM_STRING 1 //we want to eventually get rid of this & load everything from a file
+static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 
@@ -138,7 +138,7 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	            	} else {
 
 		            	if(entType != ENTITY_SCENERY) {
-		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom);
+		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom, gameState);
 		            	} else {
 		            		newEntity = initScenery1x1(entityManager, model->name, model, pos, newRoom);	
 		            	}

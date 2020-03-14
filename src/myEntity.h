@@ -50,6 +50,7 @@ FUNC(ENTITY_TILE)\
 FUNC(ENTITY_ASTEROID)\
 FUNC(ENTITY_SOUND_CHANGER)\
 FUNC(ENTITY_UNDERPANTS)\
+FUNC(ENTITY_TELEPORTER)\
 
 typedef enum {
 	MY_ENTITY_TYPE(ENUM)
@@ -99,6 +100,10 @@ typedef struct {
 	//
 
 	union {
+		struct { //Teleporter
+			animation idleAnimation;
+			animation_list_item animationListSentintel;
+		};
 		struct { //Player
 
 			Timer moveTimer;
@@ -589,6 +594,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
 
 				} break;
+				case ENTITY_TELEPORTER: {
+
+				} break;
 				case ENTITY_BULLET: {
 					// e->rb->accumTorque = v3(0, 0, 30.0f);
 				} break;
@@ -612,8 +620,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 				case ENTITY_ROOM: {
 					if(!DEBUG_global_PauseGame) {
 						//NOTE(ollie): move downwards
-						// e->rb->dP.y = -3;//variables->roomSpeed;	
-
+						e->rb->dP.y = variables->roomSpeed;	
 						e->T.pos.y += dt*variables->roomSpeed;
 					}
 					
@@ -819,6 +826,12 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 								myEntity_spinEntity(e);
 							}					
 						}
+					} break;
+					case ENTITY_TELEPORTER: {
+						//NOTE(ollie): Update the animation
+
+						char *animationOn = UpdateAnimation(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, dt, 0);
+						e->sprite = findTextureAsset(animationOn);
 					} break;
 					case ENTITY_CHOC_BAR: {
 						if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
@@ -1371,6 +1384,74 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 
 ////////////////////////////////////////////////////////////////////
 
+//NOTE(ollie): Teleporter
+
+static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGameState *gameState) {
+	Entity *e = (Entity *)getEmptyElement(&m->entities);
+
+	e->name = "Teleporter";
+	float width = 1.0f;
+
+	///////////////////////************* Setup the animation ************////////////////////
+	//NOTE(ollie): Set the sentinel up
+	e->animationListSentintel.Next = e->animationListSentintel.Prev = &e->animationListSentintel;
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): Create the idle animation
+	char *formatStr = "teleporter-%d.png";
+	char buffer[512];
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): Init the animation
+	e->idleAnimation.Name = "Teleporter Idle";
+	e->idleAnimation.state = ANIM_IDLE;
+	e->idleAnimation.FrameCount = 0;
+
+	//NOTE(ollie): Loop through image names & add them to the animation
+	for(int loopIndex = 1; loopIndex <= 150; ++loopIndex) {
+
+		//NOTE(ollie): Print the texture ID
+		snprintf(buffer, arrayCount(buffer), formatStr, loopIndex);	
+
+		//NOTE(ollie): Add it to the array
+		assert(e->idleAnimation.FrameCount < arrayCount(e->idleAnimation.Frames));
+		e->idleAnimation.Frames[e->idleAnimation.FrameCount++] = easyString_copyToArena(buffer, &globalLongTermArena);
+		
+	}
+	////////////////////////////////////////////////////////////////////
+	
+	AddAnimationToList(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, &e->idleAnimation);
+
+	////////////////////////////////////////////////////////////////////
+
+	easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, 1)); 
+	if(parent) e->T.parent = &parent->T;
+	
+	e->active = true;
+	#if DEBUG_ENTITY_COLOR
+		e->colorTint = COLOR_PINK;
+	#else 
+		e->colorTint = COLOR_WHITE;
+	#endif
+	e->type = ENTITY_TELEPORTER;
+
+	e->fadeTimer = initTimer(0.3f, false);
+	turnTimerOff(&e->fadeTimer);
+
+	////Physics 
+
+	e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+	e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_CIRCLE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+	/////
+
+	return e;
+
+	
+
+}
+
+////////////////////////////////////////////////////////////////////
+
 //NOTE(ollie): Underpants
 
 static Entity *initUnderpants(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
@@ -1653,7 +1734,7 @@ static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
 		return e;
 }
 
-static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room) {
+static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room, MyGameState *gameState) {
 	Entity *result = 0;
 
 	//NOTE(ollie): Get the clamped position for the entities that have to be on the board
@@ -1687,6 +1768,9 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
 		} break;
 		case ENTITY_CRAMP: {
 			result = initCramp(entityManager, findTextureAsset("cramp.PNG"), clampedPosition, room);
+		} break;
+		case ENTITY_TELEPORTER: {
+			result = initTeleporter(entityManager, clampedPosition, room, gameState);
 		} break;
 		case ENTITY_STAR: {
 			result = initStar(entityManager, clampedPosition, room);
@@ -1794,11 +1878,11 @@ static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManag
 
 
 ///////////////////////************ Function declarations*************////////////////////
-static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos);
+static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState);
 
 ///////////////////////*************  Clean up at end of frame ************////////////////////
 
-static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *variables) {
+static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *variables, MyGameState *gameState) {
 	for(int i = 0; i < manager->entities.count; ++i) {
 		Entity *e = (Entity *)getElement(&manager->entities, i);
 		if(e) { //can be null
@@ -1838,7 +1922,7 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
 			case ENTITY_ROOM: {
 				int randomLevel = variables->lastLevelIndex = myLevels_getLevel(variables->lastLevelIndex); 
 				variables->mostRecentRoom = variables->lastRoomCreated;
-				variables->lastRoomCreated = myLevels_loadLevel(randomLevel, manager, info.pos);
+				variables->lastRoomCreated = myLevels_loadLevel(randomLevel, manager, info.pos, gameState);
 			
 			} break;
 			default: {

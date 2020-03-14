@@ -251,7 +251,27 @@ char *concat_(char *a, s32 lengthA, char *b, s32 lengthB, Arena *arena) {
         *at++ = b[i];
     }
     assert(at == &newString[newStrLen - 1])
-        assert(newString[newStrLen - 1 ] == '\0');
+    assert(newString[newStrLen - 1 ] == '\0');
+    
+    return newString;
+}
+
+char *easyString_copyToArena(char *a, Arena *arena) {
+    s32 newStrLen = strlen(a) + 1;
+    
+    char *newString = (char *)pushArray(arena, newStrLen, char);
+
+    assert(newString);
+    
+    newString[newStrLen - 1] = '\0';
+    
+    char *at = newString;
+    for (int i = 0; i < (newStrLen - 1); ++i)
+    {
+        *at++ = a[i];
+    }
+    assert(newString[newStrLen - 1 ] == '\0');
+
     return newString;
 }
 

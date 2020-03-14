@@ -24,7 +24,7 @@ MY_GAME_MODE_INSTRUCTION_CARD,
 MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_OVERWORLD //MY_GAME_MODE_EDIT_LEVEL
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_EDIT_LEVEL //MY_GAME_MODE_OVERWORLD 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -34,6 +34,10 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     // THIS IS NOT THE FUNCTION FOR INITING A ROUND
     
     MyGameState *gameState = pushStruct(&globalLongTermArena, MyGameState);
+    
+    ///////////////////////************ Animation stuff *************////////////////////
+    //NOTE(ollie): Set free list to nothing
+    gameState->animationItemFreeListPtr = 0;
     
     ///////////////////////************* Editor stuff ************////////////////////
     gameState->currentLevelEditing = 0;
@@ -49,7 +53,7 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     if(GAME_STATE_TO_LOAD == MY_GAME_MODE_EDIT_LEVEL) {
         //NOTE(ollie): We aren't begining a round so we need to create a level,
         // See beginRound func to see us using this function again. 
-        myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0));
+        myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0), gameState);
             
         DEBUG_global_IsFlyMode = true;
         DEBUG_global_CameraMoveXY = true;
@@ -163,7 +167,7 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
 }
 
 
-static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
+static Entity *myGame_beginRound(MyGameState *gameState, MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
     
     setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
     setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
@@ -176,8 +180,8 @@ static Entity *myGame_beginRound(MyGameStateVariables *gameVariables, MyEntityMa
         resetPlayer(player, gameVariables,findTextureAsset("cup_empty.png"));
     }
     
-    gameVariables->mostRecentRoom = myLevels_loadLevel(0, entityManager, v3(0, 0, 0));
-    gameVariables->lastRoomCreated = myLevels_loadLevel(1, entityManager, v3(0, 5, 0));
+    gameVariables->mostRecentRoom = myLevels_loadLevel(0, entityManager, v3(0, 0, 0), gameState);
+    gameVariables->lastRoomCreated = myLevels_loadLevel(1, entityManager, v3(0, 5, 0), gameState);
     
     return player;
 }
@@ -192,8 +196,8 @@ static void transitionCallBackRestartRound(void *data_) {
     setSoundType(AUDIO_FLAG_MAIN);
     
     easyEntity_endRound(data->entityManager);
-    cleanUpEntities(data->entityManager, data->gameVariables);
-    myGame_beginRound(data->gameVariables, data->entityManager, false, data->player, data->camera);
+    cleanUpEntities(data->entityManager, data->gameVariables, data->gameState);
+    myGame_beginRound(data->gameState, data->gameVariables, data->entityManager, false, data->player, data->camera);
     
     
     //NOTE(ol): Right now just using malloc & free
@@ -271,9 +275,12 @@ int main(int argc, char *args[]) {
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
         
         
+        // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 256);        
+        // exit(0);
+        easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/teleporter_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
+
         loadAndAddImagesToAssets("img/");
-        
-        
+
         loadAndAddImagesToAssets("img/period_game/");
         
         ////INIT FONTS
@@ -417,18 +424,21 @@ int main(int argc, char *args[]) {
         
         ////////////////////////////////////////////////////////////////////
         
-        
+       
+        MyGameState *gameState = myGame_initGameState(entityManager, &camera); 
+
+        ///////////////////////************* Init game variables ************////////////////////
+
         MyGameStateVariables gameVariables = {};
         
         Entity *player = 0;
         if(GAME_STATE_TO_LOAD != MY_GAME_MODE_EDIT_LEVEL) {
-            player = myGame_beginRound(&gameVariables, entityManager, true, 0, &camera);
+            player = myGame_beginRound(gameState, &gameVariables, entityManager, true, 0, &camera);
         } else {
             myGame_resetGameVariables(&gameVariables, &camera);
             player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));    
         }
         
-        MyGameState *gameState = myGame_initGameState(entityManager, &camera); 
         
         ////////////////////////////////////////////////////////////////////      
         
@@ -454,7 +464,7 @@ int main(int argc, char *args[]) {
         
         EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfiler(); 
         
-        MyOverworldState *overworldState = pushStruct(&globalLongTermArena, MyOverworldState);
+        MyOverworldState *overworldState = initOverworld(projectionMatrixFOV(90.0f, resolution.x/resolution.y), resolution);
                 
         ///////////************************/////////////////
         while(running) {
@@ -472,9 +482,13 @@ int main(int argc, char *args[]) {
             setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA);
             renderSetViewPort(0, 0, resolution.x, resolution.y);
             
-            if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
-                inEditor = !inEditor;
-                easyEditor_stopInteracting(editor);
+            if(gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
+                if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
+                    inEditor = !inEditor;
+                    easyEditor_stopInteracting(editor);
+                }
+            } else {
+                inEditor = false;
             }
             
             
@@ -775,7 +789,7 @@ int main(int argc, char *args[]) {
                 drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
                 renderEnableBatchOnZ(globalRenderGroup);
 
-                cleanUpEntities(entityManager, &gameVariables);
+                cleanUpEntities(entityManager, &gameVariables, gameState);
                 
                 bool shouldDrawHUD = true;
                 
@@ -1059,7 +1073,7 @@ int main(int argc, char *args[]) {
                 } break;
                 case MY_GAME_MODE_OVERWORLD: {
                     //NOTE(ollie): This is the overworld chooser, where we choose our level
-                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState);
+                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor);
                 } break;    
                 case MY_GAME_MODE_START: {
                     
@@ -1185,8 +1199,8 @@ int main(int argc, char *args[]) {
                     if(wasPressed(keyStates.gameButtons, BUTTON_F6)) {
                         gameState->currentGameMode = MY_GAME_MODE_PLAY;
                         easyEntity_endRound(entityManager);
-                        cleanUpEntities(entityManager, &gameVariables);
-                        myGame_beginRound(&gameVariables, entityManager, false, player, &camera);
+                        cleanUpEntities(entityManager, &gameVariables, gameState);
+                        myGame_beginRound(gameState, &gameVariables, entityManager, false, player, &camera);
                         
                         //NOTE(ollie): Revert back to game settings
                         DEBUG_global_IsFlyMode = false;
@@ -1207,7 +1221,7 @@ int main(int argc, char *args[]) {
                                     gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
                                 }
                             } else {
-                                gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited);
+                                gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState);
                             }
                             
 
@@ -1385,9 +1399,9 @@ int main(int argc, char *args[]) {
                             
                             gameState->currentGameMode = MY_GAME_MODE_EDIT_LEVEL;
                             easyEntity_endRound(entityManager);
-                            cleanUpEntities(entityManager, &gameVariables);
+                            cleanUpEntities(entityManager, &gameVariables, gameState);
                             
-                            myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0));
+                            myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0), gameState);
                             easyConsole_addToStream(&console, "loaded level");
                             
                             DEBUG_global_IsFlyMode = true;

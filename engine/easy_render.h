@@ -1269,6 +1269,8 @@ Matrix4 OrthoMatrixToScreen_BottomLeft(int width, int height) {
 
 static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 resolution, float zAtInViewSpace, Matrix4 cameraToWorld) {
     DEBUG_TIME_BLOCK()
+
+    assert(zAtInViewSpace != 0);
     //Get the mouse position as a percentage of the screen
     V2 screenP_01 = v2(screenP.x / resolution.x, screenP.y / resolution.y);
 

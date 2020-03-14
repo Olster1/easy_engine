@@ -124,7 +124,7 @@ static void easyFont_createSDFFont(char *fileName, u32 startCodePoint, u32 endCo
     
     // NOTE(ollie): Try find the smallest size to fint everyone in
     do {
-        dimensions = easyAtlas_drawAtlas(outputFileName, &globalPerFrameArena, &atlasElms, false, 5, rectX, rectY, EASY_ATLAS_FONT_ATLAS);
+        dimensions = easyAtlas_drawAtlas(outputFileName, &globalPerFrameArena, &atlasElms, false, 5, rectX, rectY, EASY_ATLAS_FONT_ATLAS, 1);
         easyAtlas_refreshAllElements(&atlasElms);
         rectX -= increment;
         rectY -= increment;
@@ -135,7 +135,7 @@ static void easyFont_createSDFFont(char *fileName, u32 startCodePoint, u32 endCo
     
     easyAtlas_refreshAllElements(&atlasElms);
     //NOTE(ollie): Actually draw the atlas to disk now
-    easyAtlas_drawAtlas(outputFileName, &globalPerFrameArena, &atlasElms, true, 5, rectX, rectY, EASY_ATLAS_FONT_ATLAS);
+    easyAtlas_drawAtlas(outputFileName, &globalPerFrameArena, &atlasElms, true, 5, rectX, rectY, EASY_ATLAS_FONT_ATLAS, 1);
 
     ///////////////////////*********** Cleanup the memory used**************////////////////////
 

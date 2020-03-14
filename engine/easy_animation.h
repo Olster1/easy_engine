@@ -8,7 +8,7 @@ typedef enum {
 } AnimationState;
 
 struct animation {
-    Texture Frames[16];
+    char *Frames[256];
     u32 FrameCount;
     char *Name;
     AnimationState state;
@@ -33,10 +33,11 @@ typedef struct animation_list_item {
 static void InitAnimation(animation *Animation, char **FileNames, u32 FileNameCount, float DirectionValue, char *Name, AnimationState state) {
     Animation->Name = Name;
     Animation->state = state;
-    
+    Animation->FrameCount = 0;
+
     for(u32 i = 0; i < FileNameCount; ++i) {
-        Texture *Bitmap = Animation->Frames + Animation->FrameCount++; 
-        *Bitmap = loadImage(FileNames[i], TEXTURE_FILTER_LINEAR, true);
+        assert(Animation->FrameCount < arrayCount(Animation->Frames));
+        Animation->Frames[Animation->FrameCount++] = easyString_copyToArena(FileNames[i], &globalLongTermArena);
     }
 }
 
@@ -80,6 +81,7 @@ static void AddAnimationToList(animation_list_item **AnimationItemFreeListPtr, A
     assert(Item);
     
     Item->timer = initTimer(ANIMATION_PERIOD, false);
+    turnTimerOn(&Item->timer);
     
     Item->FrameIndex = 0;
     
@@ -94,15 +96,16 @@ static void AddAnimationToList(animation_list_item **AnimationItemFreeListPtr, A
     
 }
 
-static void UpdateAnimation(animation_list_item **AnimationItemFreeListPtr, Arena *arena, animation_list_item *AnimationListSentintel, float dt, animation *NextAnimation) {
+static char *UpdateAnimation(animation_list_item **AnimationItemFreeListPtr, Arena *arena, animation_list_item *AnimationListSentintel, float dt, animation *NextAnimation) {
     animation_list_item *Item = AnimationListSentintel->Next;
     assert(Item != AnimationListSentintel);
     
     if(updateTimer(&Item->timer, dt).finished) {
         Item->FrameIndex++;
+        turnTimerOn(&Item->timer);
         
         //if(Item->FrameIndex >= Item->Animation->FrameCount) 
-        if(NextAnimation != Item->Animation || Item->FrameIndex >= Item->Animation->FrameCount)
+        if(NextAnimation && NextAnimation != Item->Animation || Item->FrameIndex >= Item->Animation->FrameCount)
         { 
             //finished animation
             Item->FrameIndex = 0;
@@ -122,17 +125,13 @@ static void UpdateAnimation(animation_list_item **AnimationItemFreeListPtr, Aren
         }
         
     }
+
+    char *result = Item->Animation->Frames[Item->FrameIndex];
+    return result;
 }
 
 inline static bool IsEmpty(animation_list_item *Sentinel) {
     bool Result = Sentinel->Next == Sentinel;
-    return Result;
-}
-
-inline static Texture *GetBitmap(animation_list_item *Item) {
-    assert(Item->Animation);
-    assert(Item->FrameIndex < Item->Animation->FrameCount);
-    Texture *Result = &Item->Animation->Frames[Item->FrameIndex];
     return Result;
 }
 
@@ -145,7 +144,7 @@ inline static float GetDirectionInRadians(V2 dp) {
     return DirectionValue;
 }
 
-inline static Texture *getCurrentTexture(animation_list_item *AnimationListSentintel) {
-    Texture *CurrentBitmap = GetBitmap(AnimationListSentintel->Next);
-    return CurrentBitmap;
+inline static char *easyAnimation_getFrameOn(animation_list_item *AnimationListSentintel) {
+    char *currentFrame = AnimationListSentintel->Next->Animation->Frames[AnimationListSentintel->Next->FrameIndex];
+    return currentFrame;
 }
