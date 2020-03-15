@@ -274,11 +274,12 @@ int main(int argc, char *args[]) {
         
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
         
-        
-        // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 256);        
-        // exit(0);
-        easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/teleporter_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
-
+        {
+            DEBUG_TIME_BLOCK_NAMED("Load teleporter atlas")
+            // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 256);        
+            // exit(0);
+            easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/teleporter_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
+        }
         loadAndAddImagesToAssets("img/");
 
         loadAndAddImagesToAssets("img/period_game/");
@@ -462,7 +463,7 @@ int main(int argc, char *args[]) {
         EasyTransform T;
         easyTransform_initTransform(&T, v3(0, 0, 0));
         
-        EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfiler(); 
+        EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfilerDrawState(); 
         
         MyOverworldState *overworldState = initOverworld(projectionMatrixFOV(90.0f, resolution.x/resolution.y), resolution);
                 
@@ -523,7 +524,8 @@ int main(int argc, char *args[]) {
             
             
             if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
-                
+               
+
                 V2 movePower = v2(0, 0);
                 float power = 10;
                 ///////////////////////************* Move the center position ************////////////////////
@@ -1079,6 +1081,50 @@ int main(int argc, char *args[]) {
                     
                 } break;
                 case MY_GAME_MODE_EDIT_LEVEL: {
+
+                    //NOTE(ollie): Build the ray
+                    Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
+
+                    float zAtInViewSpace = -1 * camera.pos.z;
+
+                    V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
+                    V3 rayDirection = v3_minus(worldP, camera.pos);
+                    
+
+                    //NOTE(ollie): Draw the grid that you can set the entities
+                    RenderProgram *mainShader = &textureProgram;
+                    renderSetShader(globalRenderGroup, mainShader);
+                    setViewTransform(globalRenderGroup, viewMatrix);
+                    setProjectionTransform(globalRenderGroup, perspectiveMatrix);
+
+                    s32 startX = MAX_LANE_COUNT / 2;
+
+                    for(s32 y = 0; y < MY_ROOM_HEIGHT; ++y) {
+                        for(s32 x = -startX; x <= startX; ++x) {
+                            Matrix4 modelT = Matrix4_translate(mat4(), v3(x, y, 0));
+                            setModelTransform(globalRenderGroup, modelT);
+
+                            EasyRay ray = {};
+                            ray.origin = camera.pos;
+                            ray.direction = rayDirection;
+
+                            EasyPlane plane = {};
+                            plane.normal = v3(0, 0, -1);
+                            plane.origin = v3(0, 0, 0);
+
+                            V3 hitPoint; 
+                            float tAt;
+
+                            bool hit = easyMath_castRayAgainstPlane(ray, plane, &hitPoint, &tAt);
+                            Rect2f gridRect = rect2fMinDim(x - 0.5f, y - 0.5f, 1, 1);
+                            if(hit && tAt > 0.0f && inBounds(hitPoint.xy, gridRect, BOUNDS_RECT)) {
+                                renderDrawSprite(globalRenderGroup, &globalWhiteTexture, COLOR_GOLD);    
+                            }
+                            
+                        }    
+                    }
+                    ////////////////////////////////////////////////////////////////////
+
                     ///////////////////////*********** Draw the HUD **************////////////////////
                     
 #if 0
@@ -1174,8 +1220,6 @@ int main(int argc, char *args[]) {
                     
                     ////////////////////////////////////////////////////////////////////
                     
-                    float zAtInViewSpace = -1 * camera.pos.z;
-                    
                     if(isDown(keyStates.gameButtons, BUTTON_R)) {
                         DEBUG_global_CamNoRotate = false;
                     } else {
@@ -1243,10 +1287,6 @@ int main(int argc, char *args[]) {
                         
                         Entity *entityHit = 0;
                         
-                        //NOTE(ollie): Build the ray
-                        Matrix4 cameraToWorld = easy3d_getViewToWorld(&camera);
-                        
-                        
                         for(int i = 0; i < entityManager->entities.count; ++i) {
                             Entity *e = (Entity *)getElement(&entityManager->entities, i);
                             if(e && e->active) { //can be null
@@ -1254,9 +1294,7 @@ int main(int argc, char *args[]) {
                                 if(e->type == ENTITY_SCENERY && e->model) {
                                     e->colorTint = COLOR_WHITE;
                                     
-                                    V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
-                                    V3 rayDirection = v3_minus(worldP, camera.pos);
-                                    
+                                   
                                     EasyPhysics_RayCastAABB3f_Info newRayInfo = EasyPhysics_CastRayAgainstAABB3f(easyTransform_getWorldRotation(&e->T), easyTransform_getWorldPos(&e->T), easyTransform_getWorldScale(&e->T), e->model->bounds, rayDirection, camera.pos);
                                     
                                     if(newRayInfo.didHit && newRayInfo.hitT < rayInfo.hitT && newRayInfo.hitT > 0.0f) {
