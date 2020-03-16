@@ -1,11 +1,8 @@
-Teleporter 
-	- create two at once & have a partner index 
-	- on collision teleport through 
-
 Overworld 
 	- On radius enter have popup for enter room or shop & talk with 
 	- have it like noita where the text fades in & the box around it expands
-	
+	- have lines that connect the world
+
 
 
 

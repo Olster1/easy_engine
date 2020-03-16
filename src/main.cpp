@@ -131,7 +131,7 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
     
     gameVariables->minPlayerMoveSpeed = 0.1f;
     gameVariables->maxPlayerMoveSpeed = 1.0f;
-    
+    gameVariables->player = 0;
     
     gameVariables->liveTimerCount = 0;
     
@@ -167,23 +167,18 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
 }
 
 
-static Entity *myGame_beginRound(MyGameState *gameState, MyGameStateVariables *gameVariables, MyEntityManager *entityManager, bool createPlayer, Entity *player, EasyCamera *cam) {
+static void myGame_beginRound(MyGameState *gameState, MyGameStateVariables *gameVariables, MyEntityManager *entityManager, EasyCamera *cam) {
     
     setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
     setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
     
     myGame_resetGameVariables(gameVariables, cam);
     
-    if(createPlayer) {
-        player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
-    } else {
-        resetPlayer(player, gameVariables,findTextureAsset("cup_empty.png"));
-    }
+    gameVariables->player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
     
     gameVariables->mostRecentRoom = myLevels_loadLevel(0, entityManager, v3(0, 0, 0), gameState);
     gameVariables->lastRoomCreated = myLevels_loadLevel(1, entityManager, v3(0, 5, 0), gameState);
     
-    return player;
 }
 
 
@@ -197,7 +192,7 @@ static void transitionCallBackRestartRound(void *data_) {
     
     easyEntity_endRound(data->entityManager);
     cleanUpEntities(data->entityManager, data->gameVariables, data->gameState);
-    myGame_beginRound(data->gameState, data->gameVariables, data->entityManager, false, data->player, data->camera);
+    myGame_beginRound(data->gameState, data->gameVariables, data->entityManager, data->camera);
     
     
     //NOTE(ol): Right now just using malloc & free
@@ -442,12 +437,11 @@ int main(int argc, char *args[]) {
 
         MyGameStateVariables gameVariables = {};
         
-        Entity *player = 0;
         if(GAME_STATE_TO_LOAD != MY_GAME_MODE_EDIT_LEVEL) {
-            player = myGame_beginRound(gameState, &gameVariables, entityManager, true, 0, &camera);
+            myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
         } else {
             myGame_resetGameVariables(&gameVariables, &camera);
-            player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));    
+            gameVariables.player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));    
         }
         
         
@@ -808,11 +802,11 @@ int main(int argc, char *args[]) {
                 if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) shouldDrawHUD = false;
                 
                 if(shouldDrawHUD) {
-                    if(!player) {
-                        player = MyEntity_findEntityByName("Player");
+                    if(!gameVariables.player) {
+                        gameVariables.player = MyEntity_findEntityByName("Player");
                     }
                     
-                    assert(player);
+                    assert(gameVariables.player);
                     ///////////////////////************ Draw the lives *************////////////////////
                     
                     Texture *bloodSplat = findTextureAsset("blood_splat.png");
@@ -828,7 +822,7 @@ int main(int argc, char *args[]) {
                     outputText(mainFont, xAt - 1*increment, yAt + 0.1f*increment, 1.0f, resolution, "Lives: ", InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
                     
                     xAt += increment;
-                    for(int liveIndex = 0; liveIndex < player->maxHealthPoints; ++liveIndex) {
+                    for(int liveIndex = 0; liveIndex < gameVariables.player->maxHealthPoints; ++liveIndex) {
                         
                         float w1 = 0.05f*resolution.x;
                         float h1 = w1*f0;
@@ -877,18 +871,18 @@ int main(int argc, char *args[]) {
                     xWidth = 0.05f*resolution.x;
                     xHeight = xWidth*aspectRatio;
                     renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-                    sprintf(buffer, "%d", player->dropletCount);
+                    sprintf(buffer, "%d", gameVariables.player->dropletCount);
                     outputText(mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
                     
                     
-                    Texture *cupTexture = (player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
+                    Texture *cupTexture = (gameVariables.player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
                     
                     aspectRatio = (float)cupTexture->height / (float)cupTexture->width;
                     xWidth = 0.05f*resolution.x;
                     xHeight = xWidth*aspectRatio;
                     
                     renderTextureCentreDim(cupTexture, v3(0.1f*resolution.x, 0.25f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-                    sprintf(buffer, "%d", player->dropletCountStore);
+                    sprintf(buffer, "%d", gameVariables.player->dropletCountStore);
                     outputText(mainFont, 0.15f*resolution.x, 0.25f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
                     
                     ////////////////////////////////////////////////////////////////////
@@ -1013,7 +1007,7 @@ int main(int argc, char *args[]) {
                         MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera);
                         data->entityManager = entityManager;
                         data->gameVariables = &gameVariables;
-                        data->player = player;
+                        data->player = gameVariables.player;
                         EasyTransition_PushTransition(transitionState, transitionCallBackRestartRound, data, EASY_TRANSITION_FADE);
                         
                         gameState->animationTimer = initTimer(0.5f, false);
@@ -1047,7 +1041,7 @@ int main(int argc, char *args[]) {
                     
                     Rect2f m = rect2fMinDim(xAt+0.2*resolution.x, 0, 0.6*resolution.x, resolution.y);
                     
-                    int dropCount = player->dropletCountStore;
+                    int dropCount = gameVariables.player->dropletCountStore;
                     
                     Timer *pointLoadTimer = &gameVariables.pointLoadTimer;
                     if(isOn(pointLoadTimer)) {
@@ -1055,7 +1049,7 @@ int main(int argc, char *args[]) {
                         
                         float canVal = timerInfo.canonicalVal;
                         
-                        dropCount = (int)(canVal*player->dropletCountStore);
+                        dropCount = (int)(canVal*gameVariables.player->dropletCountStore);
                         
                         if(gameVariables.lastCount != dropCount) {
                             playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("click2.wav"), 0, AUDIO_FOREGROUND);
@@ -1256,7 +1250,7 @@ int main(int argc, char *args[]) {
                         gameState->currentGameMode = MY_GAME_MODE_PLAY;
                         easyEntity_endRound(entityManager);
                         cleanUpEntities(entityManager, &gameVariables, gameState);
-                        myGame_beginRound(gameState, &gameVariables, entityManager, false, player, &camera);
+                        myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
                         
                         //NOTE(ollie): Revert back to game settings
                         DEBUG_global_IsFlyMode = false;
@@ -1309,9 +1303,18 @@ int main(int argc, char *args[]) {
                             Entity *e = (Entity *)getElement(&entityManager->entities, i);
                             if(e && e->active) { //can be null
                                 
-                                if(e->type == ENTITY_SCENERY && e->model) {
-                                    e->colorTint = COLOR_WHITE;
-                                    
+                                e->colorTint = COLOR_WHITE;
+
+                                if(myEntity_entityIsClamped(e->type)) {
+                                    //NOTE(ollie): This is for entities that exist on the grid
+                                   V3 entPos = easyTransform_getWorldPos(&e->T); 
+                                   Rect2f entGrid = rect2fCenterDim(entPos.x, entPos.y, 1, 1);
+                                   if(inBounds(hitPoint.xy, entGrid, BOUNDS_RECT)) {
+                                       rayInfo.didHit = true;
+                                       entityHit = e;
+                                   }
+
+                                } else if(e->model) {
                                    
                                     EasyPhysics_RayCastAABB3f_Info newRayInfo = EasyPhysics_CastRayAgainstAABB3f(easyTransform_getWorldRotation(&e->T), easyTransform_getWorldPos(&e->T), easyTransform_getWorldScale(&e->T), e->model->bounds, rayDirection, camera.pos);
                                     
@@ -1320,7 +1323,8 @@ int main(int argc, char *args[]) {
                                         entityHit = e;
                                         
                                     }
-                                }
+                                } 
+                                
                             }
                         }
                         
@@ -1465,6 +1469,9 @@ int main(int argc, char *args[]) {
                         if(token.type == TOKEN_INTEGER) {
                             token = easyConsole_getNextToken(&console);
                             int levelToLoad = token.intVal;
+
+                            //NOTE(ollie): Set the level were currently editing to use later
+                            gameState->currentLevelEditing = levelToLoad;
                             
                             gameState->currentGameMode = MY_GAME_MODE_EDIT_LEVEL;
                             easyEntity_endRound(entityManager);
@@ -1476,6 +1483,21 @@ int main(int argc, char *args[]) {
                             DEBUG_global_IsFlyMode = true;
                             DEBUG_global_CameraMoveXY = true;
                             
+                        } else if(stringsMatchNullN("play", token.at, token.size)) {
+                            DEBUG_global_PauseGame = false;
+                            gameState->currentGameMode = MY_GAME_MODE_PLAY;
+                            easyEntity_endRound(entityManager);
+                            cleanUpEntities(entityManager, &gameVariables, gameState);
+                            
+                            myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
+
+                        } else if(stringsMatchNullN("overworld", token.at, token.size)) {
+                            gameState->currentGameMode = MY_GAME_MODE_OVERWORLD;
+                            easyEntity_endRound(entityManager);
+                            cleanUpEntities(entityManager, &gameVariables, gameState);
+                            
+                            easyConsole_addToStream(&console, "entered overworld");
+
                         } else {
                             easyConsole_addToStream(&console, "must pass a number");
                         }

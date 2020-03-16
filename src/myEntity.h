@@ -137,6 +137,8 @@ typedef struct Entity {
 
             PlayerMoveViaType moveViaType;
             V3 teleportPos;
+
+            Entity *lastTeleporter;
             
         };
         struct { //Bullet
@@ -220,7 +222,9 @@ typedef struct {
     //NOTE(ollie): For camera easing
     float cameraDistance;
     float cameraTargetPos;
-    
+        
+    //NOTE(ollie): Reference to player
+    Entity *player;
 } MyGameStateVariables;
 
 ////////////////////////////////////////////////////////////////////
@@ -884,13 +888,26 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                         e->teleporterSound->location = easyTransform_getWorldPos(&e->T);
 
                         if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+
+                            ///////////////////////************ First check for the exit collision to clear teleporter*************////////////////////
+                            MyEntity_CollisionInfo exitInfo = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_EXIT); 
+                            if(exitInfo.found && exitInfo.e->lastTeleporter == e) {
+                                //NOTE(ollie): Exited off the teleporter so safe to get rid of it
+                                exitInfo.e->lastTeleporter = 0;
+                            }
+
+
                             MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER); 
                             
-                            if(info.found) {
+                            //NOTE(ollie): There was a collision and it wasn't this teleporter
+                            if(info.found && info.e->lastTeleporter != e) {
                                 assert(info.e->type == ENTITY_PLAYER);
                                 
                                 //NOTE(ollie): Get the teleporter partner
                                 Entity *partner = e->teleporterPartner;
+
+                                //NOTE(ollie): This is so the player has to move off the teleporter before it will trigger again
+                                info.e->lastTeleporter = partner;
 
                                 V3 partnerWorldPos = easyTransform_getWorldPos(&partner->T);
 
@@ -1249,6 +1266,7 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
     easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(scale, scale*tex->aspectRatio_h_over_w, scale)); 
     e->T.Q = eulerAnglesToQuaternion(0, 0.5f*PI32, 0);
     
+    e->lastTeleporter = 0;
     e->active = true;
     e->moveDirection = ENTITY_MOVE_NULL;
     e->laneIndex = 2;
@@ -2000,6 +2018,8 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
                 }
                 memset(e, 0, sizeof(Entity));
                 assert(e->T.parent == 0);
+
+
                 removeElement_ordered(&manager->entities, i);
             }		
         }
