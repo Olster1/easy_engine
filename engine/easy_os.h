@@ -25,6 +25,7 @@ typedef struct {
 } OSAppInfo;
 
 OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
+	DEBUG_TIME_BLOCK()
 	OSAppInfo result = {};
 	result.valid = true;
 	if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER|SDL_INIT_GAMECONTROLLER) != 0) {
@@ -126,11 +127,18 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 }
 
 void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
-	
-
+	DEBUG_TIME_BLOCK()
 	globalLongTermArena = createArena(Kilobytes(200));
 	globalPerFrameArena = createArena(Kilobytes(100));
     assets = (Asset **)pushSize(&globalLongTermArena, GLOBAL_ASSET_ARRAY_SIZE*sizeof(Asset *));
+
+    ///////////////////////*********** Init the sound state **************////////////////////
+    globalSoundState = pushStruct(&globalLongTermArena, EasySound_SoundState);
+
+    //TODO(ollie): Make this not be global 
+    easySound_initSoundState(globalSoundState);
+
+    ////////////////////////////////////////////////////////////////////
 
 	V2 idealResolution = v2(1280, 720); // Not sure if this is the best place for this?? Have to see. 
     
@@ -205,6 +213,7 @@ void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 }
 
 void easyOS_endProgram(OSAppInfo *appInfo) {
+	DEBUG_TIME_BLOCK()
 	SDL_GL_DeleteContext(appInfo->renderContext);
     SDL_DestroyWindow(appInfo->windowHandle);
     SDL_Quit();
@@ -259,6 +268,7 @@ static inline V2 easyInput_mouseToResolution_originLeftBottomCorner(AppKeyStates
 }
 
 static inline void easyOS_updateHotKeys(AppKeyStates *keyStates) {
+	DEBUG_TIME_BLOCK()
 	///////////////////////*********** Update Any Hotkeys **************////////////////////
 
 	if(wasPressed(keyStates->gameButtons, BUTTON_F2)) {

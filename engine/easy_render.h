@@ -383,6 +383,8 @@ static inline EasyImage loadImage_(char *fileName) {
         assert(!"no image found");
     }
 
+    {
+    DEBUG_TIME_BLOCK_NAMED("Pre-multiply alpha");
     ///////////////////////************* Do pre-multiplied alpha ************////////////////////
 #define PRE_MULTIPLY_ALPHA 1
 #if PRE_MULTIPLY_ALPHA
@@ -414,6 +416,7 @@ static inline EasyImage loadImage_(char *fileName) {
         }    
     }
 #endif
+    }
     
         
     

@@ -25,15 +25,19 @@
 
 static float globalTileScale = 0.9f;
 
+#define MAX_LANE_COUNT 5
 #define MY_ROOM_HEIGHT 5
 #define DEBUG_ENTITY_COLOR 0
 
 #define CHOC_INCREMENT 0.1f
 
-
-#define MAX_LANE_COUNT 5
-
 static bool DEBUG_global_movePlayer = true;
+
+typedef enum {
+    MOVE_VIA_NULL,
+    MOVE_VIA_TELEPORT,
+    MOVE_VIA_HURT,
+} PlayerMoveViaType; 
 
 #define MY_ENTITY_TYPE(FUNC) \
 FUNC(ENTITY_NULL)\
@@ -72,7 +76,8 @@ typedef struct MoveOption {
     MoveOption *prev;
 } MoveOption;
 
-typedef struct {
+typedef struct Entity Entity;
+typedef struct Entity {
     EasyTransform T;
     char *name;
     
@@ -91,9 +96,7 @@ typedef struct {
     
     EasyCollider *collider; //trigger
     EasyRigidBody *rb;  
-    
     ////////
-    
     
     //NOTE(ol): For fading out things
     Timer fadeTimer;
@@ -105,6 +108,7 @@ typedef struct {
             animation_list_item animationListSentintel;
 
             PlayingSound *teleporterSound;
+            Entity *teleporterPartner;
         };
         struct { //Player
             
@@ -130,6 +134,9 @@ typedef struct {
             Timer invincibleTimer;
             Timer restartToMiddleTimer;
             float lastValueForTimer;
+
+            PlayerMoveViaType moveViaType;
+            V3 teleportPos;
             
         };
         struct { //Bullet
@@ -248,6 +255,11 @@ static float getLaneX(int laneIndex) {
     return result;
 }
 
+static s32 getLaneForX(float x) {
+    s32 result = (x - (-2*GAME_LANE_WIDTH)) / GAME_LANE_WIDTH;
+    return result;
+}
+
 static void pushDirectionOntoList(MoveDirection dir, Entity *e) {
     assert(e->type == ENTITY_PLAYER);
     MoveOption *op = e->freeList;
@@ -352,6 +364,13 @@ static inline void myEntity_setPlayerPosToMiddle(Entity *player) {
     turnTimerOff(&player->moveTimer);
 }
 
+static inline void myEntity_setPlayerPosToNewPosition(Entity *player, V3 worldP) {
+    //NOTE(ollie): Set the world position of the player
+    easyTransform_setWorldPos(&player->T, worldP);
+    player->laneIndex = getLaneForX(worldP.x);
+    turnTimerOff(&player->moveTimer);
+}
+
 static inline void myEntity_restartPlayerInMiddle(Entity *player) {
     turnTimerOff(&player->moveTimer);
     easyEntity_emptyMoveList(player);
@@ -359,10 +378,25 @@ static inline void myEntity_restartPlayerInMiddle(Entity *player) {
         myEntity_setPlayerPosToMiddle(player);
     } else {
         //NOTE(ollie): Fade out to the middle
+        player->moveViaType = MOVE_VIA_HURT;
         turnTimerOn(&player->restartToMiddleTimer);	
     }
     
 }
+
+static inline void myEntity_teleportPlayer(Entity *player, V3 worldPos) {
+
+    playGameSound(&globalLongTermArena, easyAudio_findSound("reload.wav"), 0, AUDIO_FOREGROUND);
+    player->teleportPos = worldPos;
+
+    turnTimerOff(&player->moveTimer);
+    easyEntity_emptyMoveList(player);
+    //NOTE(ollie): Fade out to the middle
+    player->moveViaType = MOVE_VIA_TELEPORT;
+    turnTimerOn(&player->restartToMiddleTimer); 
+    
+}
+
 
 static inline void myEntity_spinEntity(Entity *e) {
     if(e->rb) {
@@ -569,7 +603,14 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                         } else {
                             e->colorTint.w = lerp(0, (t - 0.5f) / 0.5f, 1);
                             if(e->lastValueForTimer < 0.5f) {
-                                myEntity_setPlayerPosToMiddle(e);	
+                                if(e->moveViaType == MOVE_VIA_TELEPORT) {
+                                    myEntity_setPlayerPosToNewPosition(e, e->teleportPos); 
+                                } else if(e->moveViaType == MOVE_VIA_HURT) {
+                                    myEntity_setPlayerPosToMiddle(e);   
+                                } else {
+                                    assert(false);
+                                }
+                                
                             }
                             
                         }
@@ -836,12 +877,27 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     } break;
                     case ENTITY_TELEPORTER: {
                         //NOTE(ollie): Update the animation
-                        
                         char *animationOn = UpdateAnimation(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, dt, 0);
                         e->sprite = findTextureAsset(animationOn);
 
-
+                        //NOTE(ollie): Set the teleporter sound to the correct location
                         e->teleporterSound->location = easyTransform_getWorldPos(&e->T);
+
+                        if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+                            MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER); 
+                            
+                            if(info.found) {
+                                assert(info.e->type == ENTITY_PLAYER);
+                                
+                                //NOTE(ollie): Get the teleporter partner
+                                Entity *partner = e->teleporterPartner;
+
+                                V3 partnerWorldPos = easyTransform_getWorldPos(&partner->T);
+
+                                myEntity_teleportPlayer(info.e, partnerWorldPos);
+                            }                   
+                        }
+                        
                     } break;
                     case ENTITY_CHOC_BAR: {
                         if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
@@ -1199,6 +1255,7 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
     e->dropletCount = 0;
     e->healthPoints = e->maxHealthPoints;
     e->dropletCountStore = 0;
+    e->moveViaType = MOVE_VIA_NULL;
     
     e->fadeTimer = initTimer(0.3f, false);
     turnTimerOff(&e->fadeTimer);
@@ -1751,16 +1808,28 @@ static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
     return e;
 }
 
-static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room, MyGameState *gameState) {
+static bool myEntity_entityIsClamped(EntityType type) {
+    bool result = true;
+    if(type == ENTITY_SCENERY || type == ENTITY_ASTEROID) {
+        result = false;
+    }
+
+    return result;
+}
+
+static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room, MyGameState *gameState, bool clampPosition) {
     Entity *result = 0;
     
-    //NOTE(ollie): Get the clamped position for the entities that have to be on the board
-    V3 clampedPosition = v3((int)worldP.x, (int)worldP.y, 0);
-    
-    //NOTE(ollie): Clamp the position to be inside the lanes
-    clampedPosition.x = clamp(0, clampedPosition.x, MAX_LANE_COUNT);
-    clampedPosition.y = clamp(0, clampedPosition.y, MAX_LANE_COUNT);
-    
+    V3 clampedPosition = worldP;
+
+    if(clampPosition && myEntity_entityIsClamped(type)) {
+        //NOTE(ollie): Get the clamped position for the entities that have to be on the board
+        clampedPosition = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
+        
+        //NOTE(ollie): Clamp the position to be inside the lanes
+        clampedPosition.y = clamp(0, clampedPosition.y, MY_ROOM_HEIGHT);
+    }
+
     switch(type) {
         case ENTITY_ASTEROID: {
             EasyModel *asteroid = findModelAsset_Safe("rock.obj");
@@ -1787,7 +1856,16 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
             result = initCramp(entityManager, findTextureAsset("cramp.PNG"), clampedPosition, room);
         } break;
         case ENTITY_TELEPORTER: {
-            result = initTeleporter(entityManager, clampedPosition, room, gameState);
+            //NOTE(ollie): We create two teleporter entities next to each other 
+            Entity *t0 = initTeleporter(entityManager, clampedPosition, room, gameState);
+            Entity *t1 = initTeleporter(entityManager, v3_plus(clampedPosition, v3(1, 0, 0)), room, gameState);
+
+            //NOTE(ollie): Then assign partners so you can teleport through them
+            t0->teleporterPartner = t1;
+            t1->teleporterPartner = t0;
+
+            //NOTE(ollie): Assign the entity to the result 
+            result = t0;
         } break;
         case ENTITY_STAR: {
             result = initStar(entityManager, clampedPosition, room);

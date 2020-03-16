@@ -1,4 +1,5 @@
 static EasyMesh *easy3d_allocAndInitMesh() {
+   DEBUG_TIME_BLOCK()
     EasyMesh *m = pushStruct(&globalLongTermArena, EasyMesh);
     m->vertexCount = 0;
     m->vaoHandle.valid = false;
@@ -12,12 +13,14 @@ static EasyMesh *easy3d_allocAndInitMesh() {
 }
 
 static void easy3d_addMeshToModel(EasyMesh *mesh, EasyModel *model) {
+    DEBUG_TIME_BLOCK()
     assert(model->meshCount < arrayCount(model->meshes));
     model->meshes[model->meshCount++] = mesh;
 }
 
 
 static float easy3d_getFloat(EasyTokenizer *tokenizer) {
+    DEBUG_TIME_BLOCK()
     float result = 0;
     EasyToken t = lexGetNextToken(tokenizer); 
     if(t.type == TOKEN_INTEGER) {
@@ -35,6 +38,7 @@ static float easy3d_getFloat(EasyTokenizer *tokenizer) {
 }
 
 static int easy3d_getInteger(EasyToken token) {
+    DEBUG_TIME_BLOCK()
     char charBuffer[256] = {};
     nullTerminateBuffer(charBuffer, token.at, token.size);
 
@@ -42,6 +46,7 @@ static int easy3d_getInteger(EasyToken token) {
 }
 
 static V3 easy3d_makeVector3(EasyTokenizer *tokenizer) {
+    DEBUG_TIME_BLOCK()
     V3 result = v3(0, 0, 0);
     for(int tIndex = 0; tIndex < 3; ++tIndex) {
         result.E[tIndex] = easy3d_getFloat(tokenizer);
@@ -50,6 +55,7 @@ static V3 easy3d_makeVector3(EasyTokenizer *tokenizer) {
 }
 
 static V2 easy3d_makeVector2(EasyTokenizer *tokenizer) {
+    DEBUG_TIME_BLOCK()
     V2 result = v2(0, 0);
     for(int tIndex = 0; tIndex < 2; ++tIndex) {
         result.E[tIndex] = easy3d_getFloat(tokenizer);
@@ -58,6 +64,7 @@ static V2 easy3d_makeVector2(EasyTokenizer *tokenizer) {
 }
 
 static Texture *easy3d_findTextureWithToken(EasyTokenizer *tokenizer) {
+    DEBUG_TIME_BLOCK()
     EasyToken t = lexGetNextToken(tokenizer); 
     assert(t.type == TOKEN_WORD);
     
@@ -75,7 +82,7 @@ typedef enum {
 } EasyFile_NameType;
 
 static void easy3d_loadMtl(char *fileName, EasyFile_NameType type) {
-
+    DEBUG_TIME_BLOCK()
     if(type == EASY_FILE_NAME_RELATIVE) {
         fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     }
@@ -208,6 +215,7 @@ static void easy3d_loadMtl(char *fileName, EasyFile_NameType type) {
 #define easy3d_loadMtl_withRelativeName(fileName) easy3d_loadMtl(fileName, EASY_FILE_NAME_RELATIVE)
 
 static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, InfiniteAlloc *positionData, InfiniteAlloc *normalData, InfiniteAlloc *uvData) {
+    DEBUG_TIME_BLOCK()
     EasyToken token = lexSeeNextToken(tokenizer);
     if(token.type == TOKEN_INTEGER || token.type == TOKEN_FORWARD_SLASH) {
         Vertex vert = {};
@@ -251,6 +259,7 @@ static void easy3d_parseVertex(EasyTokenizer *tokenizer, EasyMesh *currentMesh, 
 }
 
 static EasyModel *easy3d_loadObj(char *fileName, EasyModel *model, EasyFile_NameType nameType) { 
+    DEBUG_TIME_BLOCK()
     if(nameType == EASY_FILE_NAME_RELATIVE) {
         fileName = concatInArena(globalExeBasePath, fileName, &globalPerFrameArena);
     }
@@ -376,7 +385,7 @@ void easy3d_imm_renderModel(EasyMesh *mesh,
                             Matrix4 viewMatrix,
                             Matrix4 perspectiveMatrix, 
                             RenderProgram *program) {
-    
+    DEBUG_TIME_BLOCK()
     glUseProgram(program->glProgram);
     renderCheckError();
     

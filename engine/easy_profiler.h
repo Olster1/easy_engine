@@ -105,6 +105,17 @@ static inline EasyProfiler_State *EasyProfiler_initProfilerState() {
 	result->lookingAtSingleFrame = 0;
 	result->queuePause = false;
 
+	///////////////////////************ Initialize the array to zero *************////////////////////
+	for(int i = 0; i < arrayCount(result->frames); i++) {
+		EasyProfile_FrameData *frameData = &result->frames[result->frameAt];
+
+		frameData->timeStampAt = 0;
+		frameData->beginCountForFrame = 0;
+		frameData->countsForFrame = 0;
+	}
+
+	////////////////////////////////////////////////////////////////////
+
 	DEBUG_global_ProfilePaused = false;
 
 	return result;
@@ -214,6 +225,7 @@ class EasyProfileBlock {
 			u64 ts = __rdtsc();
 			s64 timeAt = EasyTime_GetTimeCount();
 			assert(timeAt >= this->startTimeSecondsCount);
+			assert(ts >= startTimeStamp);
 			EasyProfile_AddSample(lineNumber, fileName, functionName, ts - startTimeStamp, this->startTimeStamp, timeAt, EasyTime_GetMillisecondsElapsed(timeAt, this->startTimeSecondsCount), EASY_PROFILER_POP_SAMPLE, isOverallFrame);
 		}
 	}
@@ -260,7 +272,8 @@ static inline void EasyProfile_MoveToNextFrame(bool hotKeyWasPressed) {
 			state->framesFilled = EASY_PROFILER_FRAMES;
 		}
 
-		if(state->frameAt >= state->framesFilled) {
+		if(state->frameAt >= EASY_PROFILER_FRAMES) {
+			assert(state->frameAt == EASY_PROFILER_FRAMES);
 			state->frameAt = 0;
 		}
 
@@ -326,7 +339,7 @@ static inline void easyProfiler_addDrawCount(u32 drawCount, u32 shapeTypeIndexIn
 
 #if DEVELOPER_MODE
 #define DEBUG_TIME_BLOCK() EasyProfileBlock pb_##__FILE__##__LINE__##__FUNCTION__(__LINE__, __FILE__, __FUNCTION__, false); 
-#define DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(varName, functionName) DEBUG_global_ProfilePaused = true; DEBUG_globalEasyEngineProfilerState = EasyProfiler_initProfilerState(); EasyProfileBlock *varName = new EasyProfileBlock(__LINE__, __FILE__, functionName, true); 
+#define DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(varName, functionName) DEBUG_globalEasyEngineProfilerState = EasyProfiler_initProfilerState(); EasyProfileBlock *varName = new EasyProfileBlock(__LINE__, __FILE__, functionName, true); 
 #define DEBUG_TIME_BLOCK_FOR_FRAME_START(varName, functionName) varName = new EasyProfileBlock(__LINE__, __FILE__, functionName, true); 
 #define DEBUG_TIME_BLOCK_FOR_FRAME_END(varName, hotKeyWasPressed) delete(varName); EasyProfile_MoveToNextFrame(hotKeyWasPressed); 
 #define DEBUG_TIME_BLOCK_NAMED(name) EasyProfileBlock pb_##__FILE__##__LINE__##__FUNCTION__(__LINE__, __FILE__, name, false);

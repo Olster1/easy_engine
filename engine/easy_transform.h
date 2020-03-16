@@ -96,6 +96,23 @@ static inline V3 easyTransform_getWorldPos(EasyTransform *T) {
 	return pos;
 }
 
+static inline void easyTransform_setWorldPos(EasyTransform *T, V3 worldPos) {
+	EasyTransform *parent = T->parent;
+
+	V3 pos = v3(0, 0, 0);
+
+	while(parent) {
+		pos = v3_plus(pos, parent->pos);
+		parent = parent->parent;
+	}
+
+	//NOTE(ollie): Take away the remainding postion to get it to be the world pos
+	pos = v3_minus(worldPos, pos);
+
+	//NOTE(ollie): Set the world pos
+	T->pos = pos;
+}
+
 static inline V3 easyTransform_getZAxis(EasyTransform *T) {
 	Matrix4 t = easyTransform_getTransform(T); //@speed dont know how expensive this could be?
 	V3 result = easyMath_getZAxis(t);

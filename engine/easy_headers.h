@@ -38,7 +38,7 @@ FUNC(SHAPE_MODEL_AS_2D_IMAGE)\
 FUNC(RENDER_SHAPE_COUNT)\
 
 typedef enum {
-	EASY_RENDER_SHAPE_TYPE(ENUM)
+    EASY_RENDER_SHAPE_TYPE(ENUM)
 } ShapeType;
 
 static char *EasyRender_ShapeTypeStrings[] = { EASY_RENDER_SHAPE_TYPE(STRING) };
@@ -56,7 +56,7 @@ static char* globalExeBasePath;
 #include "easy_math.h"
 #include "easy_error.h"
 #include "easy_array.h"
-#include "sdl_audio.h"
+#include "easy_sound.h"
 #include "easy_lex.h"
 #include "easy_transform.h"
 #include "easy_color.h"
@@ -75,10 +75,6 @@ static char* globalExeBasePath;
 #include "easy_text_io.h"
 #include "easy_texture_atlas.h"
 #include "easy_font.h"
-
-
-
-
 
 #include "easy_3d.h"
 #include "easy_terrain.h"

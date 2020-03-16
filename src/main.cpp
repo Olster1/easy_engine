@@ -53,7 +53,7 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     if(GAME_STATE_TO_LOAD == MY_GAME_MODE_EDIT_LEVEL) {
         //NOTE(ollie): We aren't begining a round so we need to create a level,
         // See beginRound func to see us using this function again. 
-        myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0), gameState);
+        gameState->currentRoomBeingEdited = myLevels_loadLevel(LEVEL_TO_LOAD, entityManager, v3(0, 0, 0), gameState);
             
         DEBUG_global_IsFlyMode = true;
         DEBUG_global_CameraMoveXY = true;
@@ -250,6 +250,8 @@ static EasySkyBox *initSkyBox() {
 }
 
 int main(int argc, char *args[]) {
+    //NOTE(ollie): Have to do this first since our profiler relies on it
+    EasyTime_setupTimeDatums();
     DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame, "Main: Intial setup");
     
     if(argc > 1) {
@@ -269,7 +271,7 @@ int main(int argc, char *args[]) {
     OSAppInfo appInfo = easyOS_createApp("Easy Engine", &screenDim, fullscreen);
     
     if(appInfo.valid) {
-        EasyTime_setupTimeDatums();
+        
         
         
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
@@ -280,7 +282,7 @@ int main(int argc, char *args[]) {
             // exit(0);
             easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/teleporter_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
         }
-        loadAndAddImagesToAssets("img/");
+        loadAndAddImagesToAssets("img/spaceGame/");
 
         loadAndAddImagesToAssets("img/period_game/");
         
@@ -297,18 +299,26 @@ int main(int argc, char *args[]) {
         
         // myDialogue_compileProgram(minerDialogue);
         // exit(0);
+
+        FrameBuffer mainFrameBuffer;
+        FrameBuffer toneMappedBuffer;
+        FrameBuffer bloomFrameBuffer;
+        FrameBuffer cachedFrameBuffer;
+
+        {
+            DEBUG_TIME_BLOCK_NAMED("Create frame buffers");
+            
+            //******** CREATE THE FRAME BUFFERS ********///
+            
+            mainFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL | FRAMEBUFFER_HDR, 2);
+            toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL, 1);
+            
+            bloomFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+            
+            cachedFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
+            //////////////////////////////////////////////////
         
-        //******** CREATE THE FRAME BUFFERS ********///
-        
-        FrameBuffer mainFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL | FRAMEBUFFER_HDR, 2);
-        FrameBuffer toneMappedBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_DEPTH | FRAMEBUFFER_STENCIL, 1);
-        
-        FrameBuffer bloomFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
-        
-        FrameBuffer cachedFrameBuffer = createFrameBuffer(resolution.x, resolution.y, FRAMEBUFFER_COLOR | FRAMEBUFFER_HDR, 1);
-        //////////////////////////////////////////////////
-        
-        
+        }
         /////************** Engine requirments *************//////////////
         
         bool hasBlackBars = true;
@@ -336,7 +346,7 @@ int main(int argc, char *args[]) {
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, 0));
         
-        globalRenderGroup->skybox = initSkyBox();
+        // globalRenderGroup->skybox = initSkyBox();
         
 #define LOAD_MODELS_AUTOMATICALLY 1
         ///////////////////////************* Loading the models ************////////////////////
@@ -403,9 +413,9 @@ int main(int argc, char *args[]) {
         
         // EasyTerrain *terrain = initTerrain(fern, grass);
         
-        EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
-        EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
-        EasyMaterial flowerMaterial = easyCreateMaterial(findTextureAsset("flower.png"), 0, findTextureAsset("grey_texture.jpg"), 32);
+        // EasyMaterial crateMaterial = easyCreateMaterial(findTextureAsset("crate.png"), 0, findTextureAsset("crate_specular.png"), 32);
+        // EasyMaterial emptyMaterial = easyCreateMaterial(findTextureAsset("grey_texture.jpg"), 0, findTextureAsset("grey_texture.jpg"), 32);
+        // EasyMaterial flowerMaterial = easyCreateMaterial(findTextureAsset("flower.png"), 0, findTextureAsset("grey_texture.jpg"), 32);
         
         EasyTransform sunTransform;
         easyTransform_initTransform(&sunTransform, v3(0, -10, 0));
@@ -1099,23 +1109,25 @@ int main(int argc, char *args[]) {
 
                     s32 startX = MAX_LANE_COUNT / 2;
 
+                    EasyRay ray = {};
+                    ray.origin = camera.pos;
+                    ray.direction = rayDirection;
+
+                    EasyPlane plane = {};
+                    plane.normal = v3(0, 0, -1);
+                    plane.origin = v3(0, 0, 0);
+
+                    V3 hitPoint; 
+                    float tAt;
+
+                    bool hit = easyMath_castRayAgainstPlane(ray, plane, &hitPoint, &tAt);
+
                     for(s32 y = 0; y < MY_ROOM_HEIGHT; ++y) {
                         for(s32 x = -startX; x <= startX; ++x) {
                             Matrix4 modelT = Matrix4_translate(mat4(), v3(x, y, 0));
                             setModelTransform(globalRenderGroup, modelT);
 
-                            EasyRay ray = {};
-                            ray.origin = camera.pos;
-                            ray.direction = rayDirection;
-
-                            EasyPlane plane = {};
-                            plane.normal = v3(0, 0, -1);
-                            plane.origin = v3(0, 0, 0);
-
-                            V3 hitPoint; 
-                            float tAt;
-
-                            bool hit = easyMath_castRayAgainstPlane(ray, plane, &hitPoint, &tAt);
+                            
                             Rect2f gridRect = rect2fMinDim(x - 0.5f, y - 0.5f, 1, 1);
                             if(hit && tAt > 0.0f && inBounds(hitPoint.xy, gridRect, BOUNDS_RECT)) {
                                 renderDrawSprite(globalRenderGroup, &globalWhiteTexture, COLOR_GOLD);    
@@ -1250,28 +1262,34 @@ int main(int argc, char *args[]) {
                         DEBUG_global_IsFlyMode = false;
                         DEBUG_global_CameraMoveXY = false;
                     }
+                    Rect2f boardBounds = rect2fMinDim(-0.5f*MAX_LANE_COUNT, 0, MAX_LANE_COUNT, MY_ROOM_HEIGHT);
                     
                     if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE) && !editor->isHovering) {
                         
                         if(isDown(keyStates.gameButtons, BUTTON_SHIFT)) {
-                            
-                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
-                            
-                            EntityType entTypeToInit = (EntityType)gameState->entityTypeSelected;
-                            if(entTypeToInit == ENTITY_SCENERY) {
-                                assert(gameState->modelSelected < allModelsForEditor.count);
-                                EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
-                                if(model) {            
-                                    gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
-                                }
-                            } else {
-                                gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState);
-                            }
-                            
 
-                            if(gameState->hotEntity) {
-                                //NOTE(ollie): Actually got an entity back from the initEntity function
-                                gameState->holdingEntity = true;
+                            EntityType entTypeToInit = (EntityType)gameState->entityTypeSelected;
+
+                            if(!myEntity_entityIsClamped(entTypeToInit) || (myEntity_entityIsClamped(entTypeToInit) && hit && tAt > 0.0f && inBounds(hitPoint.xy, boardBounds, BOUNDS_RECT))) {
+                                
+                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
+                                
+                                
+                                if(entTypeToInit == ENTITY_SCENERY) {
+                                    assert(gameState->modelSelected < allModelsForEditor.count);
+                                    EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
+                                    if(model) {            
+                                        gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
+                                    }
+                                } else {
+                                    gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState, true);
+                                }
+                                
+
+                                if(gameState->hotEntity) {
+                                    //NOTE(ollie): Actually got an entity back from the initEntity function
+                                    gameState->holdingEntity = true;
+                                }
                             }
                             
                         }
@@ -1328,14 +1346,27 @@ int main(int argc, char *args[]) {
                         if(gameState->holdingEntity) {
                             //NOTE(ollie): Set the entity position 
                             
-                            ///////////////////////*********** Working out the z from camera **************////////////////////
-                            V3 entPos = easyTransform_getWorldPos(T);
-                            V3 zAxis = normalizeV3(easyMath_getZAxis(quaternionToMatrix(camera.orientation)));
-                            float zFromCamera = dotV3(v3_minus(entPos, camera.pos), zAxis);
-                            ////////////////////////////////////////////////////////////////////
+                            if(myEntity_entityIsClamped(hotEntity->type)) {
+
+                                if(hit && tAt > 0.0f && inBounds(hitPoint.xy, boardBounds, BOUNDS_RECT)) {
+                                    assert(hitPoint.z == 0);
+
+                                    //NOTE(ollie): Get the clamped position for the entities that have to be on the board
+                                    V3 clampedPosition = v3(floor(hitPoint.x + 0.5f), floor(hitPoint.y + 0.5f), 0);
+                                    
+                                    easyTransform_setWorldPos(T, clampedPosition);    
+                                }
+                            } else {
+                                ///////////////////////*********** Working out the z from camera **************////////////////////
+                                V3 entPos = easyTransform_getWorldPos(T);
+                                V3 zAxis = normalizeV3(easyMath_getZAxis(quaternionToMatrix(camera.orientation)));
+                                float zFromCamera = dotV3(v3_minus(entPos, camera.pos), zAxis);
+                                ////////////////////////////////////////////////////////////////////
+                                
+                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zFromCamera, easy3d_getViewToWorld(&camera));
+                                easyTransform_setWorldPos(T, worldP);    
+                            }
                             
-                            V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zFromCamera, easy3d_getViewToWorld(&camera));
-                            T->pos = worldP;
                         }
                         
                         easyEditor_startDockedWindow(editor, "Entity", EASY_EDITOR_DOCK_BOTTOM_LEFT);
@@ -1439,7 +1470,7 @@ int main(int argc, char *args[]) {
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
                             
-                            myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0), gameState);
+                            gameState->currentRoomBeingEdited = myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0), gameState);
                             easyConsole_addToStream(&console, "loaded level");
                             
                             DEBUG_global_IsFlyMode = true;

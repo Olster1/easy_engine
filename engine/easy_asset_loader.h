@@ -1,4 +1,5 @@
 int loadAndAddImagesToAssets(char *folderName) {
+	DEBUG_TIME_BLOCK()
 	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp", "PNG"};
 	FileNameOfType fileNames = getDirectoryFilesOfType(concat(globalExeBasePath, folderName), imgFileTypes, arrayCount(imgFileTypes));
 	int result = fileNames.count;
@@ -22,6 +23,7 @@ int loadAndAddImagesToAssets(char *folderName) {
 }
 
 int loadAndAddSoundsToAssets(char *folderName, SDL_AudioSpec *audioSpec) {
+	DEBUG_TIME_BLOCK()
 	char *soundFileTypes[] = {"wav"};
 	FileNameOfType soundFileNames = getDirectoryFilesOfType(concat(globalExeBasePath, folderName), soundFileTypes, arrayCount(soundFileTypes));
 	int result = soundFileNames.count;
@@ -62,6 +64,7 @@ typedef struct {
 
 //TODO(ollie): This should cover all asset types? 
 static void easyAssetLoader_loadAndAddAssets(EasyAssetLoader_AssetArray *result, char *folderName, char **fileTypes, int fileTypeCount, AssetType resourceType) {
+	DEBUG_TIME_BLOCK()
 	//NOTE(ollie): Get the names
 	FileNameOfType allFileNames = getDirectoryFilesOfType(concat(globalExeBasePath, folderName), fileTypes, fileTypeCount);
 	if(result) {

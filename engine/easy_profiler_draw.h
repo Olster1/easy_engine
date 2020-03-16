@@ -116,9 +116,6 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 				if(state->lookingAtSingleFrame) {
 					assert(DEBUG_global_ProfilePaused);//has to be paused
 
-
-			
-
 					///////////////////////*********** Scroll bar**************////////////////////
 					
 					V4 color = COLOR_GREY;
@@ -348,9 +345,10 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 							level++;
 						} else {
 
-							drawState->zoomLevel += drawState->zoomLevel*0.005f*keyStates->scrollWheelY*dt;
+							drawState->zoomLevel += (1.0f / drawState->zoomLevel)*0.0005f*keyStates->scrollWheelY*max(dt, 1.0f / 30.0f);
 
 							if(drawState->zoomLevel < 1.0f) { drawState->zoomLevel = 1.0f; }
+							if(drawState->zoomLevel > 1000.0f) { drawState->zoomLevel = 1000.0f; }
 
 							assert(ts.type == EASY_PROFILER_POP_SAMPLE);
 							assert(level > 0);
@@ -363,42 +361,48 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 							float barWidth = percent*graphWidth;
 							float barHeight = 0.05f*resolution.y;
 
-							float expandedSize = (graphWidth - defaultGraphWidth);
-							float xStart = 0.1f*resolution.x - drawState->scrollPercent*expandedSize;
-							float yStart = 0.1f*resolution.y;
+							//NOTE(ollie): If the bar can actually been seen do we draw it 
+							if(barWidth > 5) { //pixels in a fuax resolution projection
 
-							Rect2f r = rect2fMinDim(xStart + percentAcross*graphWidth, yStart + level*barHeight + backdropY, barWidth, barHeight);
+								float expandedSize = (graphWidth - defaultGraphWidth);
+								float xStart = 0.1f*resolution.x - drawState->scrollPercent*expandedSize;
+								float yStart = 0.1f*resolution.y;
 
-							V4 color = colors[i % arrayCount(colors)];
-							if(inBounds(easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution), r, BOUNDS_RECT)) {
+								Rect2f r = rect2fMinDim(xStart + percentAcross*graphWidth, yStart + level*barHeight + backdropY, barWidth, barHeight);
 
-								///////////////////////*********** Draw the name of it **************////////////////////
-								char digitBuffer[1028] = {};
-								sprintf(digitBuffer, "%d", ts.lineNumber);
+								V4 color = colors[i % arrayCount(colors)];
+								if(inBounds(easyInput_mouseToResolution_originLeftBottomCorner(keyStates, resolution), r, BOUNDS_RECT)) {
+
+									///////////////////////*********** Draw the name of it **************////////////////////
+									char digitBuffer[1028] = {};
+									sprintf(digitBuffer, "%d", ts.lineNumber);
+
+									assert(ts.timeStamp >= 0);
+									assert(ts.totalTime >= 0);
+									
+									char *formatString = "File name: %s\n\nFunction name: %s\nLine number: %d\nMilliseonds: %f\nTotal Cycles: %lu\n";
+									int stringLengthToAlloc = snprintf(0, 0, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp) + 1; //for null terminator, just to be sure
+									
+									char *strArray = pushArray(&globalPerFrameArena, stringLengthToAlloc, char);
+
+									snprintf(strArray, stringLengthToAlloc, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp); //for null terminator, just to be sure
 
 								
-								char *formatString = "File name: %s\n\nFunction name: %s\nLine number: %d\nMilliseonds: %f\nTotal Cycles: %ld\n";
-								int stringLengthToAlloc = snprintf(0, 0, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp) + 1; //for null terminator, just to be sure
-								
-								char *strArray = pushArray(&globalPerFrameArena, stringLengthToAlloc, char);
 
-								snprintf(strArray, stringLengthToAlloc, formatString, ts.fileName, ts.functionName, ts.lineNumber, ts.totalTime, ts.timeStamp); //for null terminator, just to be sure
+									Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, resolution.x, resolution.y);
 
-							
+									outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strArray, margin, COLOR_BLACK, 1, true, screenRelativeSize);
 
-								Rect2f margin = rect2fMinDim(xAt, yAt - globalDebugFont->fontHeight, resolution.x, resolution.y);
+									////////////////////////////////////////////////////////////////////
 
-								outputTextNoBacking(globalDebugFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, strArray, margin, COLOR_BLACK, 1, true, screenRelativeSize);
+									color = COLOR_GREEN;
+								}
 
-								////////////////////////////////////////////////////////////////////
+								renderDrawRect(r, NEAR_CLIP_PLANE + 0.01f, color, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
 
-								color = COLOR_GREEN;
-							}
+								if(drawState->hotIndex == i) {
 
-							renderDrawRect(r, NEAR_CLIP_PLANE + 0.01f, color, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
-
-							if(drawState->hotIndex == i) {
-
+								}
 							}
 
 							level--;
@@ -415,7 +419,6 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 					if(state->framesFilled < EASY_PROFILER_FRAMES) {
 						//We haven't yet filled up the buffer so we will start at 0
 						index = 0;
-						assert(state->frameAt < state->framesFilled);
 					} else {
 						index = (s32)state->frameAt + 1;
 						if(index >= EASY_PROFILER_FRAMES) {
@@ -437,8 +440,13 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 						////////////////////////////////////////////////////////////////////					
 						tempIndex++;
 						if(tempIndex == state->framesFilled) {
-							assert(tempIndex != state->frameAt);
-							tempIndex = 0;
+							if(state->framesFilled < EASY_PROFILER_FRAMES) {
+								assert(state->framesFilled == state->frameAt);
+								tempIndex = state->frameAt;
+							} else {
+								assert(tempIndex != state->frameAt);
+								tempIndex = 0;
+							}
 						}
 					}
 					////////////////////////////////////////////////////////////////////
@@ -486,8 +494,13 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 
 						index++;
 						if(index == state->framesFilled) {
-							assert(index != state->frameAt);
-							index = 0;
+							if(state->framesFilled < EASY_PROFILER_FRAMES) {
+								assert(state->framesFilled == state->frameAt);
+								index = state->frameAt;
+							} else {
+								assert(index != state->frameAt);
+								index = 0;
+							}
 						}
 					}
 				}
@@ -514,11 +527,9 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 	}
 }
 
-static EasyProfile_ProfilerDrawState *EasyProfiler_initProfiler() {
+static EasyProfile_ProfilerDrawState *EasyProfiler_initProfilerDrawState() {
 	EasyProfile_ProfilerDrawState *result = pushStruct(&globalLongTermArena, EasyProfile_ProfilerDrawState);
 		
-	EasyProfiler_State *state = DEBUG_globalEasyEngineProfilerState;
-
 	result->hotIndex = -1;
 	result->level = 0;
 	result->drawType = EASY_PROFILER_DRAW_OVERVIEW;
@@ -533,20 +544,6 @@ static EasyProfile_ProfilerDrawState *EasyProfiler_initProfiler() {
 	result->openTimer = initTimer(0.4f, false);
 	turnTimerOff(&result->openTimer);
 	result->openState = EASY_PROFILER_DRAW_CLOSED;
-
-	///////////////////////************ Initialize the array to zero *************////////////////////
-	for(int i = 0; i < arrayCount(state->frames); i++) {
-		EasyProfile_FrameData *frameData = &state->frames[state->frameAt];
-
-		frameData->timeStampAt = 0;
-		frameData->beginCountForFrame = 0;
-		frameData->countsForFrame = 0;
-	}
-
-	state->frameAt = 0;
-	state->framesFilled = 0;
-
-	////////////////////////////////////////////////////////////////////
 
 	return result;
 
