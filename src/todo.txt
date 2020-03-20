@@ -3,6 +3,24 @@ Overworld
 	- have it like noita where the text fades in & the box around it expands
 	- have lines that connect the world
 
+Voxel World: 
+
+	- get space skybox (look up pixel art skyboxes)
+	- have particle effects use cubes 
+	- have voxel worlds you can visit that have voxel perlin noise terrain 
 
 
+Levels 
 
+	- A level or room has some tags that describe it like - BIOME_EARTH, BIOME_LAVA, BIOME ROCK, 
+	SPACE_CALM, SPACE_PUZZLE, SPACE_ENEMY, SPACE_BOSS, 
+
+	- Then you pass a set of tags for the world your generating & it will choose the next level based 
+	   on the tags & what's been before. Like if it's a boss level it shouldn't create more than one, and
+	   should know when you defeat it. 
+
+
+Mission Journal
+
+	- Mission journal that you can add missions to and a popup comes up when you get one & you complete one
+	

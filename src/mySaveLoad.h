@@ -1,4 +1,4 @@
-static inline void myLevels_saveLevel(int level, MyEntityManager *manager) {
+static inline void myLevels_saveLevel(int level, MyEntityManager *manager, MyGameState *gameState) {
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 
@@ -9,10 +9,14 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager) {
 		if(e && e->active) { //can be null
 
 			//NOTE(ollie): Save everything these types
-			if(e->type != ENTITY_ROOM && e->type != ENTITY_TILE && e->type != ENTITY_PLAYER && e->type != ENTITY_BULLET) {
-				if(e->type == ENTITY_SCENERY) {
+			if(myEntity_shouldEntityBeSaved(e->type)) {
+				if(e->model) {
 			       	addVar(&fileContents, e->model->name, "modelName", VAR_CHAR_STAR);
 				}  
+
+				if(e->type == ENTITY_BOSS) {
+					addVar(&fileContents, MyEntity_EntityBossTypeStrings[(int)e->bossType], "entityBossType", VAR_CHAR_STAR);
+				}
 
 				EasyTransform *T = &e->T;
 				char *entityType = MyEntity_EntityTypeStrings[(int)e->type];
@@ -22,11 +26,18 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager) {
 				addVar(&fileContents, T->scale.E, "scale", VAR_V3);
 				addVar(&fileContents, e->colorTint.E, "color", VAR_V4);
 
+
+
 				char buffer[32];
 	 	        sprintf(buffer, "}\n\n");
 		        addElementInifinteAllocWithCount_(&fileContents, buffer, strlen(buffer));
 			}
 		}
+	}
+
+
+	for(s32 tagIndex = 0; tagIndex < gameState->currentRoomTagCount; ++tagIndex) {
+		addVar(&fileContents, gameState->currentRoomTags[tagIndex], "tag", VAR_CHAR_STAR);
 	}
 
 	///////////////////////************ Write the file to disk *************////////////////////
@@ -47,18 +58,11 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager) {
 
 }
 
-#define LOAD_FROM_STRING 0 //we want to eventually get rid of this & load everything from a file
 static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 
-#if LOAD_FROM_STRING
-	char *levelString = global_periodLevelStrings[level];
-	Entity *newRoom = myLevels_generateLevel_(levelString, entityManager, startPos);
-
-#else 
 	Entity *newRoom = initRoom(entityManager, startPos);
-#endif
 
 	char *folderPath = concat(globalExeBasePath, "levels/");
 	char *writeName = concat(folderPath, levelName);
@@ -78,6 +82,7 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	    V3 scale = v3(1, 1, 1);
 	    V4 color = v4(1, 1, 1, 1);
 	    EntityType entType = ENTITY_NULL;
+	    EntityBossType bossType = ENTITY_BOSS_NULL;
 
 	    while(parsing) {
 	        EasyToken token = lexGetNextToken(&tokenizer);
@@ -87,22 +92,26 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                parsing = false;
 	            } break;
 	            case TOKEN_WORD: {
+	            	if(stringsMatchNullN("tag", token.at, token.size)) {
+	            		if(gameState->currentRoomTagCount < arrayCount(gameState->currentRoomTags)) {
+	            				char *tagString = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
+
+	            				char *newString = easyString_copyToHeap(tagString, strlen(tagString));
+
+	            				gameState->currentRoomTags[gameState->currentRoomTagCount++] = newString;
+
+	            			    ////////////////////////////////////////////////////////////////////
+	            			    releaseInfiniteAlloc(&data);	
+	            		} else {
+	            			easyConsole_addToStream(DEBUG_globalEasyConsole, "Tags full");
+	            		}
+            	    	
+	            	}
 	                if(stringsMatchNullN("position", token.at, token.size)) {
 	                    pos = buildV3FromDataObjects(&data, &tokenizer);
 	                }
 	                if(stringsMatchNullN("scale", token.at, token.size)) {
 	                    scale = buildV3FromDataObjects(&data, &tokenizer);
-	                }
-	                //NOTE(ollie): For deprecated file format (when we where using MODEL as a type)
-	                if(stringsMatchNullN("type", token.at, token.size)) {
-
-	                	char *typeString = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
-	                	assert(cmpStrNull("MODEL", typeString));
-
-	                    entType = ENTITY_SCENERY; 
-
-	                    ////////////////////////////////////////////////////////////////////
-	                    releaseInfiniteAlloc(&data);
 	                }
 	                if(stringsMatchNullN("entityType", token.at, token.size)) {
 	                	char *typeString = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
@@ -127,6 +136,15 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                    model = findModelAsset_Safe(name);
 	                    assert(model);
 
+	                    ////////////////////////////////////////////////////////////////////
+	                    releaseInfiniteAlloc(&data);
+	                }
+	                if(stringsMatchNullN("entityBossType", token.at, token.size)) {
+	                	char *typeString = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
+
+	                    bossType = (EntityBossType)findEnumValue(typeString, MyEntity_EntityBossTypeStrings, arrayCount(MyEntity_EntityBossTypeStrings));
+
+	                    ////////////////////////////////////////////////////////////////////
 	                    releaseInfiniteAlloc(&data);
 	                }
 	            } break;
@@ -138,7 +156,7 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	            	} else {
 
 		            	if(entType != ENTITY_SCENERY) {
-		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom, gameState, false);
+		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom, gameState, false, model, bossType);
 		            	} else {
 		            		newEntity = initScenery1x1(entityManager, model->name, model, pos, newRoom);	
 		            	}
@@ -149,6 +167,15 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                newEntity->T.Q = rotation;
 	                newEntity->T.scale = scale;
 	                newEntity->colorTint = color;
+
+
+	                bossType = ENTITY_BOSS_NULL;
+	                pos = v3(1, 1, 1);
+	                model = 0;
+	                rotation;
+	                scale = v3(1, 1, 1);
+	                color = v4(1, 1, 1, 1);
+	                entType = ENTITY_NULL;
 
 	            } break;
 	            case TOKEN_OPEN_BRACKET: {
@@ -168,4 +195,78 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	free(folderPath);
 
 	return newRoom;
+}
+
+
+static void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo) {
+	char levelName[256];
+	sprintf(levelName, "level_%d.txt", level);
+
+	tagInfo->valid = false;
+	tagInfo->flags &= MY_WORLD_NULL;
+
+	char *folderPath = concat(globalExeBasePath, "levels/");
+	char *writeName = concat(folderPath, levelName);
+
+	bool isFileValid = platformDoesFileExist(writeName);
+	        
+	if(isFileValid) {
+
+		tagInfo->levelId = level;
+		tagInfo->valid = true;
+
+		bool parsing = true;
+	    FileContents contents = getFileContentsNullTerminate(writeName);
+	    EasyTokenizer tokenizer = lexBeginParsing((char *)contents.memory, EASY_LEX_OPTION_EAT_WHITE_SPACE);
+
+	    while(parsing) {
+	        EasyToken token = lexGetNextToken(&tokenizer);
+	        InfiniteAlloc data = {};
+	        switch(token.type) {
+	            case TOKEN_NULL_TERMINATOR: {
+	                parsing = false;
+	            } break;
+	            case TOKEN_WORD: {
+	            	if(stringsMatchNullN("tag", token.at, token.size)) {
+        				char *tagString = getStringFromDataObjects_memoryUnsafe(&data, &tokenizer);
+
+        				if(cmpStrNull(tagString, "boss")) {
+        					tagInfo->flags |= MY_WORLD_BOSS;
+        				}
+        				if(cmpStrNull(tagString, "fireboss")) {
+        					tagInfo->flags |= MY_WORLD_FIRE_BOSS;
+        				}
+        				if(cmpStrNull(tagString, "puzzle")) {
+        					tagInfo->flags |= MY_WORLD_PUZZLE;
+        				}
+        				if(cmpStrNull(tagString, "enemy")) {
+        					tagInfo->flags |= MY_WORLD_ENEMIES;
+        				}
+        				if(cmpStrNull(tagString, "obstacle")) {
+        					tagInfo->flags |= MY_WORLD_OBSTACLES;
+        				}
+        				if(cmpStrNull(tagString, "space")) {
+        					tagInfo->flags |= MY_WORLD_SPACE;
+        				}
+        				if(cmpStrNull(tagString, "earth")) {
+        					tagInfo->flags |= MY_WORLD_EARTH;
+        				}
+
+        			    ////////////////////////////////////////////////////////////////////
+        			    releaseInfiniteAlloc(&data);	
+	            	}
+	            } break;
+	            default: {
+
+	            }
+	        }
+	    }
+	    easyFile_endFileContents(&contents);
+	}
+	
+	///////////////////////************* Clean up the memory ************////////////////////	
+	
+	free(writeName);
+	free(folderPath);
+
 }

@@ -23,12 +23,69 @@ typedef enum {
 	GAME_INSTRUCTION_COUNT,
 } GameInstructionType;
 
+
+typedef enum {
+	MY_WORLD_NULL = 0,
+	MY_WORLD_BOSS = 1 << 0,
+	MY_WORLD_FIRE_BOSS = 1 << 1,
+	MY_WORLD_PUZZLE = 1 << 2,
+	MY_WORLD_ENEMIES = 1 << 3,
+	MY_WORLD_OBSTACLES = 1 << 4,
+	MY_WORLD_SPACE = 1 << 5,
+	MY_WORLD_EARTH = 1 << 6,
+
+	////////////////////////////////////////////////////////////////////
+
+} MyWorldFlags;
+
+
 typedef enum {
 	MY_VIEW_ANGLE_BOTTOM = 0,
 	MY_VIEW_ANGLE_RIGHT = 1,
 	MY_VIEW_ANGLE_TOP = 2,
 	MY_VIEW_ANGLE_LEFT = 3,
 } MyGameState_ViewAngle;
+
+
+typedef enum {
+	MY_WORLD_BIOME_SPACE,
+	MY_WORLD_BIOME_EARTH,
+} MyWorldBiomeType;
+
+typedef struct {
+	u64 flags;
+	u32 levelId;
+
+	s32 usedCount;
+	bool valid;
+} MyWorldTagInfo;	
+
+typedef struct {
+	//NOTE(ollie): About the boss
+	bool hasBoss;
+	EntityBossType bossType;
+	bool defeatedBoss;
+	bool inBoss;
+
+	bool hasPuzzle;
+	bool hasEnemies;
+	bool hasObstacles;
+
+	bool fightingEnemies;
+
+	MyWorldBiomeType biomeType;
+
+	//NOTE(ollie): For during the level
+	s32 roomsSincePuzzle;
+	s32 roomsSinceObstacle;
+	s32 roomsSinceEnemies;
+
+	s32 totalRoomCount;
+
+	u32 levelCount;
+	MyWorldTagInfo levels[1028]; 
+
+} MyWorldState;
 
 
 typedef struct
@@ -51,11 +108,16 @@ typedef struct
 
 	int entityTypeSelected;
 	int currentLevelEditing;
-	void *hotEntity; //Don't have Entity type here, so just have a void *
+	Entity *hotEntity; //Don't have Entity type here, so just have a void *
 	bool holdingEntity;
 
-	void *currentRoomBeingEdited;
+	Entity *currentRoomBeingEdited;
 
+	EntityBossType editorSelectedBossType;
+
+	//NOTE(ollie): Tags for the level
+	char *currentRoomTags[256];
+	s32 currentRoomTagCount;
 
 	///////////////////////************ For the editor level, selecting models from the drop down *************////////////////////
 	int modelSelected;
@@ -69,6 +131,11 @@ typedef struct
 	///////////////////////*********** For animation **************////////////////////
 	animation_list_item *animationItemFreeListPtr;
 
+	////////////////////////////////////////////////////////////////////
+
+	///////////////////////************* For world generation************////////////////////
+
+	MyWorldState *worldState;
 	////////////////////////////////////////////////////////////////////
 
 } MyGameState;

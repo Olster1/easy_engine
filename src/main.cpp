@@ -1,9 +1,10 @@
 #include "defines.h"
 #include "easy_headers.h"
 
-#include "myGameState.h"
-#include "myLevels.h"
 #include "myEntity.h"
+#include "myGameState.h"
+#include "world_generator.c"
+#include "myEntity.c"
 #include "mySaveLoad.h"
 #include "myTransitions.h"
 //#include "myDialogue.h"
@@ -29,6 +30,16 @@ MY_GAME_MODE_EDIT_LEVEL
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
 
+static inline void myGameState_releaseAllTagsForLevel(MyGameState *gameState) {
+
+    for(s32 i = 0; i < gameState->currentRoomTagCount; ++i) {
+        //NOTE(ollie): Free all the tags memory
+        easyPlatform_freeMemory(gameState->currentRoomTags[i]);
+    }
+    ////////////////////////////////////////////////////////////////////
+    gameState->currentRoomTagCount = 0;
+}
+
 static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, EasyCamera *cam) {
     //NOTE(ollie): This is only called once on startup 
     // THIS IS NOT THE FUNCTION FOR INITING A ROUND
@@ -43,8 +54,14 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     gameState->currentLevelEditing = 0;
     gameState->hotEntity = 0;
     gameState->holdingEntity = false;
+
+    gameState->editorSelectedBossType = ENTITY_BOSS_FIRE;
+    gameState->entityTypeSelected = ENTITY_BOSS;
+    //NOTE(ollie): No tags to start with
+    gameState->currentRoomTagCount = 0;
     ////////////////////////////////////////////////////////////////////
-    
+        
+    gameState->worldState = pushStruct(&globalLongTermArena, MyWorldState);
     turnTimerOff(&gameState->animationTimer);
     gameState->isIn = false;
     
@@ -132,6 +149,8 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
     gameVariables->minPlayerMoveSpeed = 0.1f;
     gameVariables->maxPlayerMoveSpeed = 1.0f;
     gameVariables->player = 0;
+
+    gameVariables->totalAmmoCount = MY_PLAYER_MAX_AMMO_COUNT;
     
     gameVariables->liveTimerCount = 0;
     
@@ -176,8 +195,8 @@ static void myGame_beginRound(MyGameState *gameState, MyGameStateVariables *game
     
     gameVariables->player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
     
-    gameVariables->mostRecentRoom = myLevels_loadLevel(0, entityManager, v3(0, 0, 0), gameState);
-    gameVariables->lastRoomCreated = myLevels_loadLevel(1, entityManager, v3(0, 5, 0), gameState);
+    gameVariables->mostRecentRoom = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 0, 0), gameState);
+    gameVariables->lastRoomCreated = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 5, 0), gameState);
     
 }
 
@@ -799,7 +818,7 @@ int main(int argc, char *args[]) {
                 
                 bool shouldDrawHUD = true;
                 
-                if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) shouldDrawHUD = false;
+                // if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) shouldDrawHUD = false;
                 
                 if(shouldDrawHUD) {
                     if(!gameVariables.player) {
@@ -848,6 +867,29 @@ int main(int argc, char *args[]) {
                             
                         }
                         
+                    }
+
+                    ///////////////////////************ Draw the ammo meter*************////////////////////
+                    {
+                        float canonicalVal = inverse_lerp(0, gameVariables.player->ammoCount, gameVariables.totalAmmoCount);
+                        assert(canonicalVal >= 0.0f && canonicalVal <= 1.0f);
+
+                        float barWidth = 0.15f*resolution.x;
+                        float barHeight = 0.1f*resolution.y;
+                        float barX = 0.8f*resolution.x;
+
+                        V4 overlayColor = COLOR_GOLD;
+                        if(isOn(&gameVariables.player->playerReloadTimer)) {
+                            float a = getTimerValue01(&gameVariables.player->playerReloadTimer);
+
+                            float hueVal = 10*a*360.0f;
+                            
+                            hueVal -= ((int)(hueVal / 360.0f))*360;
+                            
+                            overlayColor = easyColor_hsvToRgb(hueVal, 1, 1);
+                        }
+                        renderDrawRect(rect2fMinDim(barX, barHeight, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                        renderDrawRect(rect2fMinDim(barX, barHeight, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, overlayColor, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
                     }
                     
                     ///////////////////////************ Draw the choc meter *************////////////////////
@@ -1237,11 +1279,15 @@ int main(int argc, char *args[]) {
                     gameState->modelSelected = easyEditor_pushList(editor, "Model: ", allModelsForEditorNames, allModelsForEditorNamesCount);
                     gameState->entityTypeSelected = easyEditor_pushList(editor, "Entities: ", MyEntity_EntityTypeStrings, arrayCount(MyEntity_EntityTypeStrings));
                     
+                    if(gameState->entityTypeSelected == ENTITY_BOSS) {
+                        gameState->editorSelectedBossType = (EntityBossType)easyEditor_pushList(editor, "BossType: ", MyEntity_EntityBossTypeStrings, arrayCount(MyEntity_EntityBossTypeStrings));    
+                    }
+                    
                     //TODO(ollie): Get this to be more reliable!! it crashes right now
                     // easyConsole_addToStream(&console, str);
                     if(easyEditor_pushButton(editor, "Save Room")) {
                         easyFlashText_addText(&globalFlashTextManager, "SAVED");
-                        myLevels_saveLevel(gameState->currentLevelEditing, entityManager);
+                        myLevels_saveLevel(gameState->currentLevelEditing, entityManager, gameState);
                     }
                     
                     easyEditor_endWindow(editor); //might not actually need this
@@ -1269,14 +1315,16 @@ int main(int argc, char *args[]) {
                                 V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
                                 
                                 
+                                assert(gameState->modelSelected < allModelsForEditor.count);
+                                EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
+
                                 if(entTypeToInit == ENTITY_SCENERY) {
-                                    assert(gameState->modelSelected < allModelsForEditor.count);
-                                    EasyModel *model = allModelsForEditor.array[gameState->modelSelected].model;
+                                    
                                     if(model) {            
                                         gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
                                     }
                                 } else {
-                                    gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState, true);
+                                    gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState, true, model, gameState->editorSelectedBossType);
                                 }
                                 
 
@@ -1303,27 +1351,31 @@ int main(int argc, char *args[]) {
                             Entity *e = (Entity *)getElement(&entityManager->entities, i);
                             if(e && e->active) { //can be null
                                 
-                                e->colorTint = COLOR_WHITE;
-
-                                if(myEntity_entityIsClamped(e->type)) {
-                                    //NOTE(ollie): This is for entities that exist on the grid
-                                   V3 entPos = easyTransform_getWorldPos(&e->T); 
-                                   Rect2f entGrid = rect2fCenterDim(entPos.x, entPos.y, 1, 1);
-                                   if(inBounds(hitPoint.xy, entGrid, BOUNDS_RECT)) {
-                                       rayInfo.didHit = true;
-                                       entityHit = e;
-                                   }
-
-                                } else if(e->model) {
-                                   
-                                    EasyPhysics_RayCastAABB3f_Info newRayInfo = EasyPhysics_CastRayAgainstAABB3f(easyTransform_getWorldRotation(&e->T), easyTransform_getWorldPos(&e->T), easyTransform_getWorldScale(&e->T), e->model->bounds, rayDirection, camera.pos);
-                                    
-                                    if(newRayInfo.didHit && newRayInfo.hitT < rayInfo.hitT && newRayInfo.hitT > 0.0f) {
-                                        rayInfo = newRayInfo;
-                                        entityHit = e;
-                                        
+                                if(e->type != ENTITY_ROOM) {
+                                    if(myEntity_shouldEntityBeSaved(e->type)) {
+                                        e->colorTint = COLOR_WHITE;
                                     }
-                                } 
+                                    
+                                    if(myEntity_entityIsClamped(e->type)) {
+                                        //NOTE(ollie): This is for entities that exist on the grid
+                                       V3 entPos = easyTransform_getWorldPos(&e->T); 
+                                       Rect2f entGrid = rect2fCenterDim(entPos.x, entPos.y, 1, 1);
+                                       if(inBounds(hitPoint.xy, entGrid, BOUNDS_RECT)) {
+                                           rayInfo.didHit = true;
+                                           entityHit = e;
+                                       }
+
+                                    } else if(e->model) {
+                                       
+                                        EasyPhysics_RayCastAABB3f_Info newRayInfo = EasyPhysics_CastRayAgainstAABB3f(easyTransform_getWorldRotation(&e->T), easyTransform_getWorldPos(&e->T), easyTransform_getWorldScale(&e->T), e->model->bounds, rayDirection, camera.pos);
+                                        
+                                        if(newRayInfo.didHit && newRayInfo.hitT < rayInfo.hitT && newRayInfo.hitT > 0.0f) {
+                                            rayInfo = newRayInfo;
+                                            entityHit = e;
+                                            
+                                        }
+                                    } 
+                                }
                                 
                             }
                         }
@@ -1464,6 +1516,89 @@ int main(int argc, char *args[]) {
                         easyConsole_addToStream(&console, buffer);
                     } else if(stringsMatchNullN("movePlayer", token.at, token.size)) { 
                         DEBUG_global_movePlayer = !DEBUG_global_movePlayer;
+
+                    } else if(stringsMatchNullN("printtags", token.at, token.size)) {
+                        if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
+
+                            for(s32 i = 0; i < gameState->currentRoomTagCount; ++i) {
+                                easyConsole_addToStream(&console, gameState->currentRoomTags[i]);
+                            }
+                        }
+                    } else if(stringsMatchNullN("addtag", token.at, token.size)) {
+                        if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
+                            token = easyConsole_seeNextToken(&console);
+                            if(token.type == TOKEN_WORD) {
+                                token = easyConsole_getNextToken(&console);
+                                char *stringToAdd = token.at;
+                                u32 strLength = token.size;
+
+                                char *newString = easyString_copyToHeap(stringToAdd, strLength);
+
+                                bool found = false;
+                                for(s32 i = 0; i < gameState->currentRoomTagCount && !found; ++i) {
+                                    if(cmpStrNull(newString, gameState->currentRoomTags[i])) {
+                                        found = true;
+                                        break;
+                                    }
+                                }
+
+                                if(found) {
+                                    easyConsole_addToStream(&console, "Tag already added");
+                                    //NOTE(ollie): Release the new string, already in the array
+                                    easyPlatform_freeMemory(newString);
+                                } else {
+                                    if(gameState->currentRoomTagCount < arrayCount(gameState->currentRoomTags)) {
+                                        gameState->currentRoomTags[gameState->currentRoomTagCount++] = newString;   
+                                        easyConsole_addToStream(&console, "Added tag"); 
+                                    } else {
+                                        easyConsole_addToStream(&console, "Tags full");
+                                        easyPlatform_freeMemory(newString);
+                                    }
+                                    
+                                }
+                                
+
+                            } else {
+                                easyConsole_addToStream(&console, "Expected a word as a tag");    
+                            }
+                        } else {
+                            easyConsole_addToStream(&console, "Not in edit mode");
+                        }
+                    } else if(stringsMatchNullN("removetag", token.at, token.size)) {
+                        if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
+                            token = easyConsole_seeNextToken(&console);
+                            if(token.type == TOKEN_WORD) {
+                                token = easyConsole_getNextToken(&console);
+                                char *stringToAdd = token.at;
+                                u32 strLength = token.size;
+
+                                bool found = false;
+                                for(s32 i = 0; i < gameState->currentRoomTagCount && !found; ++i) {
+                                    if(stringsMatchNullN(gameState->currentRoomTags[i], stringToAdd, strLength)) {
+
+                                        char *stringToRelease = gameState->currentRoomTags[i];
+                                        //NOTE(ollie): Get the one off the end & stick it in same place
+                                        gameState->currentRoomTags[i] = gameState->currentRoomTags[--gameState->currentRoomTagCount];    
+
+                                        //NOTE(ollie): Release the string that we no longer need
+                                        easyPlatform_freeMemory(stringToRelease);
+                                        found = true;
+                                        break;
+                                    }
+                                }
+
+                                if(!found) {
+                                    easyConsole_addToStream(&console, "No tag found");
+                                    
+                                } 
+                                
+
+                            } else {
+                                easyConsole_addToStream(&console, "Expected a word as a tag");    
+                            }
+                        } else {
+                            easyConsole_addToStream(&console, "Not in edit mode");
+                        }
                     } else if(stringsMatchNullN("edit", token.at, token.size)) {
                         token = easyConsole_seeNextToken(&console);
                         if(token.type == TOKEN_INTEGER) {
@@ -1474,6 +1609,9 @@ int main(int argc, char *args[]) {
                             gameState->currentLevelEditing = levelToLoad;
                             
                             gameState->currentGameMode = MY_GAME_MODE_EDIT_LEVEL;
+
+                            myGameState_releaseAllTagsForLevel(gameState);
+
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
                             
@@ -1483,7 +1621,12 @@ int main(int argc, char *args[]) {
                             DEBUG_global_IsFlyMode = true;
                             DEBUG_global_CameraMoveXY = true;
                             
-                        } else if(stringsMatchNullN("play", token.at, token.size)) {
+                        
+
+                        } else {
+                            easyConsole_addToStream(&console, "must pass a number");
+                        }
+                    } else if(stringsMatchNullN("play", token.at, token.size)) {
                             DEBUG_global_PauseGame = false;
                             gameState->currentGameMode = MY_GAME_MODE_PLAY;
                             easyEntity_endRound(entityManager);
@@ -1491,16 +1634,12 @@ int main(int argc, char *args[]) {
                             
                             myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
 
-                        } else if(stringsMatchNullN("overworld", token.at, token.size)) {
+                    } else if(stringsMatchNullN("overworld", token.at, token.size)) {
                             gameState->currentGameMode = MY_GAME_MODE_OVERWORLD;
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
                             
                             easyConsole_addToStream(&console, "entered overworld");
-
-                        } else {
-                            easyConsole_addToStream(&console, "must pass a number");
-                        }
                     } else {
                         easyConsole_parseDefault(&console, token);
                     }
