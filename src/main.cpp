@@ -1615,6 +1615,8 @@ int main(int argc, char *args[]) {
 
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
+
+                            gameVariables.player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
                             
                             gameState->currentRoomBeingEdited = myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0), gameState);
                             easyConsole_addToStream(&console, "loaded level");

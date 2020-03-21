@@ -1554,12 +1554,14 @@ static Entity *initSoundchanger(MyEntityManager *m, V3 pos, WavFile *soundToPlay
 
 //NOTE(ollie): Droplet
 
-static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
+static Entity *initDroplet(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Droplet";
     float width = 0.6f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width*sprite->aspectRatio_h_over_w, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    e->T.Q = eulerAnglesToQuaternion(0, -0.5f*PI32, 0);
+
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1570,7 +1572,7 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
 #endif
     e->type = ENTITY_DROPLET;
     
-    e->sprite = sprite;
+    e->model = model;
     
     e->fadeTimer = initTimer(0.3f, false);
     turnTimerOff(&e->fadeTimer);
@@ -1580,6 +1582,8 @@ static Entity *initDroplet(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
     e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
     e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
     /////
+
+    e->rb->dA = v3(0, 1, 0);
     
     return e;
 }
@@ -1655,7 +1659,7 @@ static Entity *initEnemy(MyEntityManager *m, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Enemy";
-    float width = 0.2f;
+    float width = 0.6f;
     easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
     if(parent) e->T.parent = &parent->T;
 
@@ -1672,7 +1676,7 @@ static Entity *initEnemy(MyEntityManager *m, V3 pos, Entity *parent) {
 
     e->enemyHP = 5;
 
-    e->model = findModelAsset("MicroRecon.obj");
+    e->model = findModelAsset("Arachnoid.obj");
 
     //NOTE(ollie): Just used for shooting at the moment
     e->aiStateTimer = initTimer(0.5f, false);
@@ -1824,12 +1828,12 @@ static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGame
 
 //NOTE(ollie): Underpants
 
-static Entity *initUnderpants(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
+static Entity *initUnderpants(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Underpants";
     float width = 0.6f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width*sprite->aspectRatio_h_over_w, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1840,7 +1844,7 @@ static Entity *initUnderpants(MyEntityManager *m, Texture *sprite, V3 pos, Entit
 #endif
     e->type = ENTITY_UNDERPANTS;
     
-    e->sprite = sprite;
+    e->model = model;
     
     e->fadeTimer = initTimer(0.3f, false);
     turnTimerOff(&e->fadeTimer);
@@ -1901,11 +1905,12 @@ static Entity *initScenery1x1(MyEntityManager *m, char *name, EasyModel *model, 
 
 
 //NOTE(ollie): Cramp
-static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
+static Entity *initCramp(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Cramp";
-    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+    float scale = 0.8f;
+    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1917,8 +1922,7 @@ static Entity *initCramp(MyEntityManager *m, Texture *sprite, V3 pos, Entity *pa
     
     e->type = ENTITY_CRAMP;
     
-    e->sprite = sprite;
-    e->model = 0;
+    e->model = model;
     
     e->fadeTimer = initTimer(0.3f, false);
     turnTimerOff(&e->fadeTimer);
@@ -2154,13 +2158,13 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
             
         } break;
         case ENTITY_DROPLET: {
-            result = initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), clampedPosition, room);
+            result = initDroplet(entityManager, findModelAsset("Crystal.obj"), clampedPosition, room);
         } break;
         case ENTITY_UNDERPANTS: {
-            result = initUnderpants(entityManager, findTextureAsset("underwear.png"), clampedPosition, room);
+            result = initUnderpants(entityManager, findModelAsset("Carrot.obj"), clampedPosition, room);
         } break;
         case ENTITY_CRAMP: {
-            result = initCramp(entityManager, findTextureAsset("cramp.PNG"), clampedPosition, room);
+            result = initCramp(entityManager, findModelAsset("rock.obj"), clampedPosition, room);
         } break;
         case ENTITY_TELEPORTER: {
             //NOTE(ollie): We create two teleporter entities next to each other 
@@ -2186,96 +2190,6 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         }
     }			
     return result;
-}
-
-
-static int myLevels_getLevelWidth(char *level) {
-    char *at = level;
-    int result = 0;
-    while(*at != '\0' && *at != '\n' && *at != '\r') {
-        if(*at != ' ' && *at != '\t') {
-            result++;	
-        }
-        
-        at++;
-    }
-    return result;
-}
-
-
-static Entity *myLevels_generateLevel_(char *level, MyEntityManager *entityManager, V3 roomPos) {
-    Entity *room = initRoom(entityManager, roomPos);
-    
-    char *at = level;
-    
-    float startX = -1*(int)(0.5f*myLevels_getLevelWidth(level));
-    float startY = MY_ROOM_HEIGHT - 1;
-    
-    V2 posAt = v2(startX, startY);
-    while(*at != '\0') {
-        switch(*at) {
-            case '*': { //empty space
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                posAt.x++;
-            } break;
-            case '\n': { //empty space
-                posAt.y--;
-                posAt.x = startX;
-            } break;
-            case 'e': { //choc bar
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initChocBar(entityManager, findTextureAsset("choc_bar.png"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'c': { //cramp
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initCramp(entityManager, findTextureAsset("cramp.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'd': { //droplet
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initDroplet(entityManager, findTextureAsset("blood_droplet.PNG"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'u': {
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initUnderpants(entityManager, findTextureAsset("underwear.png"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 's': { //droplet
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initScenery1x1(entityManager, "Crystal", findModelAsset("Crystal.obj"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'q': { //droplet
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initScenery1x1(entityManager, "Oak Tree", findModelAsset("Oak_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'w': { //droplet
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initScenery1x1(entityManager, "Palm Tree", findModelAsset("Palm_Tree.obj"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 't': { //toilet
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initBucket(entityManager, findTextureAsset("toilet1.png"), v3(posAt.x, posAt.y, LAYER0), room);
-                posAt.x++;
-            } break;
-            case 'i': {
-                initTile(entityManager, v3(posAt.x, posAt.y, LAYER4), room);
-                initStar(entityManager, v3(posAt.x, posAt.y, LAYER0), room);
-            } break;
-            default: {
-                
-            } 
-        }
-        
-        at++;
-    }
-    
-    return room;
-    
 }
 
 

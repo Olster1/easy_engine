@@ -1,0 +1,33 @@
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 1.000000 0.000000;
+	rotation: 0.673762 -0.673765 0.214578 -0.214576;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 1.000000 2.000000 0.000000;
+	rotation: 0.573440 -0.573441 -0.413720 0.413723;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -1.000000 3.000000 0.000000;
+	rotation: 0.189168 -0.189165 -0.681332 0.681336;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 1.000000 4.000000 0.000000;
+	rotation: -0.529276 0.529284 -0.468897 0.468894;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
