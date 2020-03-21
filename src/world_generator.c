@@ -35,20 +35,118 @@ static void myWorlds_generateWorld(MyWorldFlags flags, MyWorldState *worldState)
 
 }
 
+typedef u64 MyWorldFlagsU64; 
+
+static MyWorldFlagsU64 myWorld_getFlagForBossType(EntityBossType type) {
+	MyWorldFlagsU64 result = MY_WORLD_NULL;
+	switch(type) {
+		case ENTITY_BOSS_FIRE: {
+			result |= MY_WORLD_FIRE_BOSS;
+		} break;
+		case ENTITY_BOSS_DUPLICATE: {
+			assert(false);
+		} break;
+		default: {
+			assert(false);
+		}
+	}
+	return result;
+}
+
+static MyWorldFlagsU64 myWorld_getFlagForBiomeType(MyWorldBiomeType type) {
+	MyWorldFlagsU64 result = MY_WORLD_NULL;
+	switch(type) {
+		case MY_WORLD_BIOME_SPACE: {
+			result |= MY_WORLD_SPACE;
+		} break;
+		case MY_WORLD_BIOME_EARTH: {
+			result |= MY_WORLD_EARTH;
+		} break;
+		default: {
+			assert(false);
+		}
+	}
+	return result;
+}
+
 //NOTE(ollie): This is the important function that chooses the next room
-static Entity *myWorlds_findNextRoom(MyWorldState *worldState, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
+static Entity *myWorlds_findNextRoom(MyWorldState *state, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
 
-	MyWorldTagInfo *bestInfo = 0;
+	//NOTE(ollie): Start with first level
+	MyWorldTagInfo *bestInfo = &state->levels[0];
 
-	//NOTE(ollie): Loop through all the rooms and find the one that is best fit based on the current state of the world.  
-	for(int i = 0; i < worldState->levelCount; ++i) {
-		MyWorldTagInfo *tagInfo = worldState->levels + i; 
+	#define ROOMS_TILL_BOSS 20
+	//NOTE(ollie): Check for boss conditions
+	if(state->hasBoss && !state->defeatedBoss && !state->inBoss) {
+		if(state->totalRoomCount >= ROOMS_TILL_BOSS && !state->fightingEnemies) {
 
-		if()
+			//NOTE(ollie): Look for the boss level
+			for(int i = 0; i < state->levelCount && !bestInfo; ++i) {
+				MyWorldTagInfo *tagInfo = state->levels + i;
 
-
+				
+				if(tagInfo->flags & myWorld_getFlagForBossType(state->bossType)) {
+					bestInfo = tagInfo;
+					break;
+				}
+			}
+		}
 	}
 
+	//NOTE(ollie): Keep looking for next level
+
+	MyWorldFlagsU64 biomeFlag = myWorld_getFlagForBiomeType(state->biomeType);
+
+	//NOTE(ollie): Look for puzzle level
+	if(!bestInfo && state->hasPuzzle && !state->fightingEnemies && state->roomsSincePuzzle > 10) {
+		for(int i = 0; i < state->levelCount; ++i) {
+			MyWorldTagInfo *tagInfo = state->levels + i; 
+
+			if((tagInfo->flags & (MyWorldFlagsU64)MY_WORLD_PUZZLE) && (tagInfo->flags & biomeFlag)) {
+				bestInfo = tagInfo;
+				break;
+			}
+		}
+	}
+
+	//NOTE(ollie): Look for enemy level
+	if(!bestInfo && state->hasEnemies && !state->fightingEnemies && state->roomsSinceEnemies > 3) {
+		for(int i = 0; i < state->levelCount; ++i) {
+			MyWorldTagInfo *tagInfo = state->levels + i; 
+
+			if((tagInfo->flags & (MyWorldFlagsU64)MY_WORLD_ENEMIES) && (tagInfo->flags & biomeFlag)) {
+				bestInfo = tagInfo;
+				break;
+			}
+		}
+	}
+
+	//NOTE(ollie): Look for obstacle level
+	if(!bestInfo && state->hasObstacles && state->roomsSinceObstacle > 1) {
+		for(int i = 0; i < state->levelCount; ++i) {
+			MyWorldTagInfo *tagInfo = state->levels + i; 
+
+			if((tagInfo->flags & (MyWorldFlagsU64)MY_WORLD_OBSTACLES) && (tagInfo->flags & biomeFlag)) {
+				bestInfo = tagInfo;
+				break;
+			}
+		}
+	} 
+
+	//NOTE(ollie): Default rooms to look for
+	if(!bestInfo) {
+		for(int i = 0; i < state->levelCount; ++i) {
+			MyWorldTagInfo *tagInfo = state->levels + i; 
+
+			if((tagInfo->flags & biomeFlag) && !(tagInfo->flags & (MyWorldFlagsU64)MY_WORLD_BOSS) && !(tagInfo->flags & (MyWorldFlagsU64)MY_WORLD_ENEMIES)) {
+				bestInfo = tagInfo;
+				break;
+			}
+		}
+	}
+
+	//NOTE(ollie): Make sure we found a level
+	assert(bestInfo);
 	Entity *room = myLevels_loadLevel(bestInfo->levelId, entityManager, startPos, gameState);
 
 	return room;

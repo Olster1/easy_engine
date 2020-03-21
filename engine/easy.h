@@ -256,6 +256,18 @@ char *concat_(char *a, s32 lengthA, char *b, s32 lengthB, Arena *arena) {
     return newString;
 }
 
+//NOTE(ollie): I don't think this handles unicode?
+static char *easyString_copyToHeap(char *at, s32 length) {
+    //NOTE(ollie): Get memory from heap
+    char *result = (char *)easyPlatform_allocateMemory(sizeof(char)*(length + 1), EASY_PLATFORM_MEMORY_NONE);
+    //NOTE(ollie): Copy the string
+    easyPlatform_copyMemory(result, at, sizeof(char)*length);
+    //NOTE(ollie): Null terminate the string
+    result[length] = '\0'; //Null terminate
+
+    return result;
+}
+
 char *easyString_copyToArena(char *a, Arena *arena) {
     s32 newStrLen = strlen(a) + 1;
     

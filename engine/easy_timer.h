@@ -95,6 +95,7 @@ TimerReturnInfo updateTimer(Timer *timer, float dt) {
     return returnInfo; 
 }
 
+
 void timerSetResidue(Timer *timer, float residue) {
     
     int iVal = (int)residue;

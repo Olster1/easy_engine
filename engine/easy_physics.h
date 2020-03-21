@@ -405,11 +405,15 @@ static EasyCollider *EasyPhysics_AddCollider(EasyPhysics_World *world, EasyTrans
 	col->collisionCount = 0;
 
 	switch (type) {
+		case EASY_COLLIDER_SPHERE:
 		case EASY_COLLIDER_CIRCLE: {
 			col->radius = info.x;
 		} break;
 		case EASY_COLLIDER_RECTANGLE: {
 			col->dim2f = info.xy;
+		} break;
+		case EASY_COLLIDER_BOX: {
+			col->dim3f = info;
 		} break;
 		default: {
 			assert(false);
@@ -510,19 +514,22 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
                 		V3 bPos = v3_plus(easyTransform_getWorldPos(b->T), b->offset);
 
                 		bool circle = a->type == EASY_COLLIDER_CIRCLE || b->type == EASY_COLLIDER_CIRCLE;
+
                 		bool rectangle = a->type == EASY_COLLIDER_RECTANGLE || b->type == EASY_COLLIDER_RECTANGLE;
                 		if(circle && rectangle) {
                 			assert(false);
                 		} else if(rectangle && !circle) { //both rectangles
                 			//case not handled
                 			assert(false);
-                		} else if(circle && !rectangle) { //both circles
+                		} else if((a->type == EASY_COLLIDER_CIRCLE && b->type == EASY_COLLIDER_CIRCLE) || (a->type == EASY_COLLIDER_SPHERE && b->type == EASY_COLLIDER_SPHERE)) { //both circles
                 			V3 centerDiff = v3_minus(aPos, bPos);
 
                 			//TODO(ollie): Can use radius sqr for speed!
                 			if(getLengthV3(centerDiff) <= (a->radius + b->radius)) {
                 				hit = true;
                 			}
+                		} else if ((a->type == EASY_COLLIDER_CIRCLE && b->type == EASY_COLLIDER_BOX) || (a->type == EASY_COLLIDER_BOX && b->type == EASY_COLLIDER_SPHERE)) {
+                			assert(false);
                 		} else {
                 			//case not handled
                 			assert(false);

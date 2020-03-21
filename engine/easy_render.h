@@ -1,3 +1,131 @@
+
+// static float global_debug_sphere_model_data[] = {
+//     0.000000f,-1.000000f,0.000000f,0.425323f,-0.850654f,0.309011f,-0.162456f,-0.850654f,
+//     0.499995f,0.723607f,-0.447220f,0.525725f,0.425323f,-0.850654f,0.309011f,0.850648f,
+//     -0.525736f,0.000000f,0.000000f,-1.000000f,0.000000f,-0.162456f,-0.850654f,0.499995f,
+//     -0.525730f,-0.850652f,0.000000f,0.000000f,-1.000000f,0.000000f,-0.525730f,-0.850652f,
+//     0.000000f,-0.162456f,-0.850654f,-0.499995f,0.000000f,-1.000000f,0.000000f,-0.162456f,
+//     -0.850654f,-0.499995f,0.425323f,-0.850654f,-0.309011f,0.723607f,-0.447220f,0.525725f,
+//     0.850648f,-0.525736f,0.000000f,0.951058f,0.000000f,0.309013f,-0.276388f,-0.447220f,
+//     0.850649f,0.262869f,-0.525738f,0.809012f,0.000000f,0.000000f,1.000000f,-0.894426f,
+//     -0.447216f,0.000000f,-0.688189f,-0.525736f,0.499997f,-0.951058f,0.000000f,0.309013f,
+//     -0.276388f,-0.447220f,-0.850649f,-0.688189f,-0.525736f,-0.499997f,-0.587786f,0.000000f,
+//     -0.809017f,0.723607f,-0.447220f,-0.525725f,0.262869f,-0.525738f,-0.809012f,0.587786f,
+//     0.000000f,-0.809017f,0.723607f,-0.447220f,0.525725f,0.951058f,0.000000f,0.309013f,
+//     0.587786f,0.000000f,0.809017f,-0.276388f,-0.447220f,0.850649f,0.000000f,0.000000f,
+//     1.000000f,-0.587786f,0.000000f,0.809017f,-0.894426f,-0.447216f,0.000000f,-0.951058f,
+//     0.000000f,0.309013f,-0.951058f,0.000000f,-0.309013f,-0.276388f,-0.447220f,-0.850649f,
+//     -0.587786f,0.000000f,-0.809017f,0.000000f,0.000000f,-1.000000f,0.723607f,-0.447220f,
+//     -0.525725f,0.587786f,0.000000f,-0.809017f,0.951058f,0.000000f,-0.309013f,0.276388f,
+//     0.447220f,0.850649f,0.688189f,0.525736f,0.499997f,0.162456f,0.850654f,0.499995f,
+//     -0.723607f,0.447220f,0.525725f,-0.262869f,0.525738f,0.809012f,-0.425323f,0.850654f,
+//     0.309011f,-0.723607f,0.447220f,-0.525725f,-0.850648f,0.525736f,0.000000f,-0.425323f,
+//     0.850654f,-0.309011f,0.276388f,0.447220f,-0.850649f,-0.262869f,0.525738f,-0.809012f,
+//     0.162456f,0.850654f,-0.499995f,0.894426f,0.447216f,0.000000f,0.688189f,0.525736f,
+//     -0.499997f,0.525730f,0.850652f,0.000000f,0.525730f,0.850652f,0.000000f,0.162456f,
+//     0.850654f,-0.499995f,0.000000f,1.000000f,0.000000f,0.525730f,0.850652f,0.000000f,
+//     0.688189f,0.525736f,-0.499997f,0.162456f,0.850654f,-0.499995f,0.688189f,0.525736f,
+//     -0.499997f,0.276388f,0.447220f,-0.850649f,0.162456f,0.850654f,-0.499995f,0.162456f,
+//     0.850654f,-0.499995f,-0.425323f,0.850654f,-0.309011f,0.000000f,1.000000f,0.000000f,
+//     0.162456f,0.850654f,-0.499995f,-0.262869f,0.525738f,-0.809012f,-0.425323f,0.850654f,
+//     -0.309011f,-0.262869f,0.525738f,-0.809012f,-0.723607f,0.447220f,-0.525725f,-0.425323f,
+//     0.850654f,-0.309011f,-0.425323f,0.850654f,-0.309011f,-0.425323f,0.850654f,0.309011f,
+//     0.000000f,1.000000f,0.000000f,-0.425323f,0.850654f,-0.309011f,-0.850648f,0.525736f,
+//     0.000000f,-0.425323f,0.850654f,0.309011f,-0.850648f,0.525736f,0.000000f,-0.723607f,
+//     0.447220f,0.525725f,-0.425323f,0.850654f,0.309011f,-0.425323f,0.850654f,0.309011f,
+//     0.162456f,0.850654f,0.499995f,0.000000f,1.000000f,0.000000f,-0.425323f,0.850654f,
+//     0.309011f,-0.262869f,0.525738f,0.809012f,0.162456f,0.850654f,0.499995f,-0.262869f,
+//     0.525738f,0.809012f,0.276388f,0.447220f,0.850649f,0.162456f,0.850654f,0.499995f,
+//     0.162456f,0.850654f,0.499995f,0.525730f,0.850652f,0.000000f,0.000000f,1.000000f,
+//     0.000000f,0.162456f,0.850654f,0.499995f,0.688189f,0.525736f,0.499997f,0.525730f,
+//     0.850652f,0.000000f,0.688189f,0.525736f,0.499997f,0.894426f,0.447216f,0.000000f,
+//     0.525730f,0.850652f,0.000000f,0.951058f,0.000000f,-0.309013f,0.688189f,0.525736f,
+//     -0.499997f,0.894426f,0.447216f,0.000000f,0.951058f,0.000000f,-0.309013f,0.587786f,
+//     0.000000f,-0.809017f,0.688189f,0.525736f,-0.499997f,0.587786f,0.000000f,-0.809017f,
+//     0.276388f,0.447220f,-0.850649f,0.688189f,0.525736f,-0.499997f,0.000000f,0.000000f,
+//     -1.000000f,-0.262869f,0.525738f,-0.809012f,0.276388f,0.447220f,-0.850649f,0.000000f,
+//     0.000000f,-1.000000f,-0.587786f,0.000000f,-0.809017f,-0.262869f,0.525738f,-0.809012f,
+//     -0.587786f,0.000000f,-0.809017f,-0.723607f,0.447220f,-0.525725f,-0.262869f,0.525738f,
+//     -0.809012f,-0.951058f,0.000000f,-0.309013f,-0.850648f,0.525736f,0.000000f,-0.723607f,
+//     0.447220f,-0.525725f,-0.951058f,0.000000f,-0.309013f,-0.951058f,0.000000f,0.309013f,
+//     -0.850648f,0.525736f,0.000000f,-0.951058f,0.000000f,0.309013f,-0.723607f,0.447220f,
+//     0.525725f,-0.850648f,0.525736f,0.000000f,-0.587786f,0.000000f,0.809017f,-0.262869f,
+//     0.525738f,0.809012f,-0.723607f,0.447220f,0.525725f,-0.587786f,0.000000f,0.809017f,
+//     0.000000f,0.000000f,1.000000f,-0.262869f,0.525738f,0.809012f,0.000000f,0.000000f,
+//     1.000000f,0.276388f,0.447220f,0.850649f,-0.262869f,0.525738f,0.809012f,0.587786f,
+//     0.000000f,0.809017f,0.688189f,0.525736f,0.499997f,0.276388f,0.447220f,0.850649f,
+//     0.587786f,0.000000f,0.809017f,0.951058f,0.000000f,0.309013f,0.688189f,0.525736f,
+//     0.499997f,0.951058f,0.000000f,0.309013f,0.894426f,0.447216f,0.000000f,0.688189f,
+//     0.525736f,0.499997f,0.587786f,0.000000f,-0.809017f,0.000000f,0.000000f,-1.000000f,
+//     0.276388f,0.447220f,-0.850649f,0.587786f,0.000000f,-0.809017f,0.262869f,-0.525738f,
+//     -0.809012f,0.000000f,0.000000f,-1.000000f,0.262869f,-0.525738f,-0.809012f,-0.276388f,
+//     -0.447220f,-0.850649f,0.000000f,0.000000f,-1.000000f,-0.587786f,0.000000f,-0.809017f,
+//     -0.951058f,0.000000f,-0.309013f,-0.723607f,0.447220f,-0.525725f,-0.587786f,0.000000f,
+//     -0.809017f,-0.688189f,-0.525736f,-0.499997f,-0.951058f,0.000000f,-0.309013f,-0.688189f,
+//     -0.525736f,-0.499997f,-0.894426f,-0.447216f,0.000000f,-0.951058f,0.000000f,-0.309013f,
+//     -0.951058f,0.000000f,0.309013f,-0.587786f,0.000000f,0.809017f,-0.723607f,0.447220f,
+//     0.525725f,-0.951058f,0.000000f,0.309013f,-0.688189f,-0.525736f,0.499997f,-0.587786f,
+//     0.000000f,0.809017f,-0.688189f,-0.525736f,0.499997f,-0.276388f,-0.447220f,0.850649f,
+//     -0.587786f,0.000000f,0.809017f,0.000000f,0.000000f,1.000000f,0.587786f,0.000000f,
+//     0.809017f,0.276388f,0.447220f,0.850649f,0.000000f,0.000000f,1.000000f,0.262869f,
+//     -0.525738f,0.809012f,0.587786f,0.000000f,0.809017f,0.262869f,-0.525738f,0.809012f,
+//     0.723607f,-0.447220f,0.525725f,0.587786f,0.000000f,0.809017f,0.951058f,0.000000f,
+//     0.309013f,0.951058f,0.000000f,-0.309013f,0.894426f,0.447216f,0.000000f,0.951058f,
+//     0.000000f,0.309013f,0.850648f,-0.525736f,0.000000f,0.951058f,0.000000f,-0.309013f,
+//     0.850648f,-0.525736f,0.000000f,0.723607f,-0.447220f,-0.525725f,0.951058f,0.000000f,
+//     -0.309013f,0.425323f,-0.850654f,-0.309011f,0.262869f,-0.525738f,-0.809012f,0.723607f,
+//     -0.447220f,-0.525725f,0.425323f,-0.850654f,-0.309011f,-0.162456f,-0.850654f,-0.499995f,
+//     0.262869f,-0.525738f,-0.809012f,-0.162456f,-0.850654f,-0.499995f,-0.276388f,-0.447220f,
+//     -0.850649f,0.262869f,-0.525738f,-0.809012f,-0.162456f,-0.850654f,-0.499995f,-0.688189f,
+//     -0.525736f,-0.499997f,-0.276388f,-0.447220f,-0.850649f,-0.162456f,-0.850654f,-0.499995f,
+//     -0.525730f,-0.850652f,0.000000f,-0.688189f,-0.525736f,-0.499997f,-0.525730f,-0.850652f,
+//     0.000000f,-0.894426f,-0.447216f,0.000000f,-0.688189f,-0.525736f,-0.499997f,-0.525730f,
+//     -0.850652f,0.000000f,-0.688189f,-0.525736f,0.499997f,-0.894426f,-0.447216f,0.000000f,
+//     -0.525730f,-0.850652f,0.000000f,-0.162456f,-0.850654f,0.499995f,-0.688189f,-0.525736f,
+//     0.499997f,-0.162456f,-0.850654f,0.499995f,-0.276388f,-0.447220f,0.850649f,-0.688189f,
+//     -0.525736f,0.499997f,0.850648f,-0.525736f,0.000000f,0.425323f,-0.850654f,-0.309011f,
+//     0.723607f,-0.447220f,-0.525725f,0.850648f,-0.525736f,0.000000f,0.425323f,-0.850654f,
+//     0.309011f,0.425323f,-0.850654f,-0.309011f,0.425323f,-0.850654f,0.309011f,0.000000f,
+//     -1.000000f,0.000000f,0.425323f,-0.850654f,-0.309011f,-0.162456f,-0.850654f,0.499995f,
+//     0.262869f,-0.525738f,0.809012f,-0.276388f,-0.447220f,0.850649f,-0.162456f,-0.850654f,
+//     0.499995f,0.425323f,-0.850654f,0.309011f,0.262869f,-0.525738f,0.809012f,0.425323f,
+//     -0.850654f,0.309011f,0.723607f,-0.447220f,0.525725f,0.262869f,-0.525738f,0.809012f,
+// };
+
+// static inline VaoHandle easyRender_initSphere() {
+//     VaoHandle result = {};
+//     result.valid = true;
+//     result.indexCount = sizeof(global_debug_sphere_model_data)/3*sizeof(float);
+
+//     glGenVertexArrays(1, &result.vaoHandle;);
+//     glBindVertexArray(result.vaoHandle;);
+//     {
+//         GLuint vertexBuffer;
+//         glGenBuffers(1, &vertexBuffer);
+//         glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+//         glBufferData(GL_ARRAY_BUFFER, sizeof(global_debug_sphere_model_data), global_debug_sphere_model_data,
+//                      GL_STATIC_DRAW);
+
+//         glEnableVertexAttribArray(VERTEX_ATTRIB_LOCATION);
+//         glVertexAttribPointer(VERTEX_ATTRIB_LOCATION, 3, GL_FLOAT, GL_FALSE, 0, 0);
+        
+//         glGenBuffers(1, &result.vboInstanceData);
+//         glBindBuffer(GL_ARRAY_BUFFER, result.vboInstanceData);
+//         glBufferData(GL_ARRAY_BUFFER, EASY_RENDER_MAX_BATCH_COUNT*sizeof(instanceSizeInBytes), 0, GL_DYNAMIC_DRAW);
+
+//         addInstancingAttrib (MODEL_ATTRIB_LOCATION, 16, offsetForStruct, 0, 1);
+//         addInstancingAttrib (VIEW_ATTRIB_LOCATION, 16, offsetForStruct, sizeof(float)*16, 1);
+//         addInstancingAttrib (COLOR_ATTRIB_LOCATION, 4, offsetForStruct, sizeof(float)*32, 1);
+//         addInstancingAttrib (UVATLAS_ATTRIB_LOCATION, 4, offsetForStruct, sizeof(float)*36, 1);
+
+//     }
+//     glBindVertexArray(0);
+
+//     return result;
+// }
+
+
+
 #define PI32 3.14159265359
 #define RENDER_HANDNESS 1 //positive is left hand handess -> z going into the screen. 
 #define NEAR_CLIP_PLANE 0.1f
@@ -11,6 +139,28 @@
 #include "stb_image.h"
 
 static float globalTimeSinceStart = 0.0f;
+
+#define EASY_RENDER_MAX_BATCH_COUNT 1024
+
+
+/* 
+HOW THE RENDERER SHOULD WORK:
+
+There are buffers that are preallocated that take in instance data to a certain size, 
+this being the max size of instances * the size of each instance data. This might be different 
+depending on the type your trying to render. 
+
+Each batch would have one of these buffers to write into. Again being an arbitrary length, we then fill the 
+buffer up over the frame. Then when we go to draw, we just bind the buffer and draw. 
+
+BATCH: 
+-VAO with a static buffer & index buffer
+-InstancingBuffer[sizeof(instacingData)*maxInstanceCount]
+-Shader
+-Any other info 
+
+  
+*/
 
 //NOTE(ollie): Add the shaders 
 #include "easy_shaders.h"
@@ -621,7 +771,7 @@ static inline EasySkyBox *easy_makeSkybox(EasySkyBoxImages *images) {
         EasyImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena));
 #if OPENGL_BACKEND
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
-                    0, GL_RGB, image.w, image.h, 0, GL_RGB, GL_UNSIGNED_BYTE, image.image
+                    0, GL_RGBA, image.w, image.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.image
                     );
 #endif
         easy_endImage(&image);
@@ -782,7 +932,7 @@ static inline RenderItem *EasyRender_getRenderItem(RenderGroup *g, EasyRender_Ba
     while(batch && looking) {
         if(batch->items.count > 0) {
             RenderItem *testItem = getElementFromAlloc(&batch->items, 0, RenderItem);
-            if(easyRender_canItemBeBatched(testItem, i)) {
+            if(easyRender_canItemBeBatched(testItem, i) && batch->items.count < EASY_RENDER_MAX_BATCH_COUNT) {
                 looking = false;
                 break;
             } else {
@@ -1960,7 +2110,7 @@ static inline void initVao(VaoHandle *bufferHandles, Vertex *triangleData, int t
         //NOTE(ollie): We preload some data to the buffer so it gets created I guess? I'm not sure but 
         //NOTE(ollie): this is how Ryan was doing it in Dungeoneer
         //NOTE(ollie): But didn't work :( 
-        // glBufferData(GL_ARRAY_BUFFER, offsetForStruct, 0, GL_DYNAMIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, offsetForStruct*EASY_RENDER_MAX_BATCH_COUNT, 0, GL_DYNAMIC_DRAW);
         
         //matrix plus vector4 plus vector4
         addInstancingAttrib (mAttrib, 16, offsetForStruct, 0, 1);
@@ -2468,19 +2618,21 @@ void renderDeleteVaoHandle(VaoHandle *handles) {
 
 //This is using vertex attribs
 void easyRender_updateInstanceData(VaoHandle *vao, InfiniteAlloc *array, RenderProgram *program, bool hasUvs) {
-    glBindVertexArray(vao->vaoHandle);
-    renderCheckError();
+    // glBindVertexArray(vao->vaoHandle);
+    // renderCheckError();
     glBindBuffer(GL_ARRAY_BUFFER, vao->vboInstanceData);
     renderCheckError();
     
     //send the data to GPU. glBufferData deletes the old one
     //NOTE(ollie): We were using glBufferData which deletes the old buffer and resends the create a new buffer, but 
     //NOTE(ollie): I saw on Dungeoneer code using glsubbufferdata is faster because it doesn't have to delete it.
-    // glBufferSubData(GL_ARRAY_BUFFER, 0, array->sizeOfMember*array->count, array->memory);
-    glBufferData(GL_ARRAY_BUFFER, array->sizeOfMember*array->count, array->memory, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, array->sizeOfMember*array->count, array->memory);
+    // glBufferData(GL_ARRAY_BUFFER, array->sizeOfMember*array->count, array->memory, GL_DYNAMIC_DRAW);
     renderCheckError();
+
     
-    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // glBindVertexArray(0);
     renderCheckError();
 }
 
@@ -2722,7 +2874,7 @@ void drawRenderGroup(RenderGroup *group, RenderDrawSettings settings) {
 
     if(group->skybox && (settings & RENDER_DRAW_SKYBOX)) {
          glDepthFunc(GL_LEQUAL);
-#if USE_SKY_BOX
+#if 1
         if(!globalCubeMapVaoHandle.valid) {
             initVao(&globalCubeMapVaoHandle, globalCubeMapVertexData, arrayCount(globalCubeMapVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData));
         }

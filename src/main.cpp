@@ -346,7 +346,7 @@ int main(int argc, char *args[]) {
         DEBUG_globalEasyConsole = &console;
         
         EasyEditor *editor = pushStruct(&globalLongTermArena, EasyEditor);
-        easyEditor_initEditor(editor, globalRenderGroup, globalDebugFont, (resolution.y / resolution.x), &keyStates);
+        easyEditor_initEditor(editor, globalRenderGroup, globalDebugFont, (resolution.y / resolution.x), &keyStates, resolution);
         
         easyFlashText_initManager(&globalFlashTextManager, mainFont, (resolution.y / resolution.x));
         
@@ -360,7 +360,7 @@ int main(int argc, char *args[]) {
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, 0));
         
-        // globalRenderGroup->skybox = initSkyBox();
+        globalRenderGroup->skybox = initSkyBox();
         
 #define LOAD_MODELS_AUTOMATICALLY 1
         ///////////////////////************* Loading the models ************////////////////////
@@ -734,7 +734,7 @@ int main(int argc, char *args[]) {
             // renderModel(globalRenderGroup, &castle, COLOR_WHITE);
             
             
-            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT));
+            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT | RENDER_DRAW_SKYBOX));
             
             easyRender_blurBuffer_cachedBuffer(&mainFrameBuffer, &bloomFrameBuffer, &cachedFrameBuffer, 1);
             
@@ -877,6 +877,7 @@ int main(int argc, char *args[]) {
                         float barWidth = 0.15f*resolution.x;
                         float barHeight = 0.1f*resolution.y;
                         float barX = 0.8f*resolution.x;
+                        float barY = 0.9f*resolution.y;
 
                         V4 overlayColor = COLOR_GOLD;
                         if(isOn(&gameVariables.player->playerReloadTimer)) {
@@ -888,8 +889,8 @@ int main(int argc, char *args[]) {
                             
                             overlayColor = easyColor_hsvToRgb(hueVal, 1, 1);
                         }
-                        renderDrawRect(rect2fMinDim(barX, barHeight, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
-                        renderDrawRect(rect2fMinDim(barX, barHeight, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, overlayColor, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                        renderDrawRect(rect2fMinDim(barX, barY, barWidth, barHeight), NEAR_CLIP_PLANE + 0.01f, COLOR_BLACK, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+                        renderDrawRect(rect2fMinDim(barX, barY, canonicalVal*barWidth, barHeight), NEAR_CLIP_PLANE, overlayColor, 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
                     }
                     
                     ///////////////////////************ Draw the choc meter *************////////////////////
@@ -1274,7 +1275,7 @@ int main(int argc, char *args[]) {
                         DEBUG_global_CamNoRotate = true;
                     }
                     
-                    easyEditor_startDockedWindow(editor, "Editor Tools", EASY_EDITOR_DOCK_BOTTOM_RIGHT);
+                    easyEditor_startWindow(editor, "Editor Tools", 400, 100);
                     
                     gameState->modelSelected = easyEditor_pushList(editor, "Model: ", allModelsForEditorNames, allModelsForEditorNamesCount);
                     gameState->entityTypeSelected = easyEditor_pushList(editor, "Entities: ", MyEntity_EntityTypeStrings, arrayCount(MyEntity_EntityTypeStrings));
@@ -1698,7 +1699,7 @@ int main(int argc, char *args[]) {
             
             //////////////////////////////////// DRAW THE UI ITEMS ///////
             
-            drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
             
             
             //////////////////////////////////////////////////////////////////////////////////////////////

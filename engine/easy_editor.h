@@ -84,6 +84,8 @@ typedef struct {
 		};
 		struct { //drop down list index
 			int dropDownIndex;
+			float scrollAt;
+			bool holdingScrollBar;
 		};
 	};
 } EasyEditorState;
@@ -128,6 +130,7 @@ typedef struct {
 
 	AppKeyStates *keyStates;
 
+	V2 viewportDim;
 } EasyEditor;
 
 static inline bool easyEditor_isInteracting(EasyEditor *e) {
@@ -156,13 +159,15 @@ static inline void easyEditor_stopInteracting(EasyEditor *e) {
 	e->interactingWith.id = easyEditor_getNullId();
 }
 
-static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, EasyFont_Font *font, float aspectRatio_yOverX, AppKeyStates *keyStates) {
+static inline void easyEditor_initEditor(EasyEditor *e, RenderGroup *group, EasyFont_Font *font, float aspectRatio_yOverX, AppKeyStates *keyStates, V2 viewportDim) {
 	e->group = group;
 
 	e->stateCount = 0;
 	e->currentWindow = 0; //used for the local positions of the windows
 
 	e->font = font;
+
+	e->viewportDim = viewportDim;
 
 	easyEditor_stopInteracting(e); //null the interacting with
 
@@ -253,6 +258,8 @@ static inline EasyEditorState *easyEditor_addDropDownList(EasyEditor *e, int lin
 
 		t->isOpen = false;
 		t->dropDownIndex = 0;
+		t->scrollAt = 0;
+		t->holdingScrollBar = false;
 	}
 	return t;
 }
@@ -458,44 +465,137 @@ static inline int easyEditor_pushList_(EasyEditor *e, char *name, char **options
 
 		w->at.y += getDim(bounds).y + EASY_EDITOR_MARGIN;
 	} else {
-		///////////////////////************ Draw & Update the list *************////////////////////
+
+		float handleWidth = 30;
+		float handleHeight = 50;
+
+		float clippedHeight = 0.3f*e->viewportDim.y - handleHeight;
+		
+		float startY = w->at.y;
+
+		///////////////////////************* Find the total height of the scroll window ************////////////////////
 		for(int optionIndex = 0; optionIndex < optionLength; ++optionIndex) {
 			char *option = options[optionIndex];
 
 			color = COLOR_WHITE;
 
-			Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, options[optionIndex], w->margin, COLOR_BLACK, 1, true, e->screenRelSize);
+			Rect2f bounds = outputTextNoBacking(e->font, w->at.x, w->at.y, 1, e->fuaxResolution, options[optionIndex], w->margin, COLOR_BLACK, 1, false, e->screenRelSize);
 			bounds = expandRectf(bounds, v2(EASY_EDITOR_MARGIN, EASY_EDITOR_MARGIN));
 
-			bool hover = inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT);
-			if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, optionIndex + 1)) { //+ 1 because 0 is taken by the box that can open to display the list 
-				e->interactingWith.visitedThisFrame = true;
-				color = COLOR_GREEN;
+			w->at.y += getDim(bounds).y + EASY_EDITOR_MARGIN;
+		}
+		////////////////////////////////////////////////////////////////////
 
-				if(wasReleased(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
-					if(hover) {
-						//actually comiting to this option
-						state->dropDownIndex = optionIndex;
-						state->isOpen = false;
-					} else {
-						easyEditor_stopInteracting(e);	
-					}
-				}
-			} else if(hover) {
-				if(!e->interactingWith.item) {
-					color = COLOR_YELLOW;	
-				}
+		//NOTE(ollie): Find the height of the window
+		float acutalHeight = w->at.y - startY;
+
+		//NOTE(ollie): Reset the y height
+		w->at.y = startY; 
+
+		bool neededScroll = acutalHeight > clippedHeight;
+
+		
+
+		///////////////////////************ Needed scroll *************////////////////////
+		if(neededScroll) {
+			V2 handlePos = v2(w->at.x - handleWidth - EASY_EDITOR_MARGIN, (startY - e->font->fontHeight) + (clippedHeight - handleHeight)*state->scrollAt);
+
+			Rect2f scrollHandle = rect2fMinDim(handlePos.x, handlePos.y, handleWidth, handleHeight);
+			
+			V4 handleColor = COLOR_GOLD;
+
+			if(inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), scrollHandle, BOUNDS_RECT)) {
+				handleColor = COLOR_YELLOW;
+				 if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+					//NOTE(ollie): grab the handle
+					state->holdingScrollBar = true;									 	
+				 }
 				
-				if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
-					if(e->interactingWith.item) {
-						//NOTE: Clicking on a different cell will swap it
-						easyEditor_stopInteracting(e);	
-					}
-					easyEditor_startInteracting(e, &e->bogusItem, lineNumber, fileName, optionIndex + 1, EASY_EDITOR_INTERACT_DROP_DOWN_LIST);
-				} 
 			}
 
-			renderDrawRect(bounds, 2, color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+			if(state->holdingScrollBar) {
+				handleColor = COLOR_GREEN;
+
+				///////////////////////************ Update the handle position *************////////////////////
+				float goalPos = easyInput_mouseToResolution(e->keyStates, e->fuaxResolution).y - startY;
+				//update position
+				state->scrollAt = lerp(clippedHeight*state->scrollAt, 0.4f, goalPos) / (clippedHeight - handleHeight);
+				state->scrollAt = clamp01(state->scrollAt);
+
+				////////////////////////////////////////////////////////////////////
+
+				//NOTE(ollie): Let go of the handle
+				if(wasReleased(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+					state->holdingScrollBar = false;
+				}
+			}
+			//NOTE(ollie): Reclculate the scroll handle position
+			scrollHandle = rect2fMinDim(handlePos.x, handlePos.y, handleWidth, handleHeight);
+
+			//NOTE(ollie): Draw the scroll handle
+			renderDrawRect(scrollHandle, NEAR_CLIP_PLANE, handleColor, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+		}
+		////////////////////////////////////////////////////////////////////
+
+		//NOTE(ollie): Push the scissors on the stack
+		float scrollOffset = 0;
+
+		Rect2f scrollWindow = rect2fMinDim(w->at.x, startY - e->font->fontHeight, e->fuaxResolution.x, clippedHeight);
+
+		if(neededScroll) {
+			easyRender_pushScissors(globalRenderGroup, scrollWindow, NEAR_CLIP_PLANE, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix, e->viewportDim);
+			scrollOffset = state->scrollAt*(acutalHeight - clippedHeight);
+		}
+
+		
+		///////////////////////************ Draw & Update the list *************////////////////////
+		for(int optionIndex = 0; optionIndex < optionLength; ++optionIndex) {
+			char *option = options[optionIndex];
+
+			float yAt = w->at.y - scrollOffset;
+			color = COLOR_WHITE;
+
+			bool shouldDraw = (!neededScroll || (yAt >= (startY -  e->font->fontHeight) && yAt < (startY + clippedHeight + 1.2f*e->font->fontHeight)));
+
+			Rect2f bounds = outputTextNoBacking(e->font, w->at.x, yAt, 1, e->fuaxResolution, options[optionIndex], w->margin, COLOR_BLACK, 1, shouldDraw, e->screenRelSize);
+			bounds = expandRectf(bounds, v2(EASY_EDITOR_MARGIN, EASY_EDITOR_MARGIN));
+
+
+			if(shouldDraw) {
+				
+				bool hover = inBounds(easyInput_mouseToResolution(e->keyStates, e->fuaxResolution), bounds, BOUNDS_RECT);
+				if(e->interactingWith.item && easyEditor_idEqual(e->interactingWith.id, lineNumber, fileName, optionIndex + 1)) { //+ 1 because 0 is taken by the box that can open to display the list 
+					e->interactingWith.visitedThisFrame = true;
+					color = COLOR_GREEN;
+
+					if(wasReleased(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+						if(hover) {
+							//actually comiting to this option
+							state->dropDownIndex = optionIndex;
+							state->isOpen = false;
+						} else {
+							easyEditor_stopInteracting(e);	
+						}
+					}
+				} else if(hover) {
+					if(!e->interactingWith.item) {
+						color = COLOR_YELLOW;	
+					}
+					
+					if(wasPressed(e->keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+						if(e->interactingWith.item) {
+							//NOTE: Clicking on a different cell will swap it
+							easyEditor_stopInteracting(e);	
+						}
+						easyEditor_startInteracting(e, &e->bogusItem, lineNumber, fileName, optionIndex + 1, EASY_EDITOR_INTERACT_DROP_DOWN_LIST);
+					} 
+				}
+				
+			}
+			if(shouldDraw) {
+				renderDrawRect(bounds, 2, color, 0, mat4TopLeftToBottomLeft(e->fuaxResolution.y), e->orthoMatrix);
+			}
+
 			w->at.y += getDim(bounds).y + EASY_EDITOR_MARGIN;
 
 			float xAt = (w->at.x + getDim(bounds).x) + EASY_EDITOR_MARGIN;
@@ -503,7 +603,17 @@ static inline int easyEditor_pushList_(EasyEditor *e, char *name, char **options
 				w->maxX = xAt;
 			}
 		}
+		///////////////////////************ Pop the scissors*************////////////////////
+		if(neededScroll) {
+			easyRender_disableScissors(globalRenderGroup);
+		
+			w->at.y = startY + clippedHeight + EASY_EDITOR_MARGIN;
+		}
+
+
+
 	}
+
 
 	if(w->maxX < w->at.x) {
 		w->maxX = w->at.x;

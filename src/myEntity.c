@@ -509,6 +509,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                 case ENTITY_BOSS: {
 
                 } break;
+                case ENTITY_ENEMY: {
+
+                } break;
                 case ENTITY_ENEMY_BULLET: {
 
                 } break;
@@ -870,6 +873,65 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                             
                         }
                         e->T.scale = v3(globalTileScale, globalTileScale, globalTileScale);
+                    } break;
+                    case ENTITY_ENEMY: {
+                        bool createBullet = false;
+
+                        ///////////////////////********** Check if the boss got hit by bullet ***************////////////////////
+                        MyEntity_CollisionInfo collisionInfo = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_BULLET, EASY_COLLISION_ENTER);    
+                        
+                        if(collisionInfo.found && !isOn(&e->hurtColorTimer)) {
+                            assert(collisionInfo.e->type == ENTITY_BULLET);
+
+                            //NOTE(ollie): Check if have life yet
+                            e->enemyHP--;
+
+                            if(e->enemyHP == 0) {
+                                turnTimerOn(&e->fadeTimer); 
+                                //NOTE(ollie): Do stuff to notify we beat the boss
+
+                            } else {
+                                turnTimerOn(&e->hurtColorTimer);
+                            }
+                            
+                            ////////////////////////////////////////////////////////////////////
+                            //Play particle effects
+                            //Spawn smaller rocks
+                            
+                            //NOTE(ollie): Play hurt sound from boss
+                            playGameSound(&globalLongTermArena, easyAudio_findSound("bossHurt.wav"), 0, AUDIO_FOREGROUND);
+                        }
+
+                        //NOTE(ollie): Hurt color
+                        if(isOn(&e->hurtColorTimer)) {
+                            TimerReturnInfo info = updateTimer(&e->hurtColorTimer, dt);
+
+                            e->colorTint = smoothStep00V4(COLOR_WHITE, info.canonicalVal, COLOR_RED);
+                            if(info.finished) {
+                                turnTimerOff(&e->hurtColorTimer);
+                                e->colorTint = COLOR_WHITE;
+                            }
+                        }
+
+
+                        //NOTE(ollie): Update state timer
+                        if(!isOn(&e->aiStateTimer)) {
+                            turnTimerOn(&e->aiStateTimer);
+                        }
+
+                        if(isOn(&e->aiStateTimer)) {
+                            TimerReturnInfo info = updateTimer(&e->aiStateTimer, dt);
+
+                            if(info.finished) {
+                                turnTimerOn(&e->aiStateTimer);
+                                createBullet = true;
+                            }
+                        }  
+
+                        if(createBullet) {
+                            V3 initPos = easyTransform_getWorldPos(&e->T);
+                            MyEntity_AddToCreateList(manager, ENTITY_ENEMY_BULLET, initPos);
+                        }
                     } break;
                     case ENTITY_BOSS: {
 
@@ -1531,7 +1593,7 @@ static Entity *initBoss(MyEntityManager *m, EntityBossType bossType, V3 pos, Ent
     
     e->name = "Boss";
     float width = 1.0f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
     if(parent) e->T.parent = &parent->T;
 
 
@@ -1575,6 +1637,53 @@ static Entity *initBoss(MyEntityManager *m, EntityBossType bossType, V3 pos, Ent
     turnTimerOff(&e->fadeTimer);
     
     e->lastInterval = -floor(0.5f*MAX_LANE_COUNT) - 0.5f;
+    ////Physics 
+    
+    e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+    e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(width, width, width));
+    /////
+    
+    return e;
+}
+
+////////////////////////////////////////////////////////////////////
+
+
+//NOTE(ollie): Enemy
+
+static Entity *initEnemy(MyEntityManager *m, V3 pos, Entity *parent) {
+    Entity *e = (Entity *)getEmptyElement(&m->entities);
+    
+    e->name = "Enemy";
+    float width = 0.2f;
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    if(parent) e->T.parent = &parent->T;
+
+
+    e->T.Q = eulerAnglesToQuaternion(-0.5f*PI32, 0, 0);
+
+    e->active = true;
+#if DEBUG_ENTITY_COLOR
+    e->colorTint = COLOR_PINK;
+#else 
+    e->colorTint = COLOR_WHITE;
+#endif
+    e->type = ENTITY_ENEMY;
+
+    e->enemyHP = 5;
+
+    e->model = findModelAsset("MicroRecon.obj");
+
+    //NOTE(ollie): Just used for shooting at the moment
+    e->aiStateTimer = initTimer(0.5f, false);
+    turnTimerOff(&e->aiStateTimer);
+
+    e->hurtColorTimer = initTimer(1.0f, false);
+    turnTimerOff(&e->hurtColorTimer);
+
+    e->fadeTimer = initTimer(0.3f, false);
+    turnTimerOff(&e->fadeTimer);
+    
     ////Physics 
     
     e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
@@ -1997,7 +2106,7 @@ static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
 
 static bool myEntity_entityIsClamped(EntityType type) {
     bool result = true;
-    if(type == ENTITY_SCENERY || type == ENTITY_ASTEROID || type == ENTITY_BOSS || type == ENTITY_ENEMY_BULLET) {
+    if(type == ENTITY_SCENERY || type == ENTITY_ASTEROID || type == ENTITY_BOSS || type == ENTITY_ENEMY_BULLET || type == ENTITY_ENEMY) {
         result = false;
     }
 
@@ -2034,7 +2143,12 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
             result = initBucket(entityManager, findTextureAsset("toilet1.png"), clampedPosition, room);
         } break;
         case ENTITY_BOSS: {
-            result = initBoss(entityManager, bossType, clampedPosition, room);
+            //NOTE(ollie): Boss doesn't move with the room
+            result = initBoss(entityManager, bossType, worldP, 0);
+        } break;
+        case ENTITY_ENEMY: { 
+            //NOTE(ollie): Enemies don't move with the room 
+            result = initEnemy(entityManager, worldP, 0);
         } break;
         case ENTITY_ENEMY_BULLET: {
             
