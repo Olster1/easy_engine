@@ -1,0 +1,109 @@
+	id: 12;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: -2.093539 3.109015 -0.056093;
+	rotation: -0.902476 0.304579 0.304581 -0.000004;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 13;
+	modelName: "Carrot.obj";
+	entityType: "ENTITY_UNDERPANTS";
+	position: 2.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 14;
+	entityType: "ENTITY_BUCKET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 1.000000 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 15;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 1.000000 0.000000;
+	rotation: 0.410110 -0.410110 -0.576028 0.576031;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 16;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 2.000000 1.000000 0.000000;
+	rotation: 0.532068 -0.532047 0.465756 -0.465726;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 17;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 4.000000 0.000000;
+	rotation: -0.345638 0.345638 0.616875 -0.616875;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 18;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -1.000000 4.000000 0.000000;
+	rotation: 0.109738 -0.109739 0.698539 -0.698540;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 19;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 4.000000 0.000000;
+	rotation: 0.273695 -0.273695 0.651990 -0.651990;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 20;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 1.000000 4.000000 0.000000;
+	rotation: 0.417014 -0.417013 0.571051 -0.571052;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 21;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 2.000000 4.000000 0.000000;
+	rotation: -0.622407 0.622364 -0.335618 0.335609;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 22;
+	teleporterId: 23;
+	entityType: "ENTITY_TELEPORTER";
+	position: -2.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 23;
+	teleporterId: 22;
+	entityType: "ENTITY_TELEPORTER";
+	position: 2.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
+	tag: "puzzle";

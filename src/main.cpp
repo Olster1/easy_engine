@@ -946,8 +946,23 @@ int main(int argc, char *args[]) {
             
             if(DEBUG_global_DrawFrameRate) {
                 char frameRate[256];
-                sprintf(frameRate, "%f", 1.0f / appInfo.dt);
-                outputTextNoBacking(mainFont, 0.1f*resolution.x, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_GREEN, 1, true, appInfo.screenRelativeSize);
+                float xAt = 0.1f*resolution.x;
+                snprintf(frameRate, arrayCount(frameRate), "%f", 1.0f / appInfo.dt);
+                Rect2f bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->entities.count);
+                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.rigidBodies.count);
+                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.colliders.count);
+                outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                    
             }
             
             switch (gameState->currentGameMode) {
@@ -1325,7 +1340,7 @@ int main(int argc, char *args[]) {
                                         gameState->hotEntity = initScenery1x1(entityManager, model->name, model, worldP, (Entity *)gameState->currentRoomBeingEdited);    
                                     }
                                 } else {
-                                    gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState, true, model, gameState->editorSelectedBossType);
+                                    gameState->hotEntity = initEntityByType(entityManager, worldP, entTypeToInit, (Entity *)gameState->currentRoomBeingEdited, gameState, true, model, gameState->editorSelectedBossType, false);
                                 }
                                 
 

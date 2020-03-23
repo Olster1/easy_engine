@@ -1,0 +1,21 @@
+"boss"
+"fireboss"
+"puzzle"
+"enemy"
+"obstacle"
+"space"
+"earth"
+
+
+types: 
+
+teleporter 
+star
+bucket
+droplet 
+choc_bar (health)
+cramp 
+asteroid
+underpants (lives)
+boss
+enemy

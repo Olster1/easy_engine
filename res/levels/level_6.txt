@@ -1,0 +1,38 @@
+	id: 197;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: -1.970391 2.031625 -0.037278;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 194;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: -0.862045 2.031623 -0.037290;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 195;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: 2.096323 1.848100 -0.034093;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 196;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: 0.153937 2.000842 -0.036743;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
+	tag: "enemy";

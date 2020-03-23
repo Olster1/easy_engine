@@ -1,0 +1,65 @@
+	id: 65;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: -2.278263 3.509190 -0.063077;
+	rotation: -0.377169 0.654882 0.654884 -0.000001;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 66;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: -0.892832 2.123970 -0.038902;
+	rotation: -0.340020 0.664976 0.664976 -0.000000;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 67;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: -2.247475 1.046577 -0.020096;
+	rotation: 0.459886 0.627895 0.627896 0.000000;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 68;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: 1.939602 3.632318 -0.065230;
+	rotation: 0.962726 -0.191258 -0.191258 0.000000;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 69;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: 1.908814 2.893536 -0.052335;
+	rotation: 0.750722 -0.467128 -0.467128 0.000001;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 70;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: 0.800471 1.939273 -0.035676;
+	rotation: 0.593577 0.569063 0.569064 0.000000;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 71;
+	modelName: "rock.obj";
+	entityType: "ENTITY_ASTEROID";
+	position: -0.923620 3.262928 -0.058783;
+	rotation: 0.785571 -0.437537 -0.437538 0.000001;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
+	tag: "obstacle";

@@ -362,7 +362,8 @@ static void EasyProfile_DrawGraph(EasyProfile_ProfilerDrawState *drawState, floa
 							float barHeight = 0.05f*resolution.y;
 
 							//NOTE(ollie): If the bar can actually been seen do we draw it 
-							if(barWidth > 5) { //pixels in a fuax resolution projection
+							// if(barWidth > 5) 
+							{ //pixels in a fuax resolution projection
 
 								float expandedSize = (graphWidth - defaultGraphWidth);
 								float xStart = 0.1f*resolution.x - drawState->scrollPercent*expandedSize;

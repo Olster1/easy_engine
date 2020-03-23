@@ -139,6 +139,7 @@ static inline bool easyEditor_isInteracting(EasyEditor *e) {
 
 
 static inline EasyEditorId easyEditor_getNullId() {
+	DEBUG_TIME_BLOCK()
 	EasyEditorId result = {};
 	result.lineNumber = -1;
 	result.index = -1;
@@ -147,7 +148,7 @@ static inline EasyEditorId easyEditor_getNullId() {
 }
 
 static inline void easyEditor_stopInteracting(EasyEditor *e) {
-
+	DEBUG_TIME_BLOCK()
 	if(e->interactingWith.type == EASY_EDITOR_INTERACT_TEXT_FIELD) {
 		EasyEditorState *field = e->interactingWith.item;
 

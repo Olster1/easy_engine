@@ -18,6 +18,7 @@ void easy_phys_updatePosAndVel(V3 *pos, V3 *dP, V3 dPP, float dtValue, float dra
 
 //assumes the shape is clockwise
 RayCastInfo easy_phys_castRay(V2 startP, V2 ray, V2 *points, int count) {
+	DEBUG_TIME_BLOCK()
 	isNanErrorV2(startP);
 	RayCastInfo result = {};
 	if(!(ray.x == 0 && ray.y == 0)) {
@@ -99,6 +100,7 @@ typedef struct {
 } EasyPhysics_RayCastAABB3f_Info;
 
 static inline EasyPhysics_RayCastAABB3f_Info EasyPhysics_CastRayAgainstAABB3f(Matrix4 boxRotation, V3 boxCenter, V3 boxScale, Rect3f bounds, V3 rayDirection, V3 rayPos) {
+	DEBUG_TIME_BLOCK()
 	EasyPhysics_RayCastAABB3f_Info result = {};
 
 	EasyRay r = {};
@@ -204,6 +206,7 @@ typedef struct {
 
 
 static void EasyPhysics_beginWorld(EasyPhysics_World *world) {
+	DEBUG_TIME_BLOCK()
 	initArray(&world->colliders, EasyCollider);
 	initArray(&world->rigidBodies, EasyRigidBody);
 }
@@ -226,7 +229,7 @@ How to use Collision info:
 */
 
 static EasyCollisionInfo *EasyCollider_addCollisionInfo(EasyCollider *col, int hitObjectId) {
-
+	DEBUG_TIME_BLOCK()
 	EasyCollisionInfo *result = 0;
 
 	for(int i = 0; i < col->collisionCount; ++i) {
@@ -265,6 +268,7 @@ static EasyCollisionInfo *EasyCollider_addCollisionInfo(EasyCollider *col, int h
 }
 
 static void EasyCollider_removeCollisions(EasyCollider *col) {
+	DEBUG_TIME_BLOCK()
 	for(int i = 0; i < col->collisionCount;) {
 		bool increment = true;
 		EasyCollisionInfo *info = col->collisions + i;
@@ -297,6 +301,7 @@ static void EasyCollider_removeCollisions(EasyCollider *col) {
 
 	
 static inline EasyCollisionOutput EasyPhysics_SolveRigidBodies(EasyCollider *a_, EasyCollider *b_) {
+	DEBUG_TIME_BLOCK()
 	EasyCollisionPolygon a = {};
 	EasyCollisionPolygon b = {};
 
@@ -369,6 +374,7 @@ void EasyPhysics_ResolveCollisions(EasyRigidBody *ent, EasyRigidBody *testEnt, E
 }
 
 static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float inverseWeight, float inverseIntertia) {
+	DEBUG_TIME_BLOCK()
     ArrayElementInfo arrayInfo = getEmptyElementWithInfo(&world->rigidBodies);
 
     EasyRigidBody *rb = (EasyRigidBody *)arrayInfo.elm;
@@ -386,6 +392,7 @@ static EasyRigidBody *EasyPhysics_AddRigidBody(EasyPhysics_World *world, float i
 
 
 static EasyCollider *EasyPhysics_AddCollider(EasyPhysics_World *world, EasyTransform *T, EasyRigidBody *rb, EasyColliderType type, V3 offset, bool isTrigger, V3 info) {
+	DEBUG_TIME_BLOCK()
 	ArrayElementInfo arrayInfo = getEmptyElementWithInfo(&world->colliders);
 
 	EasyCollider *col = (EasyCollider *)arrayInfo.elm;
@@ -430,6 +437,7 @@ static void EasyPhysics_AddGravity(EasyRigidBody *rb, float scale) {
 }
 
 void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float dt) {
+	DEBUG_TIME_BLOCK()
 	for (int i = 0; i < rigidBodies->count; ++i)
 	{
 	    EasyRigidBody *rb = (EasyRigidBody *)getElement(rigidBodies, i);
@@ -554,9 +562,10 @@ void ProcessPhysics(Array_Dynamic *colliders, Array_Dynamic *rigidBodies, float 
 
 
 static void EasyPhysics_UpdateWorld(EasyPhysics_World *world, float dt) {
+	DEBUG_TIME_BLOCK()
 	world->physicsTime += dt;
 	int dividend = world->physicsTime / PHYSICS_TIME_STEP;
-	float timeInterval = world->physicsTime;// / (float)dividend;//PHYSICS_TIME_STEP; 
+	float timeInterval = PHYSICS_TIME_STEP; 
 	while(world->physicsTime >= timeInterval) {
 	    ProcessPhysics(&world->colliders, &world->rigidBodies, timeInterval);
 	    world->physicsTime -= timeInterval;

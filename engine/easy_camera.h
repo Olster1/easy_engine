@@ -21,6 +21,7 @@ typedef enum {
 } EasyCamera_MoveType;
 
 static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates, float sensitivity, float movePower, float dt, EasyCamera_MoveType moveType) {
+	DEBUG_TIME_BLOCK()
 	//update view direction
 	if(!cam->lastP_isSet) {
 		cam->lastMouseP = keyStates->mouseP;
@@ -111,6 +112,7 @@ static inline void easy3d_updateCamera(EasyCamera *cam, AppKeyStates *keyStates,
 }
 
 static inline V3 EasyCamera_getZAxis(EasyCamera *cam) {
+	DEBUG_TIME_BLOCK()
 	Matrix4 camOrientation = quaternionToMatrix(cam->orientation);
 
 	V3 zAxis = normalizeV3(easyMath_getZAxis(camOrientation));
@@ -135,6 +137,7 @@ static inline void easy3d_initCamera(EasyCamera *cam, V3 pos) {
 }
 
 static inline Matrix4 easy3d_getViewToWorld(EasyCamera *camera) {
+	DEBUG_TIME_BLOCK()
 	Matrix4 result = mat4();
 
 	Matrix4 rotation = quaternionToMatrix(camera->orientation);
@@ -146,29 +149,13 @@ static inline Matrix4 easy3d_getViewToWorld(EasyCamera *camera) {
 }
 
 static inline Matrix4 easy3d_getWorldToView(EasyCamera *camera) {
+	DEBUG_TIME_BLOCK()
 
-
-	// printf("quert %f %f %f \n", camera->orientation.r, camera->orientation.i, camera->orientation.j, camera->orientation.k);
 	Matrix4 rotation = quaternionToMatrix(camera->orientation);
-
-	// printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
-	// printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
-	// printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
-	// printf("%s\n", "----------------");
 
 	rotation = mat4_transpose(rotation);
 
-	// printf("%f %f %f \n", result.a.x, result.a.y, result.a.z);
-	// printf("%f %f %f \n", result.b.x, result.b.y, result.b.z);
-	// printf("%f %f %f \n", result.c.x, result.c.y, result.c.z);
-	// printf("%s\n", "----------------");
-	
 	Matrix4 translation = Matrix4_translate(mat4(), v3_negate(camera->pos));
-	// Matrix4 temp = cameraTrans;
-	// printf("%f %f %f \n", temp.a.x, temp.a.y, temp.a.z);
-	// printf("%f %f %f \n", temp.b.x, temp.b.y, temp.b.z);
-	// printf("%f %f %f \n", temp.c.x, temp.c.y, temp.c.z);
-	// printf("%s\n", "----------------");
 
 	//NOTE(): Translation first then rotation
 	Matrix4 result = Mat4Mult(rotation, translation);
@@ -178,6 +165,7 @@ static inline Matrix4 easy3d_getWorldToView(EasyCamera *camera) {
 
 //this function makes a world -> view matrix for a camera looking at a position
 Matrix4 easy3d_lookAt(V3 cameraPos, V3 targetPos, V3 upVec) {
+	DEBUG_TIME_BLOCK()
 	Matrix4 result = mat4();
 	V3 direction = v3_minus(targetPos, cameraPos); //assuming we are in left handed coordinate system
 	direction = normalizeV3(direction);

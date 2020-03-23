@@ -61,29 +61,39 @@ typedef struct {
 } MyWorldTagInfo;	
 
 typedef struct {
+	///////////////////////************ Get set on initing the world *************////////////////////
 	//NOTE(ollie): About the boss
 	bool hasBoss;
 	EntityBossType bossType;
-	bool defeatedBoss;
-	bool inBoss;
+
 
 	bool hasPuzzle;
 	bool hasEnemies;
 	bool hasObstacles;
 
-	bool fightingEnemies;
-
 	MyWorldBiomeType biomeType;
-
-	//NOTE(ollie): For during the level
-	s32 roomsSincePuzzle;
-	s32 roomsSinceObstacle;
-	s32 roomsSinceEnemies;
-
-	s32 totalRoomCount;
 
 	u32 levelCount;
 	MyWorldTagInfo levels[1028]; 
+
+	////////////////////////////////////////////////////////////////////
+
+	///////////////////////************ For during the level*************////////////////////	
+	//NOTE(ollie): These are altered in the update loop
+	bool defeatedBoss;
+	bool fightingEnemies;
+
+	//NOTE(ollie): These are set when we create a new level
+	bool inBoss;
+
+	//NOTE(ollie): Probably overkill using u64 but incase player plays for a very long time
+	u64 lastRoomId_withPuzzle;
+	u64 lastRoomId_withObstacle;
+	u64 lastRoomId_withEnemy;
+
+	u64 totalRoomCount;
+
+	////////////////////////////////////////////////////////////////////
 
 } MyWorldState;
 

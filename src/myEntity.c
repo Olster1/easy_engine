@@ -264,6 +264,20 @@ static inline Entity *MyEntity_findEntityByName(char *name) {
 }
 
 
+static inline Entity *MyEntity_findEntityById(MyEntityManager *manager, u32 id) {
+    Entity *result = 0;
+    for(int i = 0; i < manager->entities.count && !result; ++i) {
+        Entity *e = (Entity *)getElement(&manager->entities, i);
+        if(e && e->T.id == id) { //can be null
+            result = e;
+            break;
+        }
+    }
+
+    return result;
+}
+
+
 ////////////////////////////////////////////////////////////////////
 
 
@@ -965,6 +979,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                                         turnTimerOn(&e->fadeTimer); 
                                         //NOTE(ollie): Do stuff to notify we beat the boss
 
+                                        gameState->worldState->defeatedBoss = true;
+                                        gameState->worldState->inBoss = false;
                                     } else {
                                         turnTimerOn(&e->hurtColorTimer);
                                     }
@@ -1659,12 +1675,12 @@ static Entity *initEnemy(MyEntityManager *m, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Enemy";
-    float width = 0.6f;
+    float width = 0.3f;
     easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
     if(parent) e->T.parent = &parent->T;
 
 
-    e->T.Q = eulerAnglesToQuaternion(-0.5f*PI32, 0, 0);
+    e->T.Q = eulerAnglesToQuaternion(0, -0.5f*PI32, 0);
 
     e->active = true;
 #if DEBUG_ENTITY_COLOR
@@ -1720,10 +1736,6 @@ static Entity *initEnemyBullet(MyEntityManager *m, V3 pos) {
     
     ////Physics 
     
-    e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
-    e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
-    /////
-
     e->lifespanTimer = initTimer(3.0f, false);
     turnTimerOn(&e->lifespanTimer); 
     
@@ -1932,6 +1944,8 @@ static Entity *initCramp(MyEntityManager *m, EasyModel *model, V3 pos, Entity *p
     e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
     
     /////
+
+    e->rb->dA = v3(0, 0, 5);
     
     return e;
     
@@ -2117,7 +2131,7 @@ static bool myEntity_entityIsClamped(EntityType type) {
     return result;
 }
 
-static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room, MyGameState *gameState, bool clampPosition, EasyModel *m, EntityBossType bossType) {
+static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, EntityType type, Entity *room, MyGameState *gameState, bool clampPosition, EasyModel *m, EntityBossType bossType, bool isOnLoad) {
     Entity *result = 0;
     
     V3 clampedPosition = worldP;
@@ -2152,7 +2166,7 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         } break;
         case ENTITY_ENEMY: { 
             //NOTE(ollie): Enemies don't move with the room 
-            result = initEnemy(entityManager, worldP, 0);
+            result = initEnemy(entityManager, worldP, room);
         } break;
         case ENTITY_ENEMY_BULLET: {
             
@@ -2168,15 +2182,19 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         } break;
         case ENTITY_TELEPORTER: {
             //NOTE(ollie): We create two teleporter entities next to each other 
-            Entity *t0 = initTeleporter(entityManager, clampedPosition, room, gameState);
-            Entity *t1 = initTeleporter(entityManager, v3_plus(clampedPosition, v3(1, 0, 0)), room, gameState);
+            if(isOnLoad) {
+                result = initTeleporter(entityManager, clampedPosition, room, gameState);
+            } else {
+                Entity *t0 = initTeleporter(entityManager, clampedPosition, room, gameState);
+                Entity *t1 = initTeleporter(entityManager, v3_plus(clampedPosition, v3(1, 0, 0)), room, gameState);
 
-            //NOTE(ollie): Then assign partners so you can teleport through them
-            t0->teleporterPartner = t1;
-            t1->teleporterPartner = t0;
+                //NOTE(ollie): Then assign partners so you can teleport through them
+                t0->teleporterPartner = t1;
+                t1->teleporterPartner = t0;
 
-            //NOTE(ollie): Assign the entity to the result 
-            result = t0;
+                //NOTE(ollie): Assign the entity to the result 
+                result = t0;    
+            }
         } break;
         case ENTITY_STAR: {
             result = initStar(entityManager, clampedPosition, room);

@@ -26,6 +26,7 @@ typedef struct Asset {
 static Asset **assets = 0;
 
 int getAssetHash(char *at, int maxSize) {
+    DEBUG_TIME_BLOCK()
 	int hashKey = 0;
     while(*at) {
         //Make the hash look up different prime numbers. 
@@ -37,6 +38,7 @@ int getAssetHash(char *at, int maxSize) {
 }
 
 Asset *findAsset(char *fileName) {
+    DEBUG_TIME_BLOCK()
     int hashKey = getAssetHash(fileName, GLOBAL_ASSET_ARRAY_SIZE);
     
     Asset *file = assets[hashKey];
@@ -59,6 +61,7 @@ Asset *findAsset(char *fileName) {
 }
 
 inline static EasyModel *findModelAsset_Safe(char *fileName) { 
+    DEBUG_TIME_BLOCK()
     Asset *a = findAsset(fileName); 
     EasyModel *result = 0;
     if(a) {
@@ -100,6 +103,7 @@ static Event *getEventAsset(Asset *assetPtr) {
 }
 
 static Asset *addAsset_(char *fileName, void *asset) { 
+    DEBUG_TIME_BLOCK()
     char *truncName = getFileLastPortion(fileName);
     int hashKey = getAssetHash(truncName, GLOBAL_ASSET_ARRAY_SIZE);
     assert(fileName != truncName);
@@ -151,6 +155,7 @@ Asset *addAssetModel(char *fileName, EasyModel *asset) { // we have these for ty
 }
 
 Asset *loadImageAsset(char *fileName) {
+    DEBUG_TIME_BLOCK()
     Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR, true);
     Texture *tex = (Texture *)calloc(sizeof(Texture), 1);
     memcpy(tex, &texOnStack, sizeof(Texture));
@@ -160,6 +165,7 @@ Asset *loadImageAsset(char *fileName) {
 }
 
 Asset *loadSoundAsset(char *fileName, SDL_AudioSpec *audioSpec) {
+    DEBUG_TIME_BLOCK()
     WavFile *sound = (WavFile *)calloc(sizeof(WavFile), 1);
     loadWavFile(sound, fileName, audioSpec);
     Asset *result = addAssetSound(fileName, sound);

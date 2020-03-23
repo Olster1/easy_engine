@@ -64,6 +64,7 @@ typedef struct {
 } InfiniteAlloc;
 
 void expandMemoryArray_(InfiniteAlloc *arena, int count) {
+    DEBUG_TIME_BLOCK()
     if((arena->count + count) >= arena->totalCount) {
         int newCount = arena->totalCount + count + 1028;
         void *newMem = calloc(newCount*arena->sizeOfMember, 1);
@@ -82,6 +83,7 @@ void expandMemoryArray_(InfiniteAlloc *arena, int count) {
 
 #define initInfinteAlloc(member) initInfinteAlloc_(sizeof(member)) 
 InfiniteAlloc initInfinteAlloc_(int sizeOfMember) {
+    DEBUG_TIME_BLOCK()
     InfiniteAlloc result = {};
     result.sizeOfMember = sizeOfMember;
     
@@ -101,6 +103,7 @@ void *getElementFromAlloc_(InfiniteAlloc *arena, int index)  {
 }
 
 void *addElementInifinteAllocWithCount_(InfiniteAlloc *arena, void *data, int count) {
+    DEBUG_TIME_BLOCK()
     assert(arena->sizeOfMember > 0);
     expandMemoryArray_(arena, count);
     assert((arena->count + count) < arena->totalCount);
@@ -117,6 +120,7 @@ void *addElementInifinteAllocWithCount_(InfiniteAlloc *arena, void *data, int co
 
 
 void releaseInfiniteAlloc(InfiniteAlloc *arena) {
+    DEBUG_TIME_BLOCK()
     if(arena->memory) {
         free(arena->memory);
         memset(arena, 0, sizeof(InfiniteAlloc));
@@ -124,10 +128,12 @@ void releaseInfiniteAlloc(InfiniteAlloc *arena) {
 }
 
 bool isInfinteAllocActive(InfiniteAlloc *arena) {
+    DEBUG_TIME_BLOCK()
     return (bool)arena->memory;
 }
 
 Pool *initPool(Array_Dynamic *array, size_t sizeofType, unsigned int id) {
+    DEBUG_TIME_BLOCK()
     Pool *pool = (Pool *)calloc(sizeof(Pool), 1);
     memset(pool, 0, sizeof(Pool));
 
@@ -152,6 +158,7 @@ Pool *initPool(Array_Dynamic *array, size_t sizeofType, unsigned int id) {
 
 #define initArray(array, type) initArray_(array, sizeof(type))
 void initArray_(Array_Dynamic *array, size_t sizeofType) {
+    DEBUG_TIME_BLOCK()
     memset(array, 0, sizeof(Array_Dynamic));
     array->sizeofType = sizeofType;
     //set up sentinel
@@ -162,9 +169,8 @@ void initArray_(Array_Dynamic *array, size_t sizeofType) {
 }
 
 bool isElmValid(Pool *pool, u64 index) {
-    if(index > 32) {
-        int i = 0;
-    }
+    DEBUG_TIME_BLOCK()
+   
     bool result = !(pool->inValid & (u64)((u64)1 << (u64)index));
     return result;
 }
@@ -172,7 +178,7 @@ bool isElmValid(Pool *pool, u64 index) {
 #define addElement(array, data) addElement_(array, &data, sizeof(data))
 
 int addElement_(Array_Dynamic *array, void *elmData, size_t sizeofData) {
-    
+    DEBUG_TIME_BLOCK()
     assert(sizeofData == array->sizeofType);
     
     Pool *pool = array->latestPool;
@@ -241,6 +247,7 @@ int addElement_(Array_Dynamic *array, void *elmData, size_t sizeofData) {
 }
 
 Pool *getPool(Array_Dynamic *array, int poolIndex) {
+    DEBUG_TIME_BLOCK()
     //hash table would avoid looking at all the arrays
     Pool *result = array->poolHash[poolIndex % arrayCount(array->poolHash)];
     while(result) {
@@ -259,6 +266,7 @@ typedef struct {
 } PoolInfo;
 
 PoolInfo getPoolInfo(Array_Dynamic *array, int absIndex) {
+    DEBUG_TIME_BLOCK()
     int poolAt = absIndex / INCREMENT_COUNT;
     // assert(absIndex < INCREMENT_COUNT);
     
@@ -272,6 +280,7 @@ PoolInfo getPoolInfo(Array_Dynamic *array, int absIndex) {
 
 
 void *getElement(Array_Dynamic *array, unsigned int absIndex) {
+    DEBUG_TIME_BLOCK()
     void *elm = 0;
     PoolInfo info = getPoolInfo(array, absIndex);
     if(info.pool && info.indexAt < (info.pool->indexAt) && info.indexAt >= 0 && isElmValid(info.pool, info.indexAt)) {
@@ -284,6 +293,7 @@ void *getElement(Array_Dynamic *array, unsigned int absIndex) {
 }
 
 void *getEmptyElement(Array_Dynamic *array) {
+    DEBUG_TIME_BLOCK()
     int index = addElement_(array, 0, array->sizeofType);
     void *result = getElement(array, index);
     memset(result, 0, array->sizeofType);
@@ -296,6 +306,7 @@ typedef struct {
 } ArrayElementInfo;
 
 ArrayElementInfo getEmptyElementWithInfo(Array_Dynamic *array) {
+    DEBUG_TIME_BLOCK()
     ArrayElementInfo result = {};
     result.absIndex = addElement_(array, 0, array->sizeofType);
     result.elm = getElement(array, result.absIndex);
@@ -303,7 +314,7 @@ ArrayElementInfo getEmptyElementWithInfo(Array_Dynamic *array) {
 }
 
 void removeElement_unordered(Array_Dynamic *array, int absIndex) {
-    
+    DEBUG_TIME_BLOCK()
     PoolInfo info = getPoolInfo(array, absIndex);
     
     Pool *pool = info.pool;
@@ -329,6 +340,7 @@ void removeElement_unordered(Array_Dynamic *array, int absIndex) {
 
 //
 void *getLastElement(Array_Dynamic *array) { //returns the last element on the list. [array->count - 1]
+    DEBUG_TIME_BLOCK()
     void *lastElm = getElement(array, array->count - 1);
     assert(lastElm);
     return lastElm;
@@ -336,6 +348,7 @@ void *getLastElement(Array_Dynamic *array) { //returns the last element on the l
 
 //This is when we want to keep the order consistent. i.e. we're using indexes as ids etc. 
 void removeElement_ordered(Array_Dynamic *array, int absIndex) {
+    DEBUG_TIME_BLOCK()
     PoolInfo info = getPoolInfo(array, absIndex);
     if(info.pool && info.indexAt < info.pool->indexAt && info.indexAt >= 0 && isElmValid(info.pool, info.indexAt)) {
         
@@ -382,6 +395,7 @@ typedef enum {
 } RemoveType;
 
 void removeSectionOfElements(Array_Dynamic *array, RemoveType type, int min, int max) {
+    DEBUG_TIME_BLOCK()
     for(int i = min; i < max; ++i) {
         if(type == REMOVE_ORDERED) {
             removeElement_ordered(array, i);
@@ -398,6 +412,7 @@ void removeSectionOfElements(Array_Dynamic *array, RemoveType type, int min, int
 
 
 void freeArray(Array_Dynamic *array) {
+    DEBUG_TIME_BLOCK()
     //also free all the free lists and other lists.
     
     for(int i = 0; i < arrayCount(array->poolHash); i++) {

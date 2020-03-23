@@ -1,0 +1,38 @@
+	id: 260;
+	teleporterId: 259;
+	entityType: "ENTITY_TELEPORTER";
+	position: 1.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 261;
+	teleporterId: 262;
+	entityType: "ENTITY_TELEPORTER";
+	position: -1.000000 4.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 262;
+	teleporterId: 261;
+	entityType: "ENTITY_TELEPORTER";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 259;
+	teleporterId: 260;
+	entityType: "ENTITY_TELEPORTER";
+	position: -2.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
+	tag: "puzzle";

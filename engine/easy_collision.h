@@ -38,6 +38,7 @@ typedef struct {
 
 static inline int easyCollision_supportFunction(EasyCollisionPolygon *polygon, V3 direction) { 
 	//polygon that is transformed
+	DEBUG_TIME_BLOCK()
 
 	float maxDistance = dotV2(polygon->pT[0].xy, direction.xy);
 	int index = 0;
@@ -55,6 +56,7 @@ static inline int easyCollision_supportFunction(EasyCollisionPolygon *polygon, V
 }
 
 static inline void easyCollision_solve2(EasySimplex *simplex) {
+	DEBUG_TIME_BLOCK()
 	assert(simplex->count == 2);
 	V2 A = simplex->points[0].point.xy;
 	V2 B = simplex->points[1].point.xy;
@@ -102,6 +104,7 @@ static inline void easyCollision_solve2(EasySimplex *simplex) {
 
 }
 static inline float easyCollision_getBaycentric(V3 point2, V3 point1) {
+	DEBUG_TIME_BLOCK()
 	V3 BA = v3_minus(point2, point1);
 	V3 QA = v3_minus(v3(0, 0, 0), point1);
 
@@ -112,6 +115,7 @@ static inline float easyCollision_getBaycentric(V3 point2, V3 point1) {
 
 
 static inline void easyCollision_solve3(EasySimplex *simplex) {
+	DEBUG_TIME_BLOCK()
 	assert(simplex->count == 3);
 	
 	V3 A = simplex->points[0].point;
@@ -246,6 +250,7 @@ static inline void easyCollision_solve3(EasySimplex *simplex) {
 }
 
 static inline V3 easyCollision_getSearchDirection(EasySimplex *simplex) {
+	DEBUG_TIME_BLOCK()
 	V3 result = v3(0, 0, 0);
 	switch(simplex->count) {
 		case 1: {
@@ -271,7 +276,7 @@ static inline V3 easyCollision_getSearchDirection(EasySimplex *simplex) {
 }
 
 static inline void easyCollision_getWitnessPoints(EasySimplex *simplex, V3 *point1, V3 *point2) {
-
+	DEBUG_TIME_BLOCK()
 		float s = 1.0f / simplex->divisor;
 
 		switch (simplex->count)
@@ -320,6 +325,7 @@ static inline void easyCollision_getWitnessPoints(EasySimplex *simplex, V3 *poin
 }
 
 static inline void easyCollision_GetClosestPoint(EasyCollisionInput *input, EasyCollisionOutput *output) {
+	DEBUG_TIME_BLOCK()
 	//transform points to world space;
 	EasyCollisionPolygon *a = &input->a;
 	for(int i = 0; i < a->count; ++i) {

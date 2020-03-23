@@ -31,6 +31,7 @@ static inline bool easyConsole_isConsoleOpen(EasyConsole *c) {
 static EasyConsole *DEBUG_globalEasyConsole;
 
 inline void easyConsole_initConsole(EasyConsole *c, ButtonType hotkey) {
+	DEBUG_TIME_BLOCK()
 	c->hotkey = hotkey;
 	c->state = EASY_CONSOLE_CLOSED;
 	c->expandTimer = initTimer(0.2f, false);
@@ -48,6 +49,7 @@ inline void easyConsole_initConsole(EasyConsole *c, ButtonType hotkey) {
 }
 
 inline void easyConsole_addToStream(EasyConsole *c, char *toAdd) {
+	DEBUG_TIME_BLOCK()
 	char *at = toAdd;
 
 	bool readyToBreak = false;
@@ -89,12 +91,14 @@ inline void easyConsole_addToStream(EasyConsole *c, char *toAdd) {
 
 
 static inline void easyConsole_pushFloat(EasyConsole *c, float i) {
+	DEBUG_TIME_BLOCK()
 	char buf[32];
 	sprintf(buf, "%f", i);
 	easyConsole_addToStream(c, buf);
 }
 
 static inline void easyConsole_pushInt(EasyConsole *c, int i) {
+	DEBUG_TIME_BLOCK()
 	char buf[32];
 	sprintf(buf, "%d", i);
 	easyConsole_addToStream(c, buf);
@@ -110,7 +114,7 @@ inline bool easyConsole_isOpen(EasyConsole *c) {
 }
 
 inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt, float aspectRatio_yOverX) {
-
+	DEBUG_TIME_BLOCK()
 	float fuaxWidth = 1920;
 	V2 fuaxResolution = v2(fuaxWidth, fuaxWidth*aspectRatio_yOverX);
 
@@ -209,6 +213,7 @@ inline EasyToken easyConsole_seeNextToken(EasyConsole *console) {
 */
 
 inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
+	DEBUG_TIME_BLOCK()
 	if(stringsMatchNullN("fly", token.at, token.size)) {
         DEBUG_global_IsFlyMode = !DEBUG_global_IsFlyMode;
     } else if(stringsMatchNullN("camMoveXY", token.at, token.size)) {

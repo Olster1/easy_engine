@@ -1,0 +1,116 @@
+	id: 27;
+	modelName: "rock.obj";
+	entityType: "ENTITY_CRAMP";
+	position: 0.000000 3.000000 0.000000;
+	rotation: 0.953797 0.000000 0.000000 0.300453;
+	scale: 0.200000 0.200000 0.200000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 28;
+	entityType: "ENTITY_STAR";
+	position: 0.000000 1.000000 0.000000;
+	rotation: -0.820497 0.000000 0.000000 0.571650;
+	scale: 1.000000 1.000000 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 29;
+	modelName: "Carrot.obj";
+	entityType: "ENTITY_UNDERPANTS";
+	position: 1.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 30;
+	modelName: "Carrot.obj";
+	entityType: "ENTITY_UNDERPANTS";
+	position: 2.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 18;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 0.000000 0.000000;
+	rotation: 0.703418 -0.703418 -0.072132 0.072132;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 19;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 1.000000 0.000000;
+	rotation: 0.619814 -0.619814 -0.340339 0.340339;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 20;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 2.000000 0.000000;
+	rotation: 0.474356 -0.474355 -0.524392 0.524392;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 21;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 3.000000 0.000000;
+	rotation: -0.144796 0.144796 -0.692123 0.692123;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 22;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 4.000000 0.000000;
+	rotation: -0.373324 0.373325 -0.600524 0.600524;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 23;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -1.000000 2.000000 0.000000;
+	rotation: -0.706292 0.706292 -0.033943 0.033944;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 24;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 1.000000 2.000000 0.000000;
+	rotation: -0.692737 0.692735 0.141835 -0.141834;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 25;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 0.603714 -0.603676 -0.368182 0.368166;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 26;
+	entityType: "ENTITY_CHOC_BAR";
+	position: -1.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 1.000000 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";

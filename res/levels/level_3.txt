@@ -1,0 +1,64 @@
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -2.000000 2.000000 0.000000;
+	rotation: -0.619894 0.619894 0.340193 -0.340193;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -1.000000 2.000000 0.000000;
+	rotation: -0.438503 0.438504 0.554721 -0.554720;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: -0.199229 0.199229 0.678460 -0.678460;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 1.000000 2.000000 0.000000;
+	rotation: 0.118362 -0.118356 0.697151 -0.697111;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "rock.obj";
+	entityType: "ENTITY_CRAMP";
+	position: -2.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.800000 0.800000 0.800000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	entityType: "ENTITY_CHOC_BAR";
+	position: 1.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.000000 1.000000 1.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Carrot.obj";
+	entityType: "ENTITY_UNDERPANTS";
+	position: 2.000000 2.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	modelName: "Carrot.obj";
+	entityType: "ENTITY_UNDERPANTS";
+	position: 0.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";

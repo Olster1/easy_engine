@@ -10,8 +10,17 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager, MyGam
 
 			//NOTE(ollie): Save everything these types
 			if(myEntity_shouldEntityBeSaved(e->type)) {
+				addVar(&fileContents, &e->T.id, "id", VAR_INT);
+
 				if(e->model) {
 			       	addVar(&fileContents, e->model->name, "modelName", VAR_CHAR_STAR);
+				}  
+
+				if(e->type == ENTITY_TELEPORTER) {
+					if(e->teleporterPartner) {
+						addVar(&fileContents, &e->teleporterPartner->T.id, "teleporterId", VAR_INT);
+					}
+			       	
 				}  
 
 				if(e->type == ENTITY_BOSS) {
@@ -84,6 +93,14 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	    EntityType entType = ENTITY_NULL;
 	    EntityBossType bossType = ENTITY_BOSS_NULL;
 
+	    s32 teleporterIds[256];
+	    Entity *teleportEnts[256];
+	    u32 idCount = 0;
+	    bool wasTeleporter = false;
+
+	    bool foundId = false;
+	    s32 id = 0;
+
 	    while(parsing) {
 	        EasyToken token = lexGetNextToken(&tokenizer);
 	        InfiniteAlloc data = {};
@@ -110,6 +127,16 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                if(stringsMatchNullN("position", token.at, token.size)) {
 	                    pos = buildV3FromDataObjects(&data, &tokenizer);
 	                }
+	                if(stringsMatchNullN("id", token.at, token.size)) {
+	                    id = getIntFromDataObjects(&data, &tokenizer);
+	                    foundId = true;
+	                }
+	                if(stringsMatchNullN("teleporterId", token.at, token.size)) {
+	                	assert(idCount < arrayCount(teleporterIds));
+	                    teleporterIds[idCount++] = getIntFromDataObjects(&data, &tokenizer);
+	                    wasTeleporter = true;
+	                }
+	                
 	                if(stringsMatchNullN("scale", token.at, token.size)) {
 	                    scale = buildV3FromDataObjects(&data, &tokenizer);
 	                }
@@ -156,13 +183,22 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	            	} else {
 
 		            	if(entType != ENTITY_SCENERY) {
-		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom, gameState, false, model, bossType);
+		            		newEntity = initEntityByType(entityManager, pos, entType, newRoom, gameState, false, model, bossType, true);
 		            	} else {
 		            		newEntity = initScenery1x1(entityManager, model->name, model, pos, newRoom);	
 		            	}
 		            }
 	            	
 	            	assert(newEntity);
+
+	            	//NOTE(ollie): Set the id
+	            	if(foundId) {
+		            	newEntity->T.id = id;
+		            	if(id > GLOBAL_transformID) {
+		            		GLOBAL_transformID = id;
+		            	}
+	            	}
+	            	foundId = false;
 
 	                newEntity->T.Q = rotation;
 	                newEntity->T.scale = scale;
@@ -177,6 +213,12 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	                color = v4(1, 1, 1, 1);
 	                entType = ENTITY_NULL;
 
+	                if(wasTeleporter) {
+	                	teleportEnts[idCount - 1] = newEntity;
+	                }
+
+	                wasTeleporter = false;
+
 	            } break;
 	            case TOKEN_OPEN_BRACKET: {
 	                
@@ -187,7 +229,14 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	        }
 	    }
 	    easyFile_endFileContents(&contents);
+	    for(int i = 0; i < idCount; ++i) {
+	    	Entity * e = MyEntity_findEntityById(entityManager, teleporterIds[i]);
+
+	    	teleportEnts[i]->teleporterPartner = e;
+	    }
 	}
+
+
 	
 	///////////////////////************* Clean up the memory ************////////////////////	
 	

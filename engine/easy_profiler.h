@@ -54,7 +54,7 @@ typedef struct {
 	float scrollAt_01;
 } EasyProfiler_DrawCountInfo;
 
-#define EASY_PROFILER_SAMPLES_INCREMENT 4096
+#define EASY_PROFILER_SAMPLES_INCREMENT 24000
 
 typedef struct {
 	//NOTE(ollie): The array to store the frames data
@@ -154,6 +154,7 @@ static u64 EasyProfile_AddSample(u32 lineNumber, char *fileName, char *functionN
 		assert(frame->timeStampAt == frame->dataCount);
 
 		u32 newCount = frame->dataCount + EASY_PROFILER_SAMPLES_INCREMENT;
+		printf("malloc: %d\n", newCount);
 		EasyProfile_TimeStamp *newArray = (EasyProfile_TimeStamp *)malloc(newCount*sizeof(EasyProfile_TimeStamp));		
  		
  		if(frame->dataCount > 0) {
