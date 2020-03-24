@@ -24,3 +24,17 @@ Mission Journal
 
 	- Mission journal that you can add missions to and a popup comes up when you get one & you complete one
 	
+
+
+3D asset files for obj files 
+compileObjToFile() function
+
+Code:
+
+easy_hash.h file - murmur hash function
+easy_logger.h file - logger file
+
+OS:
+Switch to windows for windows, files, Opengl & Sound
+
+Finish my_dialog file

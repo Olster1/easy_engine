@@ -25,7 +25,7 @@ MY_GAME_MODE_INSTRUCTION_CARD,
 MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_EDIT_LEVEL //MY_GAME_MODE_OVERWORLD 
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL //MY_GAME_MODE_OVERWORLD 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -62,6 +62,14 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     ////////////////////////////////////////////////////////////////////
         
     gameState->worldState = pushStruct(&globalLongTermArena, MyWorldState);
+    
+    myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(MY_WORLD_BOSS |
+    MY_WORLD_FIRE_BOSS |
+    MY_WORLD_PUZZLE |
+    MY_WORLD_ENEMIES |
+    MY_WORLD_OBSTACLES |
+    MY_WORLD_SPACE));
+
     turnTimerOff(&gameState->animationTimer);
     gameState->isIn = false;
     
@@ -175,7 +183,7 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
     
     cam->orientation = myGame_getCameraOrientation(cam->pos, v3(0, 0, 0));
     
-    gameVariables->cameraTargetPos = 6.0f;
+    gameVariables->cameraTargetPos = 10.0f;
     
     ////////////////////////////////////////////////////////////////////
     
@@ -469,7 +477,7 @@ int main(int argc, char *args[]) {
         
         ///////////////////////************ Setup Audio Sound tracks *************////////////////////
         
-        EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("zoo_track.wav"), 0, AUDIO_BACKGROUND));
+        EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("jazzChill.wav"), 0, AUDIO_BACKGROUND));
         EasySound_LoopSound(playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("ambient1.wav"), 0, AUDIO_BACKGROUND));
         
         setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0);

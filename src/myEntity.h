@@ -119,13 +119,15 @@ typedef struct Entity {
     float startPosForBoss;
 
     s32 enemyHP;
+
+    PlayingSound *playingSound;
     
     union {
         struct { //Teleporter
             animation idleAnimation;
             animation_list_item animationListSentintel;
 
-            PlayingSound *teleporterSound;
+            
             Entity *teleporterPartner;
         };
         struct { //Player

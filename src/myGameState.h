@@ -53,10 +53,14 @@ typedef enum {
 } MyWorldBiomeType;
 
 typedef struct {
+	//NOTE(ollie): This is to search for it after we sort, since we have a pointer to it & qsort sorts the data not the pointers
+	u32 id;
+
 	u64 flags;
 	u32 levelId;
 
 	s32 usedCount;
+
 	bool valid;
 } MyWorldTagInfo;	
 

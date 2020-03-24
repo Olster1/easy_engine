@@ -518,6 +518,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                 case ENTITY_ASTEROID: {
                     if(!DEBUG_global_PauseGame) {
                         e->rb->dP.x = 5;
+                    } else {
+                        e->rb->dP.x = 0;
                     }
                 } break;
                 case ENTITY_BOSS: {
@@ -546,6 +548,8 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                         //NOTE(ollie): move downwards
                         e->rb->dP.y = variables->roomSpeed;	
                         // e->T.pos.y += dt*variables->roomSpeed;
+                    } else {
+                        e->rb->dP.y = 0;
                     }
                     
                 } break;	
@@ -754,7 +758,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                         if(lifeSpanInfo.finished) {
                             turnTimerOn(&e->fadeTimer);
                         }
-                        
+
                     } break;
                     case ENTITY_BUCKET: {
                         if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
@@ -778,8 +782,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                         char *animationOn = UpdateAnimation(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, dt, 0);
                         e->sprite = findTextureAsset(animationOn);
 
-                        //NOTE(ollie): Set the teleporter sound to the correct location
-                        e->teleporterSound->location = easyTransform_getWorldPos(&e->T);
+                        
 
                         if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
 
@@ -1279,7 +1282,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                         
                         assert(e->T.parent == 0);
                         
-#define SAFE_REGION_TO_DESTROY 4
+#define SAFE_REGION_TO_DESTROY 2
                         if(roomWorldP.y <= -SAFE_REGION_TO_DESTROY*MY_ROOM_HEIGHT) {
                             assert(gameStateVariables->mostRecentRoom != e);
                             
@@ -1313,7 +1316,10 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                 }
             }
             
-            
+            if(e->playingSound) {
+                //NOTE(ollie): Set the teleporter sound to the correct location
+                e->playingSound->location = easyTransform_getWorldPos(&e->T);
+            }
             
             setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
             
@@ -1504,14 +1510,15 @@ static Entity *initBullet(MyEntityManager *m, V3 pos) {
 ////////////////////////////////////////////////////////////////////
 
 //NOTE(ollie): Asteroid
-static Entity *initAsteroid(MyEntityManager *m, V3 pos, EasyModel *model) {
+static Entity *initAsteroid(MyEntityManager *m, V3 pos, EasyModel *model, Entity* parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Asteroid";
     float scale = 0.2f;
     easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+
+    e->T.parent = &parent->T;
     
-    assert(!e->T.parent);
     e->active = true;
     e->colorTint = COLOR_WHITE;
     e->type = ENTITY_ASTEROID;
@@ -1825,8 +1832,8 @@ static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGame
     
     //NOTE(ollie): Play the teleporter sound
 
-    e->teleporterSound = playLocationGameSound(&globalLongTermArena, easyAudio_findSound("teleporter.wav"), 0, AUDIO_FOREGROUND, easyTransform_getWorldPos(&e->T));
-    EasySound_LoopSound(e->teleporterSound);
+    e->playingSound = playLocationGameSound(&globalLongTermArena, easyAudio_findSound("teleporter.wav"), 0, AUDIO_FOREGROUND, easyTransform_getWorldPos(&e->T));
+    EasySound_LoopSound(e->playingSound);
 
     ////////////////////////////////////////////////////////////////////
 
@@ -2077,7 +2084,7 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
     
     ////Physics 
     e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
-    e->collider = 0;//EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
+    e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(MY_ENTITY_DEFAULT_DIM, 0, 0));
     
     /////
     
@@ -2148,7 +2155,7 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         case ENTITY_ASTEROID: {
             EasyModel *asteroid = findModelAsset_Safe("rock.obj");
             if(asteroid) {
-                result = initAsteroid(entityManager, worldP, asteroid);	
+                result = initAsteroid(entityManager, worldP, asteroid, room);	
             } else {
                 easyConsole_addToStream(DEBUG_globalEasyConsole, "Couldn't find rock model");
             }
@@ -2250,7 +2257,7 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
         
         switch(info.type) {
             case ENTITY_BULLET: {
-                playGameSound(&globalLongTermArena, easyAudio_findSound("blaster1.wav"), 0, AUDIO_FOREGROUND);
+                playLocationGameSound(&globalLongTermArena, easyAudio_findSound("blaster1.wav"), 0, AUDIO_FOREGROUND, info.pos);
                 //NOTE(ollie): Init the bullet a little further so it isn't on the ship
                 initBullet(manager, v3_plus(info.pos, v3(0, 1, 0)));
             } break;
@@ -2260,7 +2267,7 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
                 
             } break;
             case ENTITY_ENEMY_BULLET: {
-                playGameSound(&globalLongTermArena, easyAudio_findSound("blaster1.wav"), 0, AUDIO_FOREGROUND);
+                playLocationGameSound(&globalLongTermArena, easyAudio_findSound("blaster1.wav"), 0, AUDIO_FOREGROUND, info.pos);
                 //NOTE(ollie): Init the bullet a little further so it isn't on the ship
                 initEnemyBullet(manager, v3_plus(info.pos, v3(0, -1, 0)));
             } break;

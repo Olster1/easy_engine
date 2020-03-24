@@ -9,7 +9,7 @@ void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo);
 ///////////////////////************ Functions *************////////////////////
 
 //NOTE(ollie): You pass in the tags of the world
-static void myWorlds_generateWorld(MyWorldFlags flags, MyWorldState *worldState) {
+static void myWorlds_generateWorld(MyWorldState *worldState, MyWorldFlags flags) {
 
 	//NOTE(ollie): Clear the world out
 	zeroStruct(worldState, MyWorldState);
@@ -29,6 +29,7 @@ static void myWorlds_generateWorld(MyWorldFlags flags, MyWorldState *worldState)
 	for(int i = 0; i < arrayCount(worldState->levels); ++i) {
 		MyWorldTagInfo *tagInfo = worldState->levels + worldState->levelCount++; 
 		tagInfo->usedCount = 0;
+		tagInfo->id = i;
 		myLevels_getLevelInfo(i, tagInfo);
 
 	}
@@ -93,6 +94,11 @@ s32 myWorld_sortItemsOnUsedCount(const void * a, const void* b) {
 
 //NOTE(ollie): This is the important function that chooses the next room
 static Entity *myWorlds_findNextRoom(MyWorldState *state, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
+
+	//NOTE(ollie): Do sort first since if we do it afterwards, we lose the right pointer
+	///////////////////////************ Sort tags based on used count*************////////////////////
+	qsort(state->levels, state->levelCount, sizeof(MyWorldTagInfo), myWorld_sortItemsOnUsedCount);
+	///////////////////////*************************////////////////////
 
 	//NOTE(ollie): Start with first level
 	MyWorldTagInfo *bestInfo = 0;
@@ -178,9 +184,6 @@ static Entity *myWorlds_findNextRoom(MyWorldState *state, MyEntityManager *entit
 
 	bestInfo->usedCount++;
 	state->totalRoomCount++;
-
-	///////////////////////************ Sort tags based on used count*************////////////////////
-	qsort(state->levels, state->levelCount, sizeof(MyWorldTagInfo), myWorld_sortItemsOnUsedCount);
 
 	///////////////////////*************************////////////////////
 
