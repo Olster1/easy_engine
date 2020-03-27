@@ -87,7 +87,7 @@ static void DEBUG_updateDebugOverworld(AppKeyStates *keyStates, MyOverworldState
 			if(manager->entityCount < arrayCount(manager->entities)) {
 				OverworldEntity *ent = &manager->entities[manager->entityCount++];
 
-				easyTransform_initTransform_withScale(&ent->T, worldP, v3(1, 1, 1));
+				easyTransform_initTransform_withScale(&ent->T, worldP, v3(1, 1, 1), EASY_TRANSFORM_STATIC_ID);
 				ent->type = state->typeToCreate;
 
 				easyFlashText_addText(&globalFlashTextManager, "Created Entity");
@@ -164,7 +164,7 @@ static void myOverworld_loadOverworld(MyOverworldState *state) {
 		            		OverworldEntity *newEntity = &manager->entities[manager->entityCount++];
 
 		            		assert(entType != OVERWORLD_ENTITY_NULL);
-		            		easyTransform_initTransform_withScale(&newEntity->T, pos, scale);
+		            		easyTransform_initTransform_withScale(&newEntity->T, pos, scale, EASY_TRANSFORM_STATIC_ID);
 		            		newEntity->type = entType;
 			                newEntity->T.Q = rotation;
 			                newEntity->colorTint = color;

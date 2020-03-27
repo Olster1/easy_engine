@@ -520,12 +520,14 @@ Texture createTextureOnGPU(unsigned char *image, int w, int h, int comp, RenderT
     return result;
 }
 
-static inline EasyImage loadImage_(char *fileName) {
+static inline EasyImage loadImage_(char *fileName, bool premultiplyAlpha) {
     DEBUG_TIME_BLOCK()
     EasyImage result;
     result.comp = 4;
-    result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, 0, STBI_rgb_alpha);
-    
+    {
+        DEBUG_TIME_BLOCK_NAMED("stb load image");
+        result.image = (unsigned char *)stbi_load(fileName, &result.w, &result.h, 0, STBI_rgb_alpha);
+    }
     if(result.image) {
         // assert(result.comp == 4);
     } else {
@@ -533,43 +535,37 @@ static inline EasyImage loadImage_(char *fileName) {
         assert(!"no image found");
     }
 
-    {
-    DEBUG_TIME_BLOCK_NAMED("Pre-multiply alpha");
-    ///////////////////////************* Do pre-multiplied alpha ************////////////////////
-#define PRE_MULTIPLY_ALPHA 1
-#if PRE_MULTIPLY_ALPHA
-    if(result.comp == 4) {
-        u32 *pixels = (u32 *)result.image;  
-        for(int y = 0; y < result.h; ++y) {
-                for(int x = 0; x < result.w; ++x) {
-                    u32 *pixel = pixels + (y * result.w) + x;
+        ///////////////////////************* Do pre-multiplied alpha ************////////////////////
+    if(true) {
+        DEBUG_TIME_BLOCK_NAMED("Pre-multiply alpha");
+        if(result.comp == 4) {
+            u32 *pixels = (u32 *)result.image;  
+            for(int y = 0; y < result.h; ++y) {
+                    for(int x = 0; x < result.w; ++x) {
+                        u32 *pixel = pixels + (y * result.w) + x;
 
-                    float r = ((float)((*pixel >> 0) & 0xff)) / 255.0f;
-                    float g = ((float)((*pixel >> 8) & 0xff)) / 255.0f;
-                    float b = ((float)((*pixel >> 16) & 0xff)) / 255.0f;
-                    float a = ((float)((*pixel >> 24) & 0xff)) / 255.0f;
+                        float r = ((float)((*pixel >> 0) & 0xff)) / 255.0f;
+                        float g = ((float)((*pixel >> 8) & 0xff)) / 255.0f;
+                        float b = ((float)((*pixel >> 16) & 0xff)) / 255.0f;
+                        float a = ((float)((*pixel >> 24) & 0xff)) / 255.0f;
 
-                    r *= a*255.0f;
-                    g *= a*255.0f;
-                    b *= a*255.0f;
-                    a *= 255.0f;
+                        r *= a*255.0f;
+                        g *= a*255.0f;
+                        b *= a*255.0f;
+                        a *= 255.0f;
 
-                    u32 r1 = (u32)r << 0;
-                    u32 g1 = (u32)g << 8;
-                    u32 b1 = (u32)b << 16;
-                    u32 a1 = (u32)a << 24;
+                        u32 r1 = (u32)r << 0;
+                        u32 g1 = (u32)g << 8;
+                        u32 b1 = (u32)b << 16;
+                        u32 a1 = (u32)a << 24;
 
-                    u32 newColor = r1 | g1 | b1 | a1;
+                        u32 newColor = r1 | g1 | b1 | a1;
 
-                    *pixel = newColor;
-            }
-        }    
+                        *pixel = newColor;
+                }
+            }    
+        }
     }
-#endif
-    }
-    
-        
-    
     return result;
 }
 
@@ -580,9 +576,9 @@ static inline void easy_endImage(EasyImage *image) {
     }
 }
 
-Texture loadImage(char *fileName, RenderTextureFilter filter, bool hasMipMaps) {
+Texture loadImage(char *fileName, RenderTextureFilter filter, bool hasMipMaps, bool premultiplyAlpha) {
     DEBUG_TIME_BLOCK()
-    EasyImage image = loadImage_(fileName);
+    EasyImage image = loadImage_(fileName, premultiplyAlpha);
     
     Texture result = createTextureOnGPU(image.image, image.w, image.h, image.comp, filter, hasMipMaps);
     easy_endImage(&image);
@@ -768,7 +764,7 @@ static inline EasySkyBox *easy_makeSkybox(EasySkyBoxImages *images) {
     
     for(int i = 0; i < arrayCount(images->fileNames); ++i) {
         char *fileName = images->fileNames[i];
-        EasyImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena));
+        EasyImage image = loadImage_(concatInArena(globalExeBasePath, fileName, &globalPerFrameArena), false);
 #if OPENGL_BACKEND
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
                     0, GL_RGBA, image.w, image.h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image.image
@@ -2599,13 +2595,15 @@ void renderColorWheel(V3 center, V2 dim, EasyRender_ColorWheel_DataPacket *packe
     RenderItem * i = renderDrawRectCenterDim_(center, dim, colors, 0, offsetTransform, &globalWhiteTexture, SHAPE_COLOR_WHEEL, &colorWheelProgram, viewMatrix, projectionMatrix, packet, "color wheel");
 
 }
-void renderDeleteVaoHandle(VaoHandle *handles) {
+void renderDeleteVaoHandle(VaoHandle *handle) {
     DEBUG_TIME_BLOCK()
-    glDeleteVertexArrays(1, &handles->vaoHandle);
-    renderCheckError();
-    handles->vaoHandle = 0;
-    handles->indexCount = 0;
-    handles->valid = false;
+    if(handle->valid) {
+        glDeleteVertexArrays(1, &handle->vaoHandle);
+        renderCheckError();
+        handle->vaoHandle = 0;
+        handle->indexCount = 0;
+        handle->valid = false;
+    }
 }
 
 // // Instancing data

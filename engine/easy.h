@@ -268,6 +268,18 @@ static char *easyString_copyToHeap(char *at, s32 length) {
     return result;
 }
 
+//TODO(ollie): Don't think this handles unicode?
+static char *easyString_copyToBuffer(char *at, char *buffer, u32 bufferLen) {
+    
+    assert(strlen(at) < bufferLen); //NOTE(ollie): Accounting for the null terminator 
+    //NOTE(ollie): Copy the string
+    easyPlatform_copyMemory(buffer, at, sizeof(char)*bufferLen);
+    //NOTE(ollie): Null terminate the string
+    buffer[bufferLen - 1] = '\0'; //Null terminate
+
+    return buffer;
+}
+
 char *easyString_copyToArena(char *a, Arena *arena) {
     s32 newStrLen = strlen(a) + 1;
     

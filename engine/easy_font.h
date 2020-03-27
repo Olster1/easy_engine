@@ -7,6 +7,7 @@ File to enable writing with fonts easy to add to your project. Uses Sean Barret'
 
 ///////////////////////************ New API *************////////////////////
 static void easyFont_createSDFFont(char *fileName, u32 startCodePoint, u32 endCodePoint) {
+    DEBUG_TIME_BLOCK()
     FileContents contents = platformReadEntireFile(fileName, false);
     
     //NOTE(ollie): This stores all the info about the font
@@ -182,7 +183,7 @@ typedef struct {
 } EasyFont_Font;
 
 static EasyFont_Font *easyFont_loadFontAtlas(char *fileName, Arena *arena) {
-    
+    DEBUG_TIME_BLOCK()
     EasyFont_Font *font = pushStruct(arena, EasyFont_Font); 
 
     bool stillLoading = true;
@@ -202,7 +203,8 @@ static EasyFont_Font *easyFont_loadFontAtlas(char *fileName, Arena *arena) {
             char buffer1[4096] = {};
             snprintf(buffer1, arrayCount(buffer1), "%s_%d.png", fileName, countAt);
             
-            Texture atlasTex = loadImage(buffer1, TEXTURE_FILTER_LINEAR, false);
+            bool premultiplyAlpha = false;
+            Texture atlasTex = loadImage(buffer1, TEXTURE_FILTER_LINEAR, false, premultiplyAlpha);
             
             FileContents contentsText = getFileContentsNullTerminate(buffer0);
             assert(contentsText.valid);
@@ -323,7 +325,7 @@ static EasyFont_Font *globalDebugFont;
 // TESTING: static stbtt_bakedchar *gh;
 #define FONT_SIZE 1028 //This matters. We need to pack our own font glyphs in the future, since it's not garunteed to fit!!!
 FontSheet *createFontSheet(Font *font, int firstChar, int endChar) {
-    
+    DEBUG_TIME_BLOCK()
     FontSheet *sheet = (FontSheet *)calloc(sizeof(FontSheet), 1);
     sheet->minText = firstChar;
     sheet->maxText = endChar;
@@ -437,6 +439,7 @@ typedef struct {
 
 
 static inline GlyphInfo easyFont_getGlyph(Font *font, u32 unicodePoint) {
+    DEBUG_TIME_BLOCK()
     GlyphInfo glyph = {};
     FontSheet *sheet = findFontSheet(font, unicodePoint);
     assert(sheet);
@@ -462,6 +465,7 @@ static inline GlyphInfo easyFont_getGlyph(Font *font, u32 unicodePoint) {
 }
 
 static inline EasyFont_Glyph *easyFont_findGlyph(EasyFont_Font *font, u32 unicodePoint) {
+    DEBUG_TIME_BLOCK()
     //NOTE(ollie): @speed 
     EasyFont_Glyph *result = 0;
     for(int i = 0; i < font->glyphCount && !result; ++i) {
@@ -478,6 +482,7 @@ static inline EasyFont_Glyph *easyFont_findGlyph(EasyFont_Font *font, u32 unicod
 
 //This does unicode now 
 Rect2f my_stbtt_print_(EasyFont_Font *font, float x, float y, float zAt, V2 resolution, char *text_, Rect2f margin, V4 color, float size, CursorInfo *cursorInfo, bool display, float resolutionDiffScale) {
+    DEBUG_TIME_BLOCK()
     Rect2f bounds = InverseInfinityRect2f();
     size *= resolutionDiffScale;
     if(x < margin.min.x) { x = margin.min.x; }

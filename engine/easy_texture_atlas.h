@@ -384,7 +384,8 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	char buffer1[512] = {};
 	sprintf(buffer1, "%s.png", fileName);
 	
-	Texture atlasTex = loadImage(buffer1, filter, true);
+	bool premultiplyAlpha = false;
+	Texture atlasTex = loadImage(buffer1, filter, true, premultiplyAlpha);
     
 	FileContents contentsText = getFileContentsNullTerminate(buffer0);
 	
@@ -449,11 +450,11 @@ static inline void easyAtlas_loadTextureAtlas(char *fileName, RenderTextureFilte
 	}
 }	
 
-#define easyAtlas_createTextureAtlas(folderName, ouputFolderName, memoryArena, filter, padding) easyAtlas_createTextureAtlas_withDownsize(folderName, ouputFolderName, memoryArena, filter, padding, 0)
-static inline void easyAtlas_createTextureAtlas_withDownsize(char *folderName, char *ouputFolderName, Arena *memoryArena, RenderTextureFilter filter, int padding, s32 downSizeGoal) {
+#define easyAtlas_createTextureAtlas(folderName, ouputFolderName, memoryArena, filter, padding, atlasX, atlasY) easyAtlas_createTextureAtlas_withDownsize(folderName, ouputFolderName, memoryArena, filter, padding, 1, atlasX, atlasY)
+static inline void easyAtlas_createTextureAtlas_withDownsize(char *folderName, char *ouputFolderName, Arena *memoryArena, RenderTextureFilter filter, int padding, float scale, float atlasX, float atlasY) {
 	MemoryArenaMark tempMark = takeMemoryMark(memoryArena);
 
-	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp"};
+	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp", "PNG"};
 	folderName = concat(globalExeBasePath, folderName);
 	ouputFolderName = concat(globalExeBasePath, ouputFolderName);
 	FileNameOfType fileNames = getDirectoryFilesOfType(folderName, imgFileTypes, arrayCount(imgFileTypes));
@@ -471,7 +472,8 @@ static inline void easyAtlas_createTextureAtlas_withDownsize(char *folderName, c
         	elm.shortName = shortName;
         	elm.longName = fullName;
 
-        	elm.tex = loadImage(fullName, TEXTURE_FILTER_LINEAR, true);
+        	bool premultiplyAlpha = true;
+        	elm.tex = loadImage(fullName, TEXTURE_FILTER_LINEAR, true, premultiplyAlpha);
 
         	//NOTE(ollie): Add it to the atlas elements
         	addElementInifinteAllocWithCount_(&atlasElms, &elm, 1);
@@ -483,7 +485,7 @@ static inline void easyAtlas_createTextureAtlas_withDownsize(char *folderName, c
 	easyAtlas_sortBySize(&atlasElms);
 	stbi_flip_vertically_on_write(true);//flip bytes vertically
     
-	easyAtlas_drawAtlas(ouputFolderName, memoryArena, &atlasElms, true, padding, 4096, 4096, EASY_ATLAS_TEXTURE_ATLAS, 0.25f);
+	easyAtlas_drawAtlas(ouputFolderName, memoryArena, &atlasElms, true, padding, atlasX, atlasY, EASY_ATLAS_TEXTURE_ATLAS, scale);
     
 	releaseInfiniteAlloc(&atlasElms);
     

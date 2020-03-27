@@ -264,11 +264,13 @@ static inline Entity *MyEntity_findEntityByName(char *name) {
 }
 
 
-static inline Entity *MyEntity_findEntityById(MyEntityManager *manager, u32 id) {
+#define MyEntity_findEntityById_static(manager, id) MyEntity_findEntityById_(manager, id, EASY_TRANSFORM_STATIC_ID)
+#define MyEntity_findEntityById_transient(manager, id) MyEntity_findEntityById_(manager, id, EASY_TRANSFORM_TRANSIENT_ID)
+static inline Entity *MyEntity_findEntityById_(MyEntityManager *manager, u32 id, EasyTransform_IdType idType) {
     Entity *result = 0;
     for(int i = 0; i < manager->entities.count && !result; ++i) {
         Entity *e = (Entity *)getElement(&manager->entities, i);
-        if(e && e->T.id == id) { //can be null
+        if(e && e->T.id == id && e->T.idType == idType) { //can be null
             result = e;
             break;
         }
@@ -276,6 +278,7 @@ static inline Entity *MyEntity_findEntityById(MyEntityManager *manager, u32 id) 
 
     return result;
 }
+
 
 
 ////////////////////////////////////////////////////////////////////
@@ -595,6 +598,10 @@ void easyEntity_endRound(MyEntityManager *manager) {
             e->T.markForDeletion = true;	
         }
     }
+
+    //NOTE(ollie): Reset the ids, since we are deleting entities they no longer need the ids
+    GLOBAL_transformID_static = 0;
+    GLOBAL_transformID_transient = 0; 
 }
 
 static inline void myEntity_addInstructionCard(MyGameState *gameState, GameInstructionType instructionType) {
@@ -1396,7 +1403,7 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
     
     
     float scale = 0.2f;
-    easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(scale, scale*tex->aspectRatio_h_over_w, scale)); 
+    easyTransform_initTransform_withScale(&e->T, v3(0, 0, LAYER3), v3(scale, scale*tex->aspectRatio_h_over_w, scale), EASY_TRANSFORM_TRANSIENT_ID); 
     e->T.Q = eulerAnglesToQuaternion(0, 0.5f*PI32, 0);
     
     e->lastTeleporter = 0;
@@ -1478,7 +1485,7 @@ static Entity *initBullet(MyEntityManager *m, V3 pos) {
     e->name = "Bullet";
     pos.z = LAYER1;
     float scale = 0.2f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale), EASY_TRANSFORM_TRANSIENT_ID); 
     
     assert(!e->T.parent);
     e->active = true;
@@ -1515,7 +1522,7 @@ static Entity *initAsteroid(MyEntityManager *m, V3 pos, EasyModel *model, Entity
     
     e->name = "Asteroid";
     float scale = 0.2f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale), EASY_TRANSFORM_STATIC_ID); 
 
     e->T.parent = &parent->T;
     
@@ -1551,7 +1558,7 @@ static Entity *initSoundchanger(MyEntityManager *m, V3 pos, WavFile *soundToPlay
     
     e->name = "Sound changer";
     float scale = 0.2f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale), EASY_TRANSFORM_STATIC_ID); 
     
     assert(!e->T.parent);
     e->active = true;
@@ -1582,7 +1589,7 @@ static Entity *initDroplet(MyEntityManager *m, EasyModel *model, V3 pos, Entity 
     
     e->name = "Droplet";
     float width = 0.6f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_STATIC_ID); 
     e->T.Q = eulerAnglesToQuaternion(0, -0.5f*PI32, 0);
 
     if(parent) e->T.parent = &parent->T;
@@ -1620,7 +1627,7 @@ static Entity *initBoss(MyEntityManager *m, EntityBossType bossType, V3 pos, Ent
     
     e->name = "Boss";
     float width = 1.0f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
 
 
@@ -1683,7 +1690,7 @@ static Entity *initEnemy(MyEntityManager *m, V3 pos, Entity *parent) {
     
     e->name = "Enemy";
     float width = 0.3f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
 
 
@@ -1729,7 +1736,7 @@ static Entity *initEnemyBullet(MyEntityManager *m, V3 pos) {
     
     e->name = "Enemy Bullet";
     float width = 0.3f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_TRANSIENT_ID); 
     
     e->active = true;
 #if DEBUG_ENTITY_COLOR
@@ -1810,7 +1817,7 @@ static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGame
     
     ////////////////////////////////////////////////////////////////////
     
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, 1), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1852,7 +1859,7 @@ static Entity *initUnderpants(MyEntityManager *m, EasyModel *model, V3 pos, Enti
     
     e->name = "Underpants";
     float width = 0.6f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1888,7 +1895,7 @@ static Entity *initScenery1x1(MyEntityManager *m, char *name, EasyModel *model, 
     assert(!e->updatedPhysics);
     
     e->name = name;
-    easyTransform_initTransform(&e->T, pos); 
+    easyTransform_initTransform(&e->T, pos, EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     //NOTE(ollie): Set the transform 
@@ -1929,7 +1936,7 @@ static Entity *initCramp(MyEntityManager *m, EasyModel *model, V3 pos, Entity *p
     
     e->name = "Cramp";
     float scale = 0.8f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(scale, scale, scale), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1966,7 +1973,7 @@ static Entity *initStar(MyEntityManager *m, V3 pos, Entity *parent) {
     Texture *sprite = findTextureAsset("coinGold.png");
     
     e->name = "Star";
-    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -2004,7 +2011,7 @@ static Entity *initBucket(MyEntityManager *m, Texture *sprite, V3 pos, Entity *p
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Bucket";
-    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -2037,7 +2044,7 @@ static Entity *initChocBar(MyEntityManager *m, Texture *sprite, V3 pos, Entity *
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Chocolate Bar";
-    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1)); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(1, sprite->aspectRatio_h_over_w, 1), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -2069,7 +2076,7 @@ static Entity *initRoom(MyEntityManager *m, V3 pos) {
     e->sprite = 0;//findTextureAsset("choc_bar.png");
     
     e->name = "Room";
-    easyTransform_initTransform(&e->T, pos); 
+    easyTransform_initTransform(&e->T, pos, EASY_TRANSFORM_TRANSIENT_ID); 
     e->T.scale = v3(1, 1, 1);
     e->active = true;
 #if DEBUG_ENTITY_COLOR
@@ -2098,7 +2105,7 @@ static Entity *initTile(MyEntityManager *m, V3 pos, Entity *parent) {
     assert(!e->updatedPhysics);
     
     e->name = "Tile";
-    easyTransform_initTransform(&e->T, pos); 
+    easyTransform_initTransform(&e->T, pos, EASY_TRANSFORM_TRANSIENT_ID); 
     if(parent) e->T.parent = &parent->T;
     
     //NOTE(ollie): Set the transform 

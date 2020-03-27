@@ -1,3 +1,8 @@
+typedef enum {
+	EASY_TRANSFORM_STATIC_ID,
+	EASY_TRANSFORM_TRANSIENT_ID,
+} EasyTransform_IdType;
+
 typedef struct EasyTransform EasyTransform;
 typedef struct EasyTransform {
 	Matrix4 T;
@@ -7,26 +12,34 @@ typedef struct EasyTransform {
 
 	EasyTransform *parent;
 
+	EasyTransform_IdType idType;
 	int id;
 	bool markForDeletion;
 } EasyTransform;
 
 
-static int GLOBAL_transformID = 0; 
+static int GLOBAL_transformID_static = 0;
+static int GLOBAL_transformID_transient = 0; 
 
-static inline void easyTransform_initTransform(EasyTransform *t, V3 pos) {
+static inline void easyTransform_initTransform(EasyTransform *t, V3 pos, EasyTransform_IdType idType) {
 	t->T = mat4();
 	t->pos = pos;
 	t->scale = v3(1, 1, 1);
 	t->Q = identityQuaternion();
 
 	t->parent = 0;
-	t->id = GLOBAL_transformID++;
+	if(idType == EASY_TRANSFORM_STATIC_ID) {
+		t->id = GLOBAL_transformID_static++;
+		t->idType = idType; 
+	} else if(idType == EASY_TRANSFORM_TRANSIENT_ID) {
+		t->id = GLOBAL_transformID_transient++;
+		t->idType = idType;
+	}
 	t->markForDeletion = false;
 }
 
-static inline void easyTransform_initTransform_withScale(EasyTransform *t, V3 pos, V3 scale) {
-	easyTransform_initTransform(t, pos);
+static inline void easyTransform_initTransform_withScale(EasyTransform *t, V3 pos, V3 scale, EasyTransform_IdType idType) {
+	easyTransform_initTransform(t, pos, idType);
 	t->scale =  scale;
 }
 

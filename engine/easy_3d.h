@@ -1,6 +1,6 @@
-static EasyMesh *easy3d_allocAndInitMesh() {
+static EasyMesh *easy3d_allocAndInitMesh_(Arena *arena) {
    DEBUG_TIME_BLOCK()
-    EasyMesh *m = pushStruct(&globalLongTermArena, EasyMesh);
+    EasyMesh *m = pushStruct(arena, EasyMesh);
     m->vertexCount = 0;
     m->vaoHandle.valid = false;
     m->bounds = InverseInfinityRect3f();
@@ -8,9 +8,11 @@ static EasyMesh *easy3d_allocAndInitMesh() {
     m->material = 0;
     m->vertexData = initInfinteAlloc(Vertex);
     m->indicesData = initInfinteAlloc(unsigned int);
-    
+
     return m;
 }
+
+#define easy3d_allocAndInitMesh() easy3d_allocAndInitMesh_(&globalLongTermArena)
 
 static void easy3d_addMeshToModel(EasyMesh *mesh, EasyModel *model) {
     DEBUG_TIME_BLOCK()
@@ -18,6 +20,19 @@ static void easy3d_addMeshToModel(EasyMesh *mesh, EasyModel *model) {
     model->meshes[model->meshCount++] = mesh;
 }
 
+static void easy3d_deleteMesh(EasyMesh *mesh) {
+    releaseInfiniteAlloc(&mesh->vertexData);
+    releaseInfiniteAlloc(&mesh->indicesData);
+    renderDeleteVaoHandle(&mesh->vaoHandle);
+}
+
+static void easy3d_deleteModel(EasyModel *model) {
+    for(int meshIndex = 0; meshIndex < model->meshCount; ++meshIndex) {
+        EasyMesh *thisMesh = model->meshes[meshIndex];
+        easy3d_deleteMesh(thisMesh);
+    }
+    
+}
 
 static float easy3d_getFloat(EasyTokenizer *tokenizer) {
     DEBUG_TIME_BLOCK()
@@ -374,11 +389,310 @@ static EasyModel *easy3d_loadObj(char *fileName, EasyModel *model, EasyFile_Name
         EasyMesh *thisMesh = model->meshes[meshIndex];
         initVao(&thisMesh->vaoHandle, (Vertex *)thisMesh->vertexData.memory, thisMesh->vertexData.count, (unsigned int *)thisMesh->indicesData.memory, thisMesh->indicesData.count);
     }
+
+    releaseInfiniteAlloc(&normalData);
+    releaseInfiniteAlloc(&positionData);
+    releaseInfiniteAlloc(&uvData);
+
+    easyFile_endFileContents(&fileContents);
+
+    //TODO(ollie): Can probably get rid of the vertexData nad indicies data aswell!!
     return model;
 }
 
 #define easy3d_loadObj_withRelativeName(fileName, model) easy3d_loadObj(fileName, model, EASY_FILE_NAME_RELATIVE)
 #define easy3d_loadObj_withGlobalName(fileName, model) easy3d_loadObj(fileName, model, EASY_FILE_NAME_GLOBAL)
+
+///////////////////////************ File Header for compiled obj file *************////////////////////
+#pragma pack(push, 1)
+typedef struct {
+    u32 magicID;
+    u32 version;
+
+    Rect3f bounds;
+    char name[1028]; //the file name
+
+    u32 meshCount;
+
+} Easy3d_CompiledObjHeader;
+
+//NOTE(oliver): these offsets are relative to the font header; it is like the RIFF file format
+typedef struct {
+    int vertexCount;
+    int indexCount;
+
+    char materialName[1028];
+
+    Rect3f bounds;
+
+    //NOTE(ollie): Stuff below is worked out when we are writing the file to disk
+
+    u32 offsetToVertexData; //NOTE(ollie): From begining of the file in bytes
+    u32 sizeofVertexData; //NOTE(ollie): In bytes
+
+    u32 offsetToIndicesData; //NOTE(ollie): From begining of the file in bytes
+    u32 sizeofIndiciesData; //NOTE(ollie): In bytes
+
+    u32 offsetToNextMeshHeader; //NOTE(ollie): From begining of the file in bytes
+} Easy3d_CompiledMesh;
+
+//NOTE(ollie): File looks like this [File Header][Mesh Header][Vertex Data][Indicies Data][Next Mesh Header][Vertex Data][Indicies Data]...repeat till end of file
+
+
+#pragma pack(pop)
+
+#define EASY_3D_COMPILED_OBJ_MAGIC_ID 'EASY'
+
+static void easy3d_loadCompiledObj_version1(char *modelFileName_global, EasyModel *model) {
+    DEBUG_TIME_BLOCK()
+
+    if(platformDoesFileExist(modelFileName_global)) {
+        FileContents fileContents = getFileContentsNullTerminate(modelFileName_global);
+
+        if(!model) { //NOTE(ollie): no model passed in
+            model = pushStruct(&globalLongTermArena, EasyModel);
+        }
+
+        
+
+        //NOTE(ollie): Get the header 
+        Easy3d_CompiledObjHeader *header = (Easy3d_CompiledObjHeader *)fileContents.memory; 
+        ////////////////////////////////////////////////////////////////////
+
+        //NOTE(ollie): Make sure it has the magic id
+        assert(header->magicID == EASY_3D_COMPILED_OBJ_MAGIC_ID);
+
+        model->bounds = header->bounds;
+        //NOTE(ollie): Copy string to heap
+        model->name = easyString_copyToHeap(header->name, strlen(header->name));
+
+        //NOTE(ollie): Add to asset catalog
+        addAssetModel(model->name, model); 
+        ////////////////////////////////////////////////////////////////////
+
+        model->meshCount = 0;
+
+        //NOTE(ollie): The funciton loads only version 1 files
+        assert(header->version == 1);
+
+        u8 *fileAt = fileContents.memory + sizeof(Easy3d_CompiledObjHeader);
+        //NOTE(ollie): Loop through till the end of the file
+        while(*fileAt != '\0') {
+
+            Easy3d_CompiledMesh *compiledMesh = (Easy3d_CompiledMesh *)fileAt;
+
+            EasyMesh *mesh = easy3d_allocAndInitMesh();
+            easy3d_addMeshToModel(mesh, model);
+
+            //NOTE(ollie): Add all the info about the mesh
+            mesh->vertexCount = compiledMesh->vertexCount;
+            mesh->bounds = compiledMesh->bounds;
+            
+            //NOTE(ollie): Get the vertex & index memory from the file            
+            Vertex *vertexMemory = (Vertex *)((u8 *)fileContents.memory + compiledMesh->offsetToVertexData);
+            u32 *indiciesMemory = (u32 *)((u8 *)fileContents.memory + compiledMesh->offsetToIndicesData);
+
+            //NOTE(ollie): Find material from the material name
+            mesh->material = findMaterialAsset(compiledMesh->materialName);
+            assert(mesh->material);
+            assert(compiledMesh->vertexCount == (compiledMesh->sizeofVertexData / sizeof(Vertex)));
+            assert(compiledMesh->indexCount == (compiledMesh->sizeofIndiciesData / sizeof(u32)));
+
+            initVao(&mesh->vaoHandle, vertexMemory, compiledMesh->vertexCount, indiciesMemory, compiledMesh->indexCount);
+        
+            fileAt = ((u8 *)fileContents.memory + compiledMesh->offsetToNextMeshHeader);
+        }
+        assert(model->meshCount == header->meshCount);
+
+        easyFile_endFileContents(&fileContents);
+    }
+    
+}
+
+static void easy3d_compileObj(char *modelFileName_global, char *outputFilePath_global) {
+    DEBUG_TIME_BLOCK()
+
+    MemoryArenaMark memoryMark = takeMemoryMark(&globalPerFrameArena);
+
+    ///////////////////////************ Setup the file header *************////////////////////
+    Easy3d_CompiledObjHeader header = {};
+
+    header.magicID = EASY_3D_COMPILED_OBJ_MAGIC_ID;
+    header.version = 1;
+
+    header.meshCount = 0;
+
+    ////////////////////////////////////////////////////////////////////
+
+    FileContents fileContents = getFileContentsNullTerminate(modelFileName_global);
+
+    EasyModel *model = pushStruct(&globalPerFrameArena, EasyModel);
+        
+    model->bounds = InverseInfinityRect3f();
+
+    assert(arrayCount(header.name) > strlen(modelFileName_global));
+    model->name = getFileLastPortionWithBuffer(header.name, arrayCount(header.name), modelFileName_global);
+        
+    //NOTE(ol): These are our 'pools' of information that we can build our final vertex buffers out of 
+    InfiniteAlloc positionData = initInfinteAlloc(V3);
+    InfiniteAlloc normalData = initInfinteAlloc(V3);
+    InfiniteAlloc uvData = initInfinteAlloc(V2);
+    
+    EasyTokenizer tokenizer = lexBeginParsing(fileContents.memory, (EasyLexOptions)(EASY_LEX_DONT_EAT_SLASH_COMMENTS | EASY_LEX_OPTION_EAT_WHITE_SPACE));
+    bool parsing = true;
+    
+    EasyMaterial *mat = 0;
+    EasyMesh *currentMesh = 0;
+    char *mtlFileName = "";
+    while(parsing) {
+        EasyToken token = lexGetNextToken(&tokenizer);
+         switch(token.type) {
+            case TOKEN_NULL_TERMINATOR: {
+                parsing = false;
+            } break;
+            case TOKEN_WORD: {
+                // lexPrintToken(&token);
+                if(stringsMatchNullN("f", token.at, token.size)) {
+                    if(!currentMesh) {
+                        assert(false); 
+                        //NOTE(ol): This is if newmtl isn't sepcified so we create the mesh without a material
+                        currentMesh = easy3d_allocAndInitMesh_(&globalPerFrameArena); 
+                        easy3d_addMeshToModel(currentMesh, model);
+                        currentMesh->material = 0;
+                    }
+
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                    easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+
+
+                    //NOTE(ol): Testing to see if a bigger shape then a triangle is there
+                    EasyToken peekToken = lexSeeNextToken(&tokenizer);
+                    int beginCount = currentMesh->vertexCount - 3;
+
+                    while(peekToken.type == TOKEN_INTEGER) {  //More than 3 verticies 
+                        
+                        addElementInifinteAlloc_(&currentMesh->indicesData, &beginCount);
+                        int count =  currentMesh->vertexCount - 1;
+                        addElementInifinteAlloc_(&currentMesh->indicesData, &count);
+                        easy3d_parseVertex(&tokenizer, currentMesh, &positionData, &normalData, &uvData);
+                        peekToken = lexSeeNextToken(&tokenizer);
+                        //assert(peekToken.type != TOKEN_INTEGER);
+                    }
+                    // peekToken = lexSeeNextToken(&tokenizer);
+                } else if(stringsMatchNullN("v", token.at, token.size)) {
+                    V3 pos = easy3d_makeVector3(&tokenizer);
+
+                    model->bounds = unionRect3f(model->bounds, v3_to_rect3f(pos));
+                    addElementInifinteAlloc_(&positionData, &pos);
+                } else if(stringsMatchNullN("vt", token.at, token.size)) {
+                    V2 uvCoord = easy3d_makeVector2(&tokenizer);
+                    addElementInifinteAlloc_(&uvData, &uvCoord);
+                } else if(stringsMatchNullN("vn", token.at, token.size)) {
+                    V3 norm = easy3d_makeVector3(&tokenizer);
+                    addElementInifinteAlloc_(&normalData, &norm);
+                } else if(stringsMatchNullN("mtllib", token.at, token.size)) {
+                    token = lexGetNextToken(&tokenizer);
+                    assert(token.type == TOKEN_WORD);
+                    mtlFileName = nullTerminateArena(token.at, token.size, &globalPerFrameArena);
+                } else if(stringsMatchNullN("usemtl", token.at, token.size)) {
+                    currentMesh = easy3d_allocAndInitMesh_(&globalPerFrameArena); 
+                    easy3d_addMeshToModel(currentMesh, model);
+                    
+                    token = lexGetNextToken(&tokenizer);
+                    assert(token.type == TOKEN_WORD);
+                    char *name = nullTerminate(token.at, token.size);
+                    mat = findMaterialAsset(concatInArena(mtlFileName, name, &globalPerFrameArena));
+                    
+                    currentMesh->material = mat;
+                    if(!mat) {
+                        printf("%s %s\n", "couldn't find material:", name);
+                    }
+                    free(name);
+                    
+                }
+                
+            } break;
+            case TOKEN_HASH: {
+                //eat the comments
+                while(*tokenizer.src != '\0' && !lexIsNewLine(*tokenizer.src)) {
+                    tokenizer.src++;
+                }
+            } break;
+            default: {
+                //don't mind
+            }
+        }
+    }
+    header.bounds = model->bounds;
+    //NOTE(ollie): Get the mesh count for the header
+    header.meshCount = model->meshCount;
+
+    ///////////////////////************ Write the file now *************////////////////////
+    game_file_handle handle = platformBeginFileWrite(outputFilePath_global);
+
+    u32 fileOffsetAt = 0;
+    //NOTE(ollie): Write the header to disk
+    fileOffsetAt = platformWriteFile(&handle, &header, sizeof(header), fileOffsetAt);
+
+
+    for(int meshIndex = 0; meshIndex < model->meshCount; ++meshIndex) {
+        EasyMesh *mesh = model->meshes[meshIndex];
+
+        Easy3d_CompiledMesh compiledMesh = {};
+
+        compiledMesh.vertexCount = mesh->vertexCount;
+        compiledMesh.indexCount = mesh->indicesData.count;
+
+        //NOTE(ollie): Has to have a material associated with it
+        assert(mesh->material);
+        easyString_copyToBuffer(mesh->material->name, compiledMesh.materialName, arrayCount(compiledMesh.materialName));
+
+        compiledMesh.bounds = mesh->bounds;
+
+        //NOTE(ollie): Verticies
+        compiledMesh.offsetToVertexData = fileOffsetAt + sizeof(compiledMesh);
+        compiledMesh.sizeofVertexData = mesh->vertexData.count*mesh->vertexData.sizeOfMember;
+
+        //NOTE(ollie): Indicies 
+        compiledMesh.offsetToIndicesData = fileOffsetAt + sizeof(compiledMesh) + compiledMesh.sizeofVertexData;
+        compiledMesh.sizeofIndiciesData = mesh->indicesData.count*mesh->indicesData.sizeOfMember;
+
+        compiledMesh.offsetToNextMeshHeader = fileOffsetAt + sizeof(compiledMesh) + compiledMesh.sizeofVertexData + compiledMesh.sizeofIndiciesData;
+
+        //NOTE(ollie): Write the header first
+        fileOffsetAt = platformWriteFile(&handle, &compiledMesh, sizeof(compiledMesh), fileOffsetAt);
+
+        assert(fileOffsetAt == compiledMesh.offsetToVertexData);
+
+        //NOTE(ollie): Write the verticies
+        fileOffsetAt = platformWriteFile(&handle, mesh->vertexData.memory, compiledMesh.sizeofVertexData, fileOffsetAt);
+
+        assert(fileOffsetAt == compiledMesh.offsetToIndicesData);
+
+        //NOTE(ollie): Write the indicies
+        fileOffsetAt = platformWriteFile(&handle, mesh->indicesData.memory, compiledMesh.sizeofIndiciesData, fileOffsetAt);
+
+        assert(fileOffsetAt == compiledMesh.offsetToNextMeshHeader);
+
+        //NOTE(ollie): Delete the mesh
+        easy3d_deleteMesh(mesh);
+    }
+
+    
+    platformEndFile(handle);
+
+    ///////////////////////************* Clean up the memory ************////////////////////   
+
+
+    easyFile_endFileContents(&fileContents);
+
+    releaseInfiniteAlloc(&normalData);
+    releaseInfiniteAlloc(&positionData);
+    releaseInfiniteAlloc(&uvData);
+
+    releaseMemoryMark(&memoryMark);
+}
 
 void easy3d_imm_renderModel(EasyMesh *mesh,
                             Matrix4 modelMatrix, 

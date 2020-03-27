@@ -188,7 +188,7 @@ void platformEndFile(game_file_handle Handle)
     }
 }
 
-void platformWriteFile(game_file_handle *Handle, void *Memory, size_t Size, int Offset)
+static int platformWriteFile(game_file_handle *Handle, void *Memory, size_t Size, int Offset)
 {
     Handle->HasErrors = false;
     SDL_RWops *FileHandle = (SDL_RWops *)Handle->Data;
@@ -211,7 +211,12 @@ void platformWriteFile(game_file_handle *Handle, void *Memory, size_t Size, int 
                 }
             }
         }
-    }    
+    }
+
+    assert(Offset >= 0);
+    assert(Size >= 0);
+
+    return (int)(Offset + Size);
 }
 
 FileContents platformReadFile(game_file_handle Handle, void *Memory, size_t Size, int Offset)

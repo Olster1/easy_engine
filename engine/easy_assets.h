@@ -114,7 +114,7 @@ static Asset *addAsset_(char *fileName, void *asset) {
     while(!found) {
         Asset *file = *filePtr;
         if(!file) {
-            file = (Asset *)calloc(sizeof(Asset), 1);
+            file = (Asset *)easyPlatform_allocateMemory(sizeof(Asset), EASY_PLATFORM_MEMORY_ZERO);
             file->file = asset;
             file->name = truncName;
             file->next = 0;
@@ -127,6 +127,30 @@ static Asset *addAsset_(char *fileName, void *asset) {
     }
     assert(found);
     return result;
+}
+
+static void easyAsset_removeAsset(char *fileName) {
+    DEBUG_TIME_BLOCK()
+
+    int hashKey = getAssetHash(fileName, GLOBAL_ASSET_ARRAY_SIZE);
+    
+    Asset **file = &assets[hashKey];
+    Asset *result = 0;
+    
+    bool found = false;
+    
+    while(!found && *file) {
+        if(cmpStrNull(fileName, (*file)->name)) {
+            Asset *asset = *file;
+            easyPlatform_freeMemory(asset->name);
+
+            *file = asset->next;
+
+            easyPlatform_freeMemory(asset);
+        } else {
+            file = &(*file)->next;
+        }
+    }
 }
 
 Asset *addAssetTexture(char *fileName, Texture *asset) { // we have these for type checking
@@ -154,9 +178,9 @@ Asset *addAssetModel(char *fileName, EasyModel *asset) { // we have these for ty
     return result;
 }
 
-Asset *loadImageAsset(char *fileName) {
+Asset *loadImageAsset(char *fileName, bool premultiplyAlpha) {
     DEBUG_TIME_BLOCK()
-    Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR, true);
+    Texture texOnStack = loadImage(fileName, TEXTURE_FILTER_LINEAR, true, premultiplyAlpha);
     Texture *tex = (Texture *)calloc(sizeof(Texture), 1);
     memcpy(tex, &texOnStack, sizeof(Texture));
     Asset *result = addAssetTexture(fileName, tex);

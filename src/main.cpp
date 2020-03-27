@@ -297,16 +297,69 @@ int main(int argc, char *args[]) {
         
         
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
-        
+
+
+
+
         {
             DEBUG_TIME_BLOCK_NAMED("Load teleporter atlas")
-            // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 256);        
+            // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 0.25f, 4096, 4096);        
             // exit(0);
             easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/teleporter_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
         }
-        loadAndAddImagesToAssets("img/spaceGame/");
+        {
+            DEBUG_TIME_BLOCK_NAMED("Load default atlas")
+            // easyAtlas_createTextureAtlas_withDownsize("img/spaceGame/", "img/spaceGame", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 1.0f, 4096, 4096);        
+            // exit(0);
+            easyAtlas_loadTextureAtlas(concatInArena(globalExeBasePath, "img/spaceGame_1", &globalPerFrameArena), TEXTURE_FILTER_LINEAR);
+        }
 
-        loadAndAddImagesToAssets("img/period_game/");
+        loadAndAddImagesToAssets("img/material_textures/");
+
+        {
+            //NOTE(ollie): Compile obj files
+            #if 0
+            char *modelDirs[] = { "models/"};
+            easyAssetLoader_loadAndCompileObjsFiles(modelDirs, arrayCount(modelDirs));
+            exit(0);
+            #endif
+        }
+
+        ///////////////////////*********** LOADING MODELS **************//////////////////// 
+        //NOTE(ollie): Load the compiled obj files
+
+        char *modelDirs[] = { "models/", "compiled_models/"};
+        
+        EasyAssetLoader_AssetArray allModelsForEditor = {};
+        allModelsForEditor.count = 0;
+        allModelsForEditor.assetType = ASSET_MODEL;
+        
+        for(int dirIndex = 0; dirIndex < arrayCount(modelDirs); ++dirIndex) {
+            char *dir = modelDirs[dirIndex];
+            //NOTE(ollie): Load materials first
+            char *fileTypes[] = { "mtl" };
+            easyAssetLoader_loadAndAddAssets(0, dir, fileTypes, arrayCount(fileTypes), ASSET_MATERIAL, EASY_ASSET_LOADER_FLAGS_NULL);
+#define USING_OBJS 0
+#if USING_OBJS
+            //NOTE(ollie): Then load models
+            fileTypes[0] = "obj";
+            easyAssetLoader_loadAndAddAssets(&allModelsForEditor, dir, fileTypes, arrayCount(fileTypes), ASSET_MODEL, EASY_ASSET_LOADER_FLAGS_NULL);
+#else
+            fileTypes[0] = "easy3d";
+            easyAssetLoader_loadAndAddAssets(&allModelsForEditor, dir, fileTypes, arrayCount(fileTypes), ASSET_MODEL, EASY_ASSET_LOADER_FLAGS_COMPILED_OBJ);
+#endif        
+        }
+
+        //NOTE(ollie): Max models that the user side can see
+        char *allModelsForEditorNames[256];
+        u32 allModelsForEditorNamesCount = 0;
+
+        for(int modelIndex = 0; modelIndex < allModelsForEditor.count; ++modelIndex) {
+            //NOTE(ollie): Add all the names of the models to a string array
+            assert(allModelsForEditorNamesCount < arrayCount(allModelsForEditorNames));
+            allModelsForEditorNames[allModelsForEditorNamesCount++] = allModelsForEditor.array[modelIndex].model->name;
+        }
+        ////////////////////////////////////////////////////////////////////
         
         ////INIT FONTS
         
@@ -369,69 +422,7 @@ int main(int argc, char *args[]) {
         easy3d_initCamera(&camera, v3(0, 0, 0));
         
         globalRenderGroup->skybox = initSkyBox();
-        
-#define LOAD_MODELS_AUTOMATICALLY 1
-        ///////////////////////************* Loading the models ************////////////////////
-#if !LOAD_MODELS_AUTOMATICALLY
-        easy3d_loadMtl("models/terrain/fern.mtl");
-        EasyModel fern = {};
-        easy3d_loadObj("models/terrain/fern.obj", &fern);
-        
-        easy3d_loadMtl("models/Crystal.mtl");
-        EasyModel Crystal = {};
-        easy3d_loadObj("models/Crystal.obj", &Crystal);
-        
-        easy3d_loadMtl("models/terrain/grass.mtl");
-        EasyModel grass = {};
-        easy3d_loadObj("models/terrain/grass.obj", &grass);
-        
-        easy3d_loadMtl("models/tower.mtl");
-        EasyModel castle = {};
-        easy3d_loadObj("models/tower.obj", &castle);
-        
-        easy3d_loadMtl("models/Oak_Tree.mtl");
-        easy3d_loadObj("models/Oak_Tree.obj", 0);
-        
-        easy3d_loadMtl("models/Palm_Tree.mtl");
-        easy3d_loadObj("models/Palm_Tree.obj", 0);
-        
-        easy3d_loadMtl("models/tile.mtl");
-        easy3d_loadObj("models/tile.obj", 0);        
-        
-        int modelLoadedCount = 6;
-        char *modelsLoaded[] = {"Crystal.obj", "grass.obj", "fern.obj", "tower.obj", "Oak_Tree.obj", "Palm_Tree.obj"};
-#else  
-        char *modelDirs[] = { "models/"};
-        
-        EasyAssetLoader_AssetArray allModelsForEditor = {};
-        allModelsForEditor.count = 0;
-        allModelsForEditor.assetType = ASSET_MODEL;
-        
-        for(int dirIndex = 0; dirIndex < arrayCount(modelDirs); ++dirIndex) {
-            char *dir = modelDirs[dirIndex];
-            //NOTE(ollie): Load materials first
-            char *fileTypes[] = { "mtl" };
-            easyAssetLoader_loadAndAddAssets(0, dir, fileTypes, arrayCount(fileTypes), ASSET_MATERIAL);
-            
-            //NOTE(ollie): Then load models
-            fileTypes[0] = "obj";
-            easyAssetLoader_loadAndAddAssets(&allModelsForEditor, dir, fileTypes, arrayCount(fileTypes), ASSET_MODEL);
-            
-        }
-
-        //NOTE(ollie): Max models that the user side can see
-        char *allModelsForEditorNames[256];
-        u32 allModelsForEditorNamesCount = 0;
-
-        for(int modelIndex = 0; modelIndex < allModelsForEditor.count; ++modelIndex) {
-            //NOTE(ollie): Add all the names of the models to a string array
-            assert(allModelsForEditorNamesCount < arrayCount(allModelsForEditorNames));
-            allModelsForEditorNames[allModelsForEditorNamesCount++] = allModelsForEditor.array[modelIndex].model->name;
-        }
-        
-
-
-#endif
+    
         
         // EasyTerrain *terrain = initTerrain(fern, grass);
         
@@ -440,7 +431,7 @@ int main(int argc, char *args[]) {
         // EasyMaterial flowerMaterial = easyCreateMaterial(findTextureAsset("flower.png"), 0, findTextureAsset("grey_texture.jpg"), 32);
         
         EasyTransform sunTransform;
-        easyTransform_initTransform(&sunTransform, v3(0, -10, 0));
+        easyTransform_initTransform(&sunTransform, v3(0, -10, 0), EASY_TRANSFORM_TRANSIENT_ID);
         
         EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 1));//easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
         easy_addLight(globalRenderGroup, light);
@@ -490,9 +481,6 @@ int main(int argc, char *args[]) {
         float exposureTerm = 1.0f;
         int toneMapId = 0;
         bool controllingPlayer = true;
-        
-        EasyTransform T;
-        easyTransform_initTransform(&T, v3(0, 0, 0));
         
         EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfilerDrawState(); 
         
@@ -742,7 +730,7 @@ int main(int argc, char *args[]) {
             // renderModel(globalRenderGroup, &castle, COLOR_WHITE);
             
             
-            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT | RENDER_DRAW_SKYBOX));
+            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_DEFAULT));
             
             easyRender_blurBuffer_cachedBuffer(&mainFrameBuffer, &bloomFrameBuffer, &cachedFrameBuffer, 1);
             
@@ -789,11 +777,11 @@ int main(int argc, char *args[]) {
             if(updateFlags & MY_ENTITIES_RENDER) {
                 
                 ///////////////////////********* Drawing the background ****************////////////////////
-                Texture *bgTexture = findTextureAsset("africa.png");
+                // Texture *bgTexture = findTextureAsset("africa.png");
                 
-                float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
-                float xWidth = resolution.x;
-                float xHeight = xWidth*aspectRatio;
+                // float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
+                // float xWidth = resolution.x;
+                // float xHeight = xWidth*aspectRatio;
                 
                 // renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
                 // drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
@@ -918,9 +906,9 @@ int main(int argc, char *args[]) {
                     // sprintf(buffer, "%d", player->healthPoints);
                     
                     Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
-                    aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
-                    xWidth = 0.05f*resolution.x;
-                    xHeight = xWidth*aspectRatio;
+                    float aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
+                    float xWidth = 0.05f*resolution.x;
+                    float xHeight = xWidth*aspectRatio;
                     renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, 1), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
                     sprintf(buffer, "%d", gameVariables.player->dropletCount);
                     outputText(mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
@@ -1284,12 +1272,6 @@ int main(int argc, char *args[]) {
                     
                     ////////////////////////////////////////////////////////////////////
 #endif
-                    Texture *gridImage = findTextureAsset("grid.png");
-                    V2 dim = v2(0.05f*resolution.x, 0);
-                    dim.y = dim.x*gridImage->aspectRatio_h_over_w;
-                    
-                    renderTextureCentreDim(gridImage, v3(0.4f*resolution.x, 0.5f*dim.y, NEAR_CLIP_PLANE), dim, COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
-                    
                     ////////////////////////////////////////////////////////////////////
                     
                     if(isDown(keyStates.gameButtons, BUTTON_R)) {
@@ -1741,7 +1723,7 @@ int main(int argc, char *args[]) {
             
             EasyProfile_DrawGraph(profilerState, (resolution.y / resolution.x), &keyStates, appInfo.dt, resolution);
             
-            drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+            drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
             
             ////////////////////////////////////////////////////////////////////////////
             

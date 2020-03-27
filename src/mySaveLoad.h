@@ -1,4 +1,5 @@
 static inline void myLevels_saveLevel(int level, MyEntityManager *manager, MyGameState *gameState) {
+	DEBUG_TIME_BLOCK()
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 
@@ -68,6 +69,7 @@ static inline void myLevels_saveLevel(int level, MyEntityManager *manager, MyGam
 }
 
 static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManager, V3 startPos, MyGameState *gameState) {
+	DEBUG_TIME_BLOCK()
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 
@@ -194,8 +196,8 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	            	//NOTE(ollie): Set the id
 	            	if(foundId) {
 		            	newEntity->T.id = id;
-		            	if(id > GLOBAL_transformID) {
-		            		GLOBAL_transformID = id;
+		            	if(id > GLOBAL_transformID_static) {
+		            		GLOBAL_transformID_static = id;
 		            	}
 	            	}
 	            	foundId = false;
@@ -230,8 +232,8 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	    }
 	    easyFile_endFileContents(&contents);
 	    for(int i = 0; i < idCount; ++i) {
-	    	Entity * e = MyEntity_findEntityById(entityManager, teleporterIds[i]);
-
+	    	Entity * e = MyEntity_findEntityById_static(entityManager, teleporterIds[i]);
+	    	assert(e->type == ENTITY_TELEPORTER);
 	    	teleportEnts[i]->teleporterPartner = e;
 	    }
 	}
@@ -248,6 +250,7 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 
 
 static void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo) {
+	DEBUG_TIME_BLOCK()
 	char levelName[256];
 	sprintf(levelName, "level_%d.txt", level);
 

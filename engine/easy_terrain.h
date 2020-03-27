@@ -140,7 +140,7 @@ static inline void easyTerrain_plantGrass(EasyTerrain *t, EasyTerrainChunk *c) {
 			V3 pos = v3_plus(c->startP, v3(localP.x*c->dim.x, height, localP.y*c->dim.y));
 
 			EasyTerrainModel model = {};//pushStruct(&globalLongTermArena, EasyTerrainModel);
-			easyTransform_initTransform(&model.T, pos);
+			easyTransform_initTransform(&model.T, pos, EASY_TRANSFORM_TRANSIENT_ID);
 			model.modelIndex = (int)randomBetween(0, t->modelCount);
 			if(model.modelIndex == t->modelCount) {
 				model.modelIndex--;
@@ -154,8 +154,8 @@ static inline void easyTerrain_addChunk(EasyTerrain *t, char *heightMapFileName,
 	t->chunks[t->chunkCount++] = c;
 	c->placements = initInfinteAlloc(EasyTerrainModel);
 
-	EasyImage heightImg = loadImage_(concatInArena(globalExeBasePath, heightMapFileName, &globalPerFrameArena));
-	EasyImage blendImg = loadImage_(concatInArena(globalExeBasePath, blendMapFileName, &globalPerFrameArena));
+	EasyImage heightImg = loadImage_(concatInArena(globalExeBasePath, heightMapFileName, &globalPerFrameArena), false);
+	EasyImage blendImg = loadImage_(concatInArena(globalExeBasePath, blendMapFileName, &globalPerFrameArena), false);
 	
 	c->blendMapTex = createTextureOnGPU(blendImg.image, blendImg.w, blendImg.h, blendImg.comp, TEXTURE_FILTER_LINEAR, false);
 
