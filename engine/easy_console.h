@@ -285,6 +285,8 @@ inline void easyConsole_parseDefault(EasyConsole *c, EasyToken token) {
     	// )) {
     	// 	easyConsole_addToStream(c, "parameter not understood");
     	// }
+    } else if(stringsMatchNullN("colliders", token.at, token.size)) {
+    	DEBUG_global_ViewColliders = !DEBUG_global_ViewColliders;
     } else {
     	easyConsole_addToStream(c, "parameter not understood");
     } 

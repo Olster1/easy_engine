@@ -18,6 +18,7 @@ typedef struct {
 
 	//NOTE(ollie): For the human types
 	char *message;
+	float lerpValue;
 	////////////////////////////////////////////////////////////////////
 
 	//NOTE(ollie): For the ship
@@ -30,6 +31,9 @@ typedef struct {
 
 	//NOTE(ollie): For the level 
 	u32 levelId;
+	//NOTE(ollie): Telelporter animation 
+	animation_list_item animationListSentintel;
+
 	////////////////////////////////////////////////////////////////////
 } OverworldEntity;
 
@@ -47,10 +51,23 @@ typedef struct {
 	OverworldEntity *hotEntity;
 
 	EasyCamera camera;
+
+	OverworldEntity *player;
 	       
 	Matrix4 projectionMatrix;
+	Matrix4 orthoMatrix;
 
-	V2 screenResolution;
+	EasyFont_Font *font;
+	V2 fauxResolution;
+
+	///////////////////////************ Teleporter animation*************////////////////////
+	//NOTE(ollie): Since we only need a reference to the animation, we only have to create it once, then just all levels reference it
+	animation teleporterAnimation;
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): In bounds of text, so don't move player. We're a frame late since so we don't have to loop through the entities twice 
+	bool inBounds;
+	bool lastInBounds;
 } MyOverworldState;
 
 

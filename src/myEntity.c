@@ -80,6 +80,30 @@ static inline MyEntityManager *initEntityManager() {
     result->toCreateCount = 0;
     
     EasyPhysics_beginWorld(&result->physicsWorld);
+
+
+    //NOTE(ollie): Create the idle animation
+    char *formatStr = "teleporter-%d.png";
+    char buffer[512];
+    ////////////////////////////////////////////////////////////////////
+
+    //NOTE(ollie): Init the animation
+    result->teleporterAnimation.Name = "Teleporter Idle";
+    result->teleporterAnimation.state = ANIM_IDLE;
+    result->teleporterAnimation.FrameCount = 0;
+    
+    //NOTE(ollie): Loop through image names & add them to the animation
+    for(int loopIndex = 1; loopIndex <= 150; ++loopIndex) {
+        
+        //NOTE(ollie): Print the texture ID
+        snprintf(buffer, arrayCount(buffer), formatStr, loopIndex); 
+        
+        //NOTE(ollie): Add it to the array
+        assert(result->teleporterAnimation.FrameCount < arrayCount(result->teleporterAnimation.Frames));
+        result->teleporterAnimation.Frames[result->teleporterAnimation.FrameCount++] = easyString_copyToArena(buffer, &globalLongTermArena);
+        
+    }
+    ////////////////////////////////////////////////////////////////////
     
     return result;
 }
@@ -1348,7 +1372,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
             }	
             
             ///////////////////////************ Debug Collider viewing *************////////////////////
-            if(e->collider) {
+            if(DEBUG_global_ViewColliders && e->collider) 
+            {
                 
                 EasyTransform tempT = e->T;
                 
@@ -1360,10 +1385,10 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     case EASY_COLLIDER_BOX:
                     case EASY_COLLIDER_CIRCLE: {
                         
-                        renderSetShader(renderGroup, &circleProgram);
+                        renderSetShader(renderGroup, &phongProgram);
                         
                         float dim = 2*e->collider->radius;
-                        tempT.scale = v3(dim, dim, 0);
+                        tempT.scale = v3(dim, dim, dim);
                         setModelTransform(renderGroup, easyTransform_getTransform(&tempT));
                             
                         renderDrawCube(globalRenderGroup, &globalWhiteMaterial, COLOR_RED);
@@ -1789,31 +1814,8 @@ static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGame
     //NOTE(ollie): Set the sentinel up
     e->animationListSentintel.Next = e->animationListSentintel.Prev = &e->animationListSentintel;
     ////////////////////////////////////////////////////////////////////
-    
-    //NOTE(ollie): Create the idle animation
-    char *formatStr = "teleporter-%d.png";
-    char buffer[512];
-    ////////////////////////////////////////////////////////////////////
-
-    //NOTE(ollie): Init the animation
-    e->idleAnimation.Name = "Teleporter Idle";
-    e->idleAnimation.state = ANIM_IDLE;
-    e->idleAnimation.FrameCount = 0;
-    
-    //NOTE(ollie): Loop through image names & add them to the animation
-    for(int loopIndex = 1; loopIndex <= 150; ++loopIndex) {
-        
-        //NOTE(ollie): Print the texture ID
-        snprintf(buffer, arrayCount(buffer), formatStr, loopIndex);	
-        
-        //NOTE(ollie): Add it to the array
-        assert(e->idleAnimation.FrameCount < arrayCount(e->idleAnimation.Frames));
-        e->idleAnimation.Frames[e->idleAnimation.FrameCount++] = easyString_copyToArena(buffer, &globalLongTermArena);
-        
-    }
-    ////////////////////////////////////////////////////////////////////
-    
-    AddAnimationToList(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, &e->idleAnimation);
+    //NOTE(ollie): Add the animation to the list
+    AddAnimationToList(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, &m->teleporterAnimation);
     
     ////////////////////////////////////////////////////////////////////
     
@@ -1854,12 +1856,12 @@ static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGame
 
 //NOTE(ollie): Underpants
 
-static Entity *initUnderpants(MyEntityManager *m, EasyModel *model, V3 pos, Entity *parent) {
+static Entity *initUnderpants(MyEntityManager *m, Texture *sprite, V3 pos, Entity *parent) {
     Entity *e = (Entity *)getEmptyElement(&m->entities);
     
     e->name = "Underpants";
     float width = 0.6f;
-    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, width), EASY_TRANSFORM_STATIC_ID); 
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, sprite->aspectRatio_h_over_w*width, width), EASY_TRANSFORM_STATIC_ID); 
     if(parent) e->T.parent = &parent->T;
     
     e->active = true;
@@ -1870,7 +1872,8 @@ static Entity *initUnderpants(MyEntityManager *m, EasyModel *model, V3 pos, Enti
 #endif
     e->type = ENTITY_UNDERPANTS;
     
-    e->model = model;
+    e->sprite = sprite;
+    // e->model = model;
     
     e->fadeTimer = initTimer(0.3f, false);
     turnTimerOff(&e->fadeTimer);
@@ -2172,7 +2175,7 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
             
         } break;
         case ENTITY_BUCKET: {
-            result = initBucket(entityManager, findTextureAsset("toilet1.png"), clampedPosition, room);
+            result = initBucket(entityManager, findTextureAsset("fuel_tank.png"), clampedPosition, room);
         } break;
         case ENTITY_BOSS: {
             //NOTE(ollie): Boss doesn't move with the room
@@ -2189,7 +2192,7 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
             result = initDroplet(entityManager, findModelAsset("Crystal.obj"), clampedPosition, room);
         } break;
         case ENTITY_UNDERPANTS: {
-            result = initUnderpants(entityManager, findModelAsset("Carrot.obj"), clampedPosition, room);
+            result = initUnderpants(entityManager, findTextureAsset("spaceship.png"), clampedPosition, room);
         } break;
         case ENTITY_CRAMP: {
             result = initCramp(entityManager, findModelAsset("rock.obj"), clampedPosition, room);

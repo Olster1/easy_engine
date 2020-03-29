@@ -8,5 +8,6 @@ static bool DEBUG_global_ProfilePaused = true; //this has to start as true
 static bool DEBUG_global_EditorMode = false;
 static bool DEBUG_global_VsyncIsOn = true;
 static bool DEBUG_global_GuessFramerateFromVsync = true;
+static bool DEBUG_global_ViewColliders = true;
 
 

@@ -142,6 +142,7 @@ static float globalTimeSinceStart = 0.0f;
 
 #define EASY_RENDER_MAX_BATCH_COUNT 1024
 
+static float global_smoothingParam = 0.28f;
 
 /* 
 HOW THE RENDERER SHOULD WORK:
@@ -1840,7 +1841,7 @@ static inline void addInstancingAttrib (GLuint attribLoc, int numOfFloats, size_
 
 static void renderDrawCube(RenderGroup *group, EasyMaterial *material, V4 colorTint) {
     DEBUG_TIME_BLOCK()
-    float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
+    float sortZ = 0;
     pushRenderItem(&globalCubeVaoHandle, group, globalCubeVertexData, arrayCount(globalCubeVertexData), globalCubeIndicesData, arrayCount(globalCubeIndicesData), group->currentShader, "Cube", SHAPE_MODEL, 0, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, material, 0);
 }
 
@@ -2447,8 +2448,13 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
             glUniform3f(eyeLoc, group->eyePos.x, group->eyePos.y, group->eyePos.z);
             renderCheckError();    
         }
-        
 
+        GLuint smoothingLoc = glGetUniformLocation(program->glProgram, "smoothing");
+        if(smoothingLoc >= 0) { //has this value
+            glUniform1f(smoothingLoc, global_smoothingParam);
+            renderCheckError();    
+        }
+        
         easy_BindTexture("tex", 3, textureId, program);
         glUniformMatrix4fv(glGetUniformLocation(program->glProgram, "projection"), 1, GL_FALSE, projectionTransform->E_);
         renderCheckError();

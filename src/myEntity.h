@@ -124,7 +124,7 @@ typedef struct Entity {
     
     union {
         struct { //Teleporter
-            animation idleAnimation;
+            
             animation_list_item animationListSentintel;
 
             
@@ -200,6 +200,9 @@ typedef struct {
     
     int toCreateCount;
     EntityCreateInfo toCreate[512];
+
+
+    animation teleporterAnimation;
     
 } MyEntityManager;
 

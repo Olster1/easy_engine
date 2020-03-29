@@ -43,10 +43,11 @@ static inline int compileFiles(char *folderName, char **fileTypes, int typeCount
 	    free(shortName);
 	}
 	char writeName[512] = {};
-	sprintf(writeName, "%s../../shared/easy_shaders.h", folderName);
+	sprintf(writeName, "%s../../engine/easy_shaders.h", folderName);
 	// printf("%s\n", writeName);
 	// printf("%.*s\n", data.count, (char *)data.memory);
 	game_file_handle handle = platformBeginFileWrite(writeName);
+	assert(!handle.HasErrors);
 	platformWriteFile(&handle, data.memory, data.count*data.sizeOfMember, 0);
 	platformEndFile(handle);
 	free(folderName);

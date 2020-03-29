@@ -54,7 +54,7 @@ static void DEBUG_updateDebugOverworld(AppKeyStates *keyStates, MyOverworldState
 		easyEditor_endWindow(editor); 
 
 		//NOTE(ollie): See where the mouse is in the world. Always at 0 Z
-		V3 worldP = screenSpaceToWorldSpace(state->projectionMatrix, keyStates->mouseP_left_up, state->screenResolution, -1*state->camera.pos.z, easy3d_getViewToWorld(&state->camera));
+		V3 worldP = screenSpaceToWorldSpace(state->projectionMatrix, easyInput_mouseToResolution(keyStates, state->fauxResolution), state->fauxResolution, -1*state->camera.pos.z, easy3d_getViewToWorld(&state->camera));
 
 		//NOTE(ollie): Check if you grabbed one
 		for(int i = 0; i < state->manager.entityCount; ++i) {
@@ -110,7 +110,7 @@ static void DEBUG_updateDebugOverworld(AppKeyStates *keyStates, MyOverworldState
 ////////////////////////////////////////////////////////////////////
 
 
-static void myOverworld_loadOverworld(MyOverworldState *state) {
+static void myOverworld_loadOverworld(MyOverworldState *state, MyGameState *gameState) {
 	char *loadName = myOverworld_getOverworldFileLocation();
 		bool isFileValid = platformDoesFileExist(loadName);
 		        
@@ -163,6 +163,37 @@ static void myOverworld_loadOverworld(MyOverworldState *state) {
 		            	if(manager->entityCount < arrayCount(manager->entities)) {
 		            		OverworldEntity *newEntity = &manager->entities[manager->entityCount++];
 
+		            		if(entType == OVERWORLD_ENTITY_SHIP) {
+		            			assert(!state->player);
+		            			state->player = newEntity; 
+		            		}
+
+		            		switch (entType) {
+		            			case OVERWORLD_ENTITY_SHIP: {
+		            			} break;
+		            			case OVERWORLD_ENTITY_PERSON: {
+		            				newEntity->message = "I've been having trouble with some space robots destroying my rocks. Can you help";
+		            			} break;
+		            			case OVERWORLD_ENTITY_SHOP: {
+		            				newEntity->message = "Do you want to enter the shop?";
+		            			} break;
+		            			case OVERWORLD_ENTITY_LEVEL: {
+		            				//NOTE(ollie): Set the sentinel up
+		            				newEntity->animationListSentintel.Next = newEntity->animationListSentintel.Prev = &newEntity->animationListSentintel;
+		            				////////////////////////////////////////////////////////////////////
+		            				
+		            				AddAnimationToList(&gameState->animationItemFreeListPtr, &globalLongTermArena, &newEntity->animationListSentintel, &state->teleporterAnimation);
+		            				scale = v3_scale(3.0f, scale);
+		            				newEntity->message = "Do you want to enter this space time vortex?";
+		            			} break;
+		            			default: {
+
+		            			}
+
+		            		}
+		            		
+		            		newEntity->lerpValue = 0.0f;
+
 		            		assert(entType != OVERWORLD_ENTITY_NULL);
 		            		easyTransform_initTransform_withScale(&newEntity->T, pos, scale, EASY_TRANSFORM_STATIC_ID);
 		            		newEntity->type = entType;
@@ -188,7 +219,7 @@ static void myOverworld_loadOverworld(MyOverworldState *state) {
 }
 
 
-static MyOverworldState *initOverworld(Matrix4 projectionMatrix, V2 resolution) {
+static MyOverworldState *initOverworld(Matrix4 projectionMatrix, float aspectRatio, EasyFont_Font *font, MyGameState *gameState) {
 
 	MyOverworldState *state = pushStruct(&globalLongTermArena, MyOverworldState);
 	easy3d_initCamera(&state->camera, v3(0, 0, -9));
@@ -197,19 +228,126 @@ static MyOverworldState *initOverworld(Matrix4 projectionMatrix, V2 resolution) 
 
 	state->editing = false;
 	state->typeToCreate = OVERWORLD_ENTITY_NULL;
-	       
-	state->projectionMatrix = projectionMatrix;
-	state->screenResolution = resolution;
 
-	myOverworld_loadOverworld(state);
+	float fuaxWidth = 1920;
+	state->fauxResolution = v2(fuaxWidth, fuaxWidth*aspectRatio);
+
+	//NOTE(ollie): Assign matricies
+	state->projectionMatrix = projectionMatrix;
+	state->orthoMatrix = OrthoMatrixToScreen_BottomLeft(state->fauxResolution.x, state->fauxResolution.y);
+
+	state->player = 0;
+
+	state->font = font;
+
+	myOverworld_loadOverworld(state, gameState);
+
+	///////////////////////************* Setup the animation ************////////////////////
+	
+	//NOTE(ollie): Create the idle animation
+	char *formatStr = "teleporter-%d.png";
+	char buffer[512];
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): Init the animation
+	state->teleporterAnimation.Name = "Teleporter Idle";
+	state->teleporterAnimation.state = ANIM_IDLE;
+	state->teleporterAnimation.FrameCount = 0;
+	
+	//NOTE(ollie): Loop through image names & add them to the animation
+	for(int loopIndex = 1; loopIndex <= 150; ++loopIndex) {
+	    
+	    //NOTE(ollie): Print the texture ID
+	    snprintf(buffer, arrayCount(buffer), formatStr, loopIndex);	
+	    
+	    //NOTE(ollie): Add it to the array
+	    assert(state->teleporterAnimation.FrameCount < arrayCount(state->teleporterAnimation.Frames));
+	    state->teleporterAnimation.Frames[state->teleporterAnimation.FrameCount++] = easyString_copyToArena(buffer, &globalLongTermArena);
+	    
+	}
+	////////////////////////////////////////////////////////////////////
 
 	return state;
 }
 
-static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeyStates *keyStates, MyOverworldState *state, EasyEditor *editor) {
+#define MY_OVERWORLD_INTERACT_RADIUS 1.4f
+
+static void drawMessage(MyOverworldState *state, OverworldEntity *e, AppKeyStates *keyStates, V3 thisP, float dt, bool inRadius, char *yesMessage, char *noMessage) {
+
+	float endGoal = (inRadius) ? 1.0f : 0.0f;
+	e->lerpValue = lerp(e->lerpValue, clamp01(10*dt), endGoal); 
+
+	if(e->lerpValue > 0.01) {
+		float xAt = 0.5f*state->fauxResolution.x;
+		float yAt = 0.5f*state->fauxResolution.y;
+
+		float fontSize = 1.5f;
+
+		Rect2f margin = rect2fMinDim(xAt, yAt - state->font->fontHeight, 0.4f*state->fauxResolution.x, INFINITY);
+
+		Rect2f a = outputTextNoBacking(state->font, xAt, yAt, NEAR_CLIP_PLANE, state->fauxResolution, e->message, margin, lerpV4(v4(0, 0, 0, 0), e->lerpValue, COLOR_BLACK), fontSize, true, 1.0f);
+
+		///////////////////////*************************////////////////////
+		Rect2f b = outputTextNoBacking(state->font, xAt, yAt + getDim(a).y + state->font->fontHeight, NEAR_CLIP_PLANE, state->fauxResolution, yesMessage, margin, lerpV4(v4(0, 0, 0, 0), e->lerpValue, COLOR_BLACK), fontSize, false, 1.0f);
+
+		{	
+			V4 color = COLOR_BLUE;
+			if(inBounds(easyInput_mouseToResolution(keyStates, state->fauxResolution), b, BOUNDS_RECT)) {
+				color = COLOR_GOLD;
+
+				if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+
+				}
+			}
+			outputTextNoBacking(state->font, xAt, yAt + getDim(a).y + state->font->fontHeight, NEAR_CLIP_PLANE, state->fauxResolution, yesMessage, margin, lerpV4(v4(0, 0, 0, 0), e->lerpValue, color), fontSize, true, 1.0f);	
+		}
+		////////////////////////////////////////////////////////////////////
+		
+
+		Rect2f boundsRect = unionRect2f(a, b);
+
+		///////////////////////*************************////////////////////
+		
+		{
+			b = outputTextNoBacking(state->font, xAt + 1.5f*getDim(b).x, yAt + getDim(a).y + state->font->fontHeight, NEAR_CLIP_PLANE, state->fauxResolution, noMessage, margin, lerpV4(v4(0, 0, 0, 0), e->lerpValue, COLOR_BLACK), fontSize, false, 1.0f);	
+			V4 color = COLOR_BLUE;
+			if(inBounds(easyInput_mouseToResolution(keyStates, state->fauxResolution), b, BOUNDS_RECT)) {
+				color = COLOR_GOLD;
+
+				if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+					
+				}
+			}
+			outputTextNoBacking(state->font, xAt + 1.5f*getDim(b).x, yAt + getDim(a).y + state->font->fontHeight, NEAR_CLIP_PLANE, state->fauxResolution, noMessage, margin, lerpV4(v4(0, 0, 0, 0), e->lerpValue, color), fontSize, true, 1.0f);	
+		}
+		////////////////////////////////////////////////////////////////////
+
+		boundsRect = unionRect2f(boundsRect, b);
+
+		///////////////////////*********** Check if player is hovering over text **************////////////////////
+		if(inBounds(easyInput_mouseToResolution(keyStates, state->fauxResolution), boundsRect, BOUNDS_RECT)) {
+			state->inBounds = true;
+
+		}
+		////////////////////////////////////////////////////////////////////
+		
+		V2 bounds = getDim(boundsRect);
+		V2 messageBounds = lerpV2(v2(0, 0), e->lerpValue, v2_scale(1.3f, bounds));
+		renderTextureCentreDim(findTextureAsset("rounded_square.png"), v3(xAt + 0.5f*bounds.x, yAt + 0.5f*bounds.y - 0.5f*state->font->fontHeight, NEAR_CLIP_PLANE + 0.1f), messageBounds, COLOR_WHITE, 0, mat4TopLeftToBottomLeft(state->fauxResolution.y), mat4(), state->orthoMatrix);                	
+		
+	}
+}
+
+static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeyStates *keyStates, MyOverworldState *state, EasyEditor *editor, float dt, MyGameState *gameState) {
 	DEBUG_TIME_BLOCK();
 
+	assert(state->player);
+
 	renderSetShader(renderGroup, &textureProgram);
+
+
+	state->camera.pos.xy = lerpV3(state->camera.pos, clamp01(dt), state->player->T.pos).xy;
+
 	setViewTransform(renderGroup, easy3d_getWorldToView(&state->camera));
 	setProjectionTransform(renderGroup, state->projectionMatrix);
 
@@ -222,17 +360,27 @@ static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeySta
 	DEBUG_updateDebugOverworld(keyStates, state, editor);
 #endif
 
+	state->inBounds = false;
+
 	for(int i = 0; i < state->manager.entityCount; ++i) {
 		OverworldEntity *e = &state->manager.entities[i];
 
 		setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
 
+		if(e->message) {
+			//NOTE(ollie): If in radius talk to the player
+			V3 playerP = easyTransform_getWorldPos(&state->player->T);
+			V3 thisP = easyTransform_getWorldPos(&e->T);
+			bool inRadius = (getLengthV3(v3_minus(playerP, thisP)) < MY_OVERWORLD_INTERACT_RADIUS);
+
+			drawMessage(state, e, keyStates, thisP, dt, inRadius, "Let's Go!", "No Thanks");
+
+		}
+
 		switch(e->type) {
 			case OVERWORLD_ENTITY_SHIP: {
-				
-
-				if(wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
-					V3 worldP = screenSpaceToWorldSpace(state->projectionMatrix, keyStates->mouseP_left_up, state->screenResolution, -1*state->camera.pos.z, easy3d_getViewToWorld(&state->camera));
+				if(!state->lastInBounds && wasPressed(keyStates->gameButtons, BUTTON_LEFT_MOUSE)) {
+					V3 worldP = screenSpaceToWorldSpace(state->projectionMatrix, easyInput_mouseToResolution_originLeftBottomCorner(keyStates, state->fauxResolution), state->fauxResolution, -1*state->camera.pos.z, easy3d_getViewToWorld(&state->camera));
 				
 					e->goalPosition = worldP;
 					// e->goalAngle;
@@ -242,15 +390,13 @@ static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeySta
 
 				e->T.pos = lerpV3(e->T.pos, 0.4f, e->goalPosition);
 
-
 				setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
 
 				renderDrawSprite(renderGroup, findTextureAsset("spaceship.png"), COLOR_WHITE);
 			} break;
 			case OVERWORLD_ENTITY_PERSON: {
 
-				//NOTE(ollie): If in radius talk to the player
-				// if()
+				
 				renderDrawSprite(renderGroup, findTextureAsset("alien-icon.png"), COLOR_WHITE);
 			} break;
 			case OVERWORLD_ENTITY_SHOP: {
@@ -258,7 +404,10 @@ static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeySta
 				renderDrawSprite(renderGroup, findTextureAsset("shop-icon.png"), COLOR_WHITE);
 			} break;
 			case OVERWORLD_ENTITY_LEVEL: {
-				renderDrawSprite(renderGroup, findTextureAsset("star-icon.png"), COLOR_WHITE);
+				char *animationOn = UpdateAnimation(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, dt, 0);
+				Texture *sprite = findTextureAsset(animationOn);
+
+				renderDrawSprite(renderGroup, sprite, COLOR_WHITE);
 			} break;
 			default: {
 				assert(!"case not handled");
@@ -266,5 +415,7 @@ static void myOverworld_updateOverworldState(RenderGroup *renderGroup, AppKeySta
 		}
 		
 	}
+
+	state->lastInBounds = state->inBounds;
 	
 }

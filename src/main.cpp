@@ -25,7 +25,7 @@ MY_GAME_MODE_INSTRUCTION_CARD,
 MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL //MY_GAME_MODE_OVERWORLD 
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_START_MENU//MY_GAME_MODE_OVERWORLD //MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -258,14 +258,27 @@ static EasyTerrain *initTerrain(EasyModel fern, EasyModel grass) {
     return terrain;
 }
 
+// static EasySkyBox *initSkyBox() {
+//     EasySkyBoxImages skyboxImages;
+//     skyboxImages.fileNames[0] = "skybox_images/right.jpg";
+//     skyboxImages.fileNames[1] = "skybox_images/left.jpg";
+//     skyboxImages.fileNames[2] = "skybox_images/top.jpg";
+//     skyboxImages.fileNames[3] = "skybox_images/bottom.jpg";
+//     skyboxImages.fileNames[4] = "skybox_images/front.jpg";
+//     skyboxImages.fileNames[5] = "skybox_images/back.jpg";
+    
+//     EasySkyBox *skybox = easy_makeSkybox(&skyboxImages);
+//     return skybox;
+// }
+
 static EasySkyBox *initSkyBox() {
     EasySkyBoxImages skyboxImages;
-    skyboxImages.fileNames[0] = "skybox_images/right.jpg";
-    skyboxImages.fileNames[1] = "skybox_images/left.jpg";
-    skyboxImages.fileNames[2] = "skybox_images/top.jpg";
-    skyboxImages.fileNames[3] = "skybox_images/bottom.jpg";
-    skyboxImages.fileNames[4] = "skybox_images/front.jpg";
-    skyboxImages.fileNames[5] = "skybox_images/back.jpg";
+    skyboxImages.fileNames[0] = "img/spaceGame/spaceBg.png";
+    skyboxImages.fileNames[1] = "img/spaceGame/spaceBg.png";
+    skyboxImages.fileNames[2] = "img/spaceGame/spaceBg.png";
+    skyboxImages.fileNames[3] = "img/spaceGame/spaceBg.png";
+    skyboxImages.fileNames[4] = "img/spaceGame/spaceBg.png";
+    skyboxImages.fileNames[5] = "img/spaceGame/spaceBg.png";
     
     EasySkyBox *skybox = easy_makeSkybox(&skyboxImages);
     return skybox;
@@ -421,7 +434,7 @@ int main(int argc, char *args[]) {
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, 0));
         
-        globalRenderGroup->skybox = initSkyBox();
+        // globalRenderGroup->skybox = initSkyBox();
     
         
         // EasyTerrain *terrain = initTerrain(fern, grass);
@@ -484,7 +497,7 @@ int main(int argc, char *args[]) {
         
         EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfilerDrawState(); 
         
-        MyOverworldState *overworldState = initOverworld(projectionMatrixFOV(90.0f, resolution.x/resolution.y), resolution);
+        MyOverworldState *overworldState = initOverworld(projectionMatrixFOV(90.0f, resolution.x/resolution.y), (resolution.y/resolution.x), mainFont, gameState);
                 
         ///////////************************/////////////////
         while(running) {
@@ -777,16 +790,17 @@ int main(int argc, char *args[]) {
             if(updateFlags & MY_ENTITIES_RENDER) {
                 
                 ///////////////////////********* Drawing the background ****************////////////////////
-                // Texture *bgTexture = findTextureAsset("africa.png");
+                {
+                Texture *bgTexture = findTextureAsset("fez.jpg");
                 
-                // float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
-                // float xWidth = resolution.x;
-                // float xHeight = xWidth*aspectRatio;
+                float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
+                float xWidth = resolution.x;
+                float xHeight = xWidth*aspectRatio;
                 
-                // renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
-                // drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
-                // renderClearDepthBuffer(toneMappedBuffer.bufferId);
-                
+                renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
+                drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                renderClearDepthBuffer(toneMappedBuffer.bufferId);
+                }
                 ////////////////////////////////////////////////////////////////////
                 
                 if(updateFlags & MY_ENTITIES_UPDATE) {
@@ -825,7 +839,7 @@ int main(int argc, char *args[]) {
                     ///////////////////////************ Draw the lives *************////////////////////
                     
                     Texture *bloodSplat = findTextureAsset("blood_splat.png");
-                    Texture *underpants = findTextureAsset("underwear.png");
+                    Texture *underpants = findTextureAsset("spaceship.png");
                     
                     float f0 = easyRender_getTextureAspectRatio_HOverW(bloodSplat);
                     float f1 = easyRender_getTextureAspectRatio_HOverW(underpants);
@@ -905,7 +919,7 @@ int main(int argc, char *args[]) {
                     char buffer[512];
                     // sprintf(buffer, "%d", player->healthPoints);
                     
-                    Texture *dropletTex = findTextureAsset("blood_droplet.PNG");
+                    Texture *dropletTex = findTextureAsset("crystal.png");
                     float aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
                     float xWidth = 0.05f*resolution.x;
                     float xHeight = xWidth*aspectRatio;
@@ -914,7 +928,7 @@ int main(int argc, char *args[]) {
                     outputText(mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, 1.0f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
                     
                     
-                    Texture *cupTexture = (gameVariables.player->dropletCountStore > 0) ? findTextureAsset("cup_half_full.png") : findTextureAsset("cup_empty.png");
+                    Texture *cupTexture = (gameVariables.player->dropletCountStore > 0) ? findTextureAsset("fuel_tank.png") : findTextureAsset("fuel_tank.png");
                     
                     aspectRatio = (float)cupTexture->height / (float)cupTexture->width;
                     xWidth = 0.05f*resolution.x;
@@ -928,7 +942,7 @@ int main(int argc, char *args[]) {
                 }
                 
                 if(gameState->currentGameMode != MY_GAME_MODE_PLAY && gameState->currentGameMode != MY_GAME_MODE_EDIT_LEVEL) {
-                    drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+                    drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
                     easyRender_blurBuffer_cachedBuffer(&toneMappedBuffer, &toneMappedBuffer, &cachedFrameBuffer, 0);
                     
                     renderClearDepthBuffer(toneMappedBuffer.bufferId);
@@ -963,16 +977,28 @@ int main(int argc, char *args[]) {
             
             switch (gameState->currentGameMode) {
                 case MY_GAME_MODE_START_MENU: {
+                    {
+                        Texture *bgTexture = findTextureAsset("fez.jpg");
+                        
+                        float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
+                        float xWidth = resolution.x;
+                        float xHeight = xWidth*aspectRatio;
+                        
+                        renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
+                        drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                        renderClearDepthBuffer(toneMappedBuffer.bufferId);
+                    }
+
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
                         
-                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera);
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, &camera);
                         EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
                         
                     }
                     
-                    Texture *bloodDrop = findTextureAsset("blood_droplet.PNG");
-                    renderTextureCentreDim(bloodDrop, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*bloodDrop->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
-                    outputTextNoBacking(mainFont, resolution.x / 2, resolution.y / 2, NEAR_CLIP_PLANE, resolution, "The Period Game", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                    Texture *spaceship = findTextureAsset("spaceship.png");
+                    renderTextureCentreDim(spaceship, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*spaceship->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
+                    outputTextNoBacking(debugFont, resolution.x / 2, resolution.y / 2, NEAR_CLIP_PLANE, resolution, "Gravity's Engine", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
                     
                 } break;
                 case MY_GAME_MODE_PLAY: {
@@ -1132,8 +1158,21 @@ int main(int argc, char *args[]) {
                     
                 } break;
                 case MY_GAME_MODE_OVERWORLD: {
+                    ///////////////////////********* Drawing the background ****************////////////////////
+                    {
+                    Texture *bgTexture = findTextureAsset("fez.jpg");
+                    
+                    float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
+                    float xWidth = resolution.x;
+                    float xHeight = xWidth*aspectRatio;
+                    
+                    renderTextureCentreDim(bgTexture, v3(0, 0, 10), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));                
+                    drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+                    renderClearDepthBuffer(toneMappedBuffer.bufferId);
+                    }
+
                     //NOTE(ollie): This is the overworld chooser, where we choose our level
-                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor);
+                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor, appInfo.dt, gameState);
                 } break;    
                 case MY_GAME_MODE_START: {
                     
@@ -1485,9 +1524,14 @@ int main(int argc, char *args[]) {
             }
             
             ////////////////////////////////////////////////////////////////////
-            
-            
-            
+            /*
+            easyEditor_startWindow(editor, "Params", 100, 100);
+                        
+            easyEditor_pushSlider(editor, "Smoothing:", &global_smoothingParam, 0.0f, 1.0f);
+            easyEditor_pushFloat1(editor, "Smoothing Value:", &global_smoothingParam);
+
+            easyEditor_endWindow(editor); //might not actually need this
+            */
             /////////////////////// DRAWING & UPDATE CONSOLE /////////////////////////////////
             if(easyConsole_update(&console, &keyStates, appInfo.dt, (resolution.y / resolution.x))) {
                 EasyToken token = easyConsole_getNextToken(&console);
