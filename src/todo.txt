@@ -1,16 +1,12 @@
 Overworld 
-	- On radius enter have popup for enter room or shop & talk with 
-	- have it like noita where the text fades in & the box around it expands
 	- have lines that connect the world
-
+	- Have rocks that enclose the world so it's more like a metrovania game!!!!
 Voxel World: 
 
 	- get space skybox (look up pixel art skyboxes)
 	- have particle effects use cubes 
 	- have voxel worlds you can visit that have voxel perlin noise terrain 
 
-
-Levels 
 
  
 

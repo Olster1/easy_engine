@@ -1,0 +1,10 @@
+	id: 0;
+	entityType: "ENTITY_END_LEVEL";
+	position: 0.000000 4.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 7.000000 7.000000 7.000000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "endlevel";
+	tag: "space";

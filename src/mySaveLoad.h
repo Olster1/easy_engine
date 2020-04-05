@@ -248,6 +248,26 @@ static inline Entity *myLevels_loadLevel(int level, MyEntityManager *entityManag
 	return newRoom;
 }
 
+static bool myLevels_doesLevelExist(int levelId) {
+	DEBUG_TIME_BLOCK()
+	char levelName[256];
+	sprintf(levelName, "level_%d.txt", levelId);
+
+	char *folderPath = concat(globalExeBasePath, "levels/");
+	char *writeName = concat(folderPath, levelName);
+
+	bool isFileValid = platformDoesFileExist(writeName);
+	
+	bool result = false;
+	if(isFileValid) {	
+		result = true;
+	}
+
+	free(folderPath);
+	free(writeName);
+
+	return result;
+} 
 
 static void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo) {
 	DEBUG_TIME_BLOCK()
@@ -285,6 +305,9 @@ static void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo) {
         				if(cmpStrNull(tagString, "boss")) {
         					tagInfo->flags |= MY_WORLD_BOSS;
         				}
+        				if(cmpStrNull(tagString, "empty")) {
+        					tagInfo->flags |= MY_WORLD_EMPTY;
+        				}
         				if(cmpStrNull(tagString, "fireboss")) {
         					tagInfo->flags |= MY_WORLD_FIRE_BOSS;
         				}
@@ -302,6 +325,12 @@ static void myLevels_getLevelInfo(int level, MyWorldTagInfo *tagInfo) {
         				}
         				if(cmpStrNull(tagString, "earth")) {
         					tagInfo->flags |= MY_WORLD_EARTH;
+        				}
+        				if(cmpStrNull(tagString, "endlevel")) {
+        					tagInfo->flags |= MY_WORLD_END_LEVEL;
+        				}
+        				if(cmpStrNull(tagString, "amber")) {
+        					tagInfo->flags |= MY_WORLD_AMBER;
         				}
 
         			    ////////////////////////////////////////////////////////////////////

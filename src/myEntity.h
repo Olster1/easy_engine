@@ -8,7 +8,7 @@
 static float globalTileScale = 0.9f;
 
 #define MAX_LANE_COUNT 5
-#define MY_ROOM_HEIGHT 5
+#define MY_ROOM_HEIGHT 40
 #define DEBUG_ENTITY_COLOR 0
 
 #define MY_PLAYER_MAX_AMMO_COUNT 20
@@ -59,6 +59,7 @@ FUNC(ENTITY_TELEPORTER)\
 FUNC(ENTITY_BOSS)\
 FUNC(ENTITY_ENEMY_BULLET)\
 FUNC(ENTITY_ENEMY)\
+FUNC(ENTITY_END_LEVEL)\
 
 typedef enum {
     MY_ENTITY_TYPE(ENUM)
@@ -121,6 +122,9 @@ typedef struct Entity {
     s32 enemyHP;
 
     PlayingSound *playingSound;
+
+    //NOTE(ollie): For room
+    V3 roomStartPos; //NOTE(ollie): For lerping the room
     
     union {
         struct { //Teleporter
@@ -206,3 +210,73 @@ typedef struct {
     
 } MyEntityManager;
 
+
+typedef enum {
+    MY_VIEW_ANGLE_BOTTOM = 0,
+    MY_VIEW_ANGLE_RIGHT = 1,
+    MY_VIEW_ANGLE_TOP = 2,
+    MY_VIEW_ANGLE_LEFT = 3,
+} MyGameState_ViewAngle;
+
+///////////////////////*********** Game Variables **************////////////////////
+
+typedef struct {
+    float roomSpeed;    
+    float playerMoveSpeed;
+    
+    float maxPlayerMoveSpeed;
+    float minPlayerMoveSpeed;
+    
+    //NOTE: Use Entity ids instead
+    Entity *mostRecentRoom; //the one at the front
+    Entity *lastRoomCreated; //the one at the back
+    int lastLevelIndex;
+    
+    
+    //NOTE(ollie): This is for splatting the blood splat
+    int liveTimerCount;
+    Timer liveTimers[10];
+    
+    //NOTE(ollie): For making the score screen have a loading feel to it
+    Timer pointLoadTimer;
+    int lastCount; //So we can make a click noise when it changes
+    //
+    
+    //NOTE(ollie): Boost pad 
+    float cachedSpeed;
+    Timer boostTimer;
+    //
+    
+    ///////////////////////************* For editor level for lerping the camera ************////////////////////
+    MyGameState_ViewAngle angleType;
+    float angleDegreesAltitude;
+    Timer lerpTimer; //NOTE(ollie): Lerping between positions
+    
+    //NOTE(ollie): Camera positions
+    V3 centerPos;
+    V3 targetCenterPos; //we ease towards the target position & update the center position using the keys
+    
+    V3 startPos; //of lerp
+    
+    ////////////////////////////////////////////////////////////////////
+    
+    //NOTE(ollie): For camera easing
+    float cameraDistance;
+    float cameraTargetPos;
+        
+    //NOTE(ollie): Reference to player
+    Entity *player;
+
+    //NOTE(ollie): Ammo info
+    s32 totalAmmoCount;
+
+
+    //NOTE(ollie): For moving the player in turnbased format
+    Timer playerMoveTimer;
+    V3 targetCell;
+
+} MyGameStateVariables;
+
+////////////////////////////////////////////////////////////////////
+
+///////////////////////************ Functions *************////////////////////

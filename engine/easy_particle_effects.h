@@ -134,13 +134,21 @@ inline void setParticleLifeSpan(particle_system *partSys, float value) {
     partSys->creationTimer.period = 1.0f / value;
 }
 
-internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_system *System, float dt, V3 Origin, V3 Acceleration, V4 particleTint, bool render) {
+internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_system *System, V3 Origin, float dt, V3 Acceleration, V4 particleTint, bool render) {
+    BlendFuncType blendFuncSaved;
+    EasyRender_DepthFunc depthFuncSaved;
+    if(group) {
+        //NOTE(ollie): Additive blending for particles. Not sure if this fully works?
+        blendFuncSaved = setBlendFuncType(group, BLEND_FUNC_ONE_ONE_ADDITIVE);
+
+        depthFuncSaved = easyRender_setDepthFuncType(group, RENDER_DEPTH_FUNC_ALWAYS);
+    }
     if(System->Active) {
         float particleLifeSpan = 0;
         float GridScale = 0.4f;
         float Inv_GridScale = 1.0f / GridScale;
         
-        V3 CelGridOrigin = Origin;
+        V3 CelGridOrigin = v3(0, 0, 0);
     
         int particlesToCreate = 0;        
 
@@ -170,7 +178,7 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
                         
                     Particle->dead = false;
                     //NOTE(oliver): Paricles start with motion 
-                    Particle->scale = v3(1, 1, 1);
+                    Particle->scale = v3(2, 2, 2);
                     Particle->P = v3(randomBetween(System->Set.posBias.min.x, System->Set.posBias.max.x),
                                       randomBetween(System->Set.posBias.min.y, System->Set.posBias.max.y),
                                      0);
@@ -391,8 +399,21 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
                     Particle->dead = true;
                 }
                 if(Bitmap && render) {
-                    // v3_plus(Particle->P, Origin), v3(Particle->scale.x*Set->bitmapScale, Particle->scale.y*Set->bitmapScale, 0)
 
+                    V3 scale = v3(Particle->scale.x*Set->bitmapScale, Particle->scale.y*Set->bitmapScale, 1);
+                    //NOTE(ollie): Set the scale 
+                    Matrix4 T = Matrix4_scale(mat4(), scale);
+
+                    //NOTE(ollie): Set the rotation
+                    T = Mat4Mult(mat4_axisAngle(Z_AXIS, Particle->angle), T);
+                    
+                    //NOTE(ollie): Add translation componet
+                    T = Matrix4_translate(T, v3_plus(Particle->P, Origin));
+
+                    //NOTE(ollie): Set the model transform
+                    setModelTransform(globalRenderGroup, T);
+
+                    //NOTE(ollie): Draw the sprite
                     renderDrawSprite(group, Bitmap, Color);
                     // renderTextureCentreDim(Bitmap, renderInfo.pos, renderInfo.dim.xy, Color, Particle->angle, mat4(), renderInfo.pvm, screenMatrix);    
                 } else {
@@ -415,13 +436,20 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
             System->Set.finished = false;
         }
     }
+
+    if(group) {
+        //NOTE(ollie): Reinistate the blend function
+        setBlendFuncType(group, blendFuncSaved); 
+        //NOTE(ollie): Reinistate the depth function
+        easyRender_setDepthFuncType(group, depthFuncSaved);   
+    }
 }
 
 void prewarmParticleSystem(particle_system *System, V3 Acceleration) {
     float dtLeft = System->Set.LifeSpan;
     float dtUpdate = 1.0f / 15.0f;
     while(dtLeft > 0) {
-        drawAndUpdateParticleSystem(0, System, dtUpdate, v3(0, 0, 0), Acceleration, COLOR_WHITE, false);
+        drawAndUpdateParticleSystem(0, System, v3(0, 0, 0), dtUpdate, Acceleration, COLOR_WHITE, false);
         dtLeft -= dtUpdate;
         if(dtLeft < dtUpdate) {
             dtUpdate = dtLeft;

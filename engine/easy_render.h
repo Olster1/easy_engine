@@ -246,6 +246,8 @@ RenderProgram colorWheelProgram;
 RenderProgram circleProgram;
 RenderProgram model3dTo2dImageProgram;
 RenderProgram fontProgram;
+RenderProgram circleTransitionProgram;
+
 
 FileContents loadShader(char *fileName) {
     DEBUG_TIME_BLOCK()
@@ -288,8 +290,15 @@ typedef enum {
 typedef enum {
     BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA,
     BLEND_FUNC_STANDARD_NO_PREMULTIPLED_ALPHA,
-    BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA, 
+    BLEND_FUNC_ZERO_ONE_ZERO_ONE_MINUS_ALPHA,
+    BLEND_FUNC_ONE_ONE_ADDITIVE
 } BlendFuncType;
+
+typedef enum {
+    RENDER_DEPTH_FUNC_LESS,
+    RENDER_DEPTH_FUNC_LESS_EQUAL,
+    RENDER_DEPTH_FUNC_ALWAYS
+} EasyRender_DepthFunc;
 
 typedef struct {
     GLuint vaoHandle;
@@ -677,6 +686,11 @@ typedef struct {
 } EasyRender_ColorWheel_DataPacket;
 
 typedef struct {
+    float circleRadius_01;
+} EasyRender_CircleTransition_DataPacket;
+
+
+typedef struct {
     u32 mainBufferTexId;
     u32 bloomBufferTexId;
 
@@ -722,6 +736,7 @@ typedef struct {
     int bufferId;
     bool depthTest;
     BlendFuncType blendFuncType;
+    EasyRender_DepthFunc depthFuncType;
 
     bool cullingEnabled;
     
@@ -811,6 +826,7 @@ typedef struct {
     int bufferId;
     bool depthTest;
     BlendFuncType blendFuncType;
+    EasyRender_DepthFunc depthFuncType;
 
     bool cullingEnabled;
 
@@ -832,6 +848,7 @@ typedef struct {
     bool currentDepthTest;
     VaoHandle *currentBufferHandles;
     BlendFuncType blendFuncType;
+    EasyRender_DepthFunc depthFunc;
     
     int idAt; 
     EasyRenderBatch *batches[RENDER_BATCH_HASH_COUNT];
@@ -841,6 +858,11 @@ typedef struct {
     Matrix4 modelTransform;
     Matrix4 viewTransform;
     Matrix4 projectionTransform;
+
+    //NOTE(ollie): Resolution of the buffer were drawing into
+    float bufferWidth;
+    float bufferHeight;
+    ////////////////////////////////////////////////////////////////////
 
     bool batchOnZ;
 
@@ -887,6 +909,7 @@ static inline u64 easyRender_getBatchKey(EasyRender_BatchQuery *i) {
     result += 3*i->bufferId;
     result += 3*i->depthTest;
     result += 11*i->blendFuncType;
+    result += 11*i->depthFuncType;
     result += 13*(intptr_t)i->dataPacket;
 
     if(i->testZ) {
@@ -911,6 +934,7 @@ static inline bool easyRender_canItemBeBatched(RenderItem *i, EasyRender_BatchQu
         i->bufferId == j->bufferId &&
         i->depthTest == j->depthTest &&
         i->blendFuncType == j->blendFuncType &&
+        i->depthFuncType == j->depthFuncType &&
         i->zAt == j->zAt &&
         easyMath_mat4AreEqual(&i->pMat, &j->pMat) &&
         i->dataPacket_ == j->dataPacket);
@@ -984,11 +1008,12 @@ static inline void easy_addLight(RenderGroup *group, EasyLight *light) {
     group->lights[group->lightCount++] = light;
 }
 
-void initRenderGroup(RenderGroup *group) {
+void initRenderGroup(RenderGroup *group, float bufferWidth, float bufferHeight) {
     DEBUG_TIME_BLOCK()
     assert(!group->initied);
     group->currentDepthTest = true;
     group->blendFuncType = BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA;
+    group->depthFunc = RENDER_DEPTH_FUNC_LESS;
     
     group->currentShader = 0;
     group->modelTransform = mat4();
@@ -997,6 +1022,9 @@ void initRenderGroup(RenderGroup *group) {
 
     group->skybox = 0;
     group->initied = true;
+
+    group->bufferWidth = bufferWidth;
+    group->bufferHeight = bufferHeight;
 
     group->batchOnZ = true;
 
@@ -1109,8 +1137,18 @@ static inline void renderEnableDepthTest(RenderGroup *group) {
     group->currentDepthTest = true;
 }
 
-static inline void setBlendFuncType(RenderGroup *group, BlendFuncType type) {
+static inline BlendFuncType setBlendFuncType(RenderGroup *group, BlendFuncType type) {
+    BlendFuncType oldValue = group->blendFuncType;
     group->blendFuncType = type;
+
+    return oldValue;
+}
+
+static inline EasyRender_DepthFunc easyRender_setDepthFuncType(RenderGroup *group, EasyRender_DepthFunc type) {
+    EasyRender_DepthFunc oldValue = group->depthFunc;
+    group->depthFunc = type;
+
+    return oldValue;
 }
 
 static RenderGroup *globalRenderGroup;
@@ -1153,6 +1191,7 @@ static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex
     query.bufferId = group->currentBufferId;
     query.depthTest = group->currentDepthTest;
     query.blendFuncType = group->blendFuncType;
+    query.depthFuncType = group->depthFunc;
     query.cullingEnabled = group->cullingEnabled;
     query.bufferHandles = handles;
     query.zAt = zAt;
@@ -1168,6 +1207,7 @@ static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex
     info->bufferId = group->currentBufferId;
     info->depthTest = group->currentDepthTest;
     info->blendFuncType = group->blendFuncType;
+    info->depthFuncType = group->depthFunc;
     info->bufferHandles = handles;
     info->color = color;
     info->zAt = zAt;
@@ -1417,6 +1457,22 @@ Matrix4 OrthoMatrixToScreen_BottomLeft(int width, int height) {
     return OrthoMatrixToScreen_(width, height, -1, -1);
 }
 
+static inline V3 easyRender_worldSpace_To_NDCSpace(V3 worldP, Matrix4 perspectiveMat, Matrix4 worldToCamera) {
+    DEBUG_TIME_BLOCK()
+
+    V4 homogenousP = v3ToV4Homogenous(worldP);
+
+    V4 viewSpace = V4MultMat4(homogenousP, worldToCamera);
+
+    assert(viewSpace.w = 1.0f);
+
+    V4 clipSpace = V4MultMat4(viewSpace, perspectiveMat);
+
+    V3 ndc_space = v3(clipSpace.x / clipSpace.w, clipSpace.y / clipSpace.w, clipSpace.z / clipSpace.w);
+
+    return ndc_space;
+}
+
 static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 resolution, float zAtInViewSpace, Matrix4 cameraToWorld) {
     DEBUG_TIME_BLOCK()
 
@@ -1467,6 +1523,7 @@ void enableRenderer(int width, int height, Arena *arena) {
 #if RENDER_BACKEND == OPENGL_BACKEND
     glViewport(0, 0, width, height);
     renderCheckError();
+    
     glEnable(GL_BLEND);
     glBlendEquation(GL_FUNC_ADD);
     renderCheckError();
@@ -1477,7 +1534,7 @@ void enableRenderer(int width, int height, Arena *arena) {
     glEnable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);  
     renderCheckError();
-    glDepthFunc(GL_LEQUAL);///GL_LESS);//////GL_LEQUAL);//
+    glDepthFunc(GL_LESS);///GL_LESS);//////GL_LEQUAL);//
     
     glEnable(GL_STENCIL_TEST);
     glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
@@ -1530,11 +1587,15 @@ void enableRenderer(int width, int height, Arena *arena) {
         
     fontProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, frag_font_shader, false);
     renderCheckError();
+
+    circleTransitionProgram = createProgramFromFile(vertex_fullscreen_quad_shader, frag_circle_transition_shader, false);
+    renderCheckError();
+
     
 #endif
 
     //Init global Render Group
-    initRenderGroup(globalRenderGroup);
+    initRenderGroup(globalRenderGroup, width, height);
     ////
 }
 
@@ -2254,6 +2315,20 @@ void drawVao(VaoHandle *bufferHandles, RenderProgram *program, ShapeType type, u
         renderCheckError();
     }
 
+   if(type == SHAPE_CIRCLE_TRANSITION) {
+
+        EasyRender_CircleTransition_DataPacket *packet = (EasyRender_CircleTransition_DataPacket *)dataPacket;
+        assert(packet);
+
+        float sqrRoot_ofTwo = 1.41421;
+        
+        glUniform1f(glGetUniformLocation(program->glProgram, "circleSize_01"),  packet->circleRadius_01*sqrRoot_ofTwo);
+        renderCheckError();
+
+        glUniform1f(glGetUniformLocation(program->glProgram, "aspectRatio_y_over_x"),  group->bufferHeight / group->bufferWidth);
+        renderCheckError();
+    }
+
 
     if(type == SHAPE_TERRAIN) {
         EasyTerrainDataPacket *packet = (EasyTerrainDataPacket *)dataPacket;
@@ -2738,10 +2813,31 @@ static inline void easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items
                 glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
                 renderCheckError();
             } break;
+            case BLEND_FUNC_ONE_ONE_ADDITIVE: {
+                //NOTE(ollie): s_rgb, d_srgb, s_alpha, d_alpha - s for source, d for destination
+                glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);//glBlendFunc(GL_ONE, GL_ONE);
+                renderCheckError();
+            } break;
             default: {
                 assert(!"case not handled");
             }
         }
+
+        switch(info->depthFuncType) {
+            case RENDER_DEPTH_FUNC_LESS: {
+                glDepthFunc(GL_LESS);
+                renderCheckError();
+            } break;
+            case RENDER_DEPTH_FUNC_LESS_EQUAL: {
+                glDepthFunc(GL_LEQUAL);
+                renderCheckError();
+            } break;
+            case RENDER_DEPTH_FUNC_ALWAYS: {
+                glDepthFunc(GL_ALWAYS);
+                renderCheckError();
+            } break;
+        }
+
         InfiniteAlloc allInstanceData = initInfinteAlloc(float);        
         
         for(int i = 0; i < items->count; ++i) {
@@ -2802,6 +2898,12 @@ void renderBlitQuad(RenderGroup *group, void *packet) {
     DEBUG_TIME_BLOCK()
     //TODO This is a hack. 
     RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), group->currentShader, "Blit Quad", SHAPE_TONE_MAP, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0, packet);
+}
+
+void renderBlitCircleTransition(RenderGroup *group, void *packet) {
+    DEBUG_TIME_BLOCK()
+    //TODO This is a hack. 
+    RenderItem * i = pushRenderItem(&globalFullscreenQuadVaoHandle, group, globalFullscreenQuadPositionData, arrayCount(globalFullscreenQuadPositionData), globalFullscreenQuadIndicesData, arrayCount(globalFullscreenQuadIndicesData), &circleTransitionProgram, "Circle Transition", SHAPE_CIRCLE_TRANSITION, 0, group->modelTransform, group->viewTransform, group->projectionTransform, COLOR_WHITE, group->modelTransform.E_[14], 0, packet);
 }
 
 typedef enum {

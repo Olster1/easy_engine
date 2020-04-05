@@ -17,61 +17,6 @@
 	}
 */
 
-///////////////////////*********** Game Variables **************////////////////////
-
-typedef struct {
-    float roomSpeed;	
-    float playerMoveSpeed;
-    
-    float maxPlayerMoveSpeed;
-    float minPlayerMoveSpeed;
-    
-    //NOTE: Use Entity ids instead
-    Entity *mostRecentRoom; //the one at the front
-    Entity *lastRoomCreated; //the one at the back
-    int lastLevelIndex;
-    
-    
-    //NOTE(ollie): This is for splatting the blood splat
-    int liveTimerCount;
-    Timer liveTimers[10];
-    
-    //NOTE(ollie): For making the score screen have a loading feel to it
-    Timer pointLoadTimer;
-    int lastCount; //So we can make a click noise when it changes
-    //
-    
-    //NOTE(ollie): Boost pad 
-    float cachedSpeed;
-    Timer boostTimer;
-    //
-    
-    ///////////////////////************* For editor level for lerping the camera ************////////////////////
-    MyGameState_ViewAngle angleType;
-    float angleDegreesAltitude;
-    Timer lerpTimer; //NOTE(ollie): Lerping between positions
-    
-    //NOTE(ollie): Camera positions
-    V3 centerPos;
-    V3 targetCenterPos; //we ease towards the target position & update the center position using the keys
-    
-    V3 startPos; //of lerp
-    
-    ////////////////////////////////////////////////////////////////////
-    
-    //NOTE(ollie): For camera easing
-    float cameraDistance;
-    float cameraTargetPos;
-        
-    //NOTE(ollie): Reference to player
-    Entity *player;
-
-    //NOTE(ollie): Ammo info
-    s32 totalAmmoCount;
-} MyGameStateVariables;
-
-////////////////////////////////////////////////////////////////////
-
 
 static inline MyEntityManager *initEntityManager() {
     MyEntityManager *result = pushStruct(&globalLongTermArena, MyEntityManager);
@@ -356,6 +301,26 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                         }
                     }
                     
+                    ///////////////////////********** Move forward ***************////////////////////
+                    if(wasPressed(keyStates->gameButtons, BUTTON_UP) && !isOn(&variables->playerMoveTimer)) {
+                        turnTimerOn(&variables->playerMoveTimer);
+                        for(int i = 0; i < manager->entities.count; ++i) {
+                            Entity *room = (Entity *)getElement(&manager->entities, i);
+                            if(room && room->active && room->type == ENTITY_ROOM) { 
+                                //NOTE(ollie): Set all rooms start pos
+                                room->roomStartPos = room->T.pos;
+                            }
+                        }
+
+                        V3 worldP = v3_plus(easyTransform_getWorldPos(&e->T), v3(0, 1, 0));
+                        variables->targetCell = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
+                    }
+
+
+
+
+
+                    ////////////////////////////////////////////////////////////////////
                     
                     ///////////////////////************ Get move off list if there are any *************////////////////////
                     
@@ -434,6 +399,14 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                             assert(false);
                         }
                     }
+
+                    ///////////////////////************ Draw the cell the player is moving to *************////////////////////
+                    if(isOn(&variables->playerMoveTimer)) {
+                            Matrix4 modelT = Matrix4_translate(mat4(), v3(variables->targetCell.x, variables->targetCell.y, variables->targetCell.z));
+                            setModelTransform(globalRenderGroup, modelT);
+                            renderDrawSprite(globalRenderGroup, &globalWhiteTexture, COLOR_GOLD);    
+                    }
+                    ////////////////////////////////////////////////////////////////////
                     
                     
                     
@@ -567,14 +540,25 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                 case ENTITY_DROPLET: {
                     
                 } break;
+                case ENTITY_END_LEVEL: {
+                    
+                } break;
                 case ENTITY_UNDERPANTS: {
                     
                 } break;
                 case ENTITY_ROOM: {
                     if(!DEBUG_global_PauseGame) {
                         //NOTE(ollie): move downwards
-                        e->rb->dP.y = variables->roomSpeed;	
-                        // e->T.pos.y += dt*variables->roomSpeed;
+                        if(isOn(&variables->playerMoveTimer)) {
+                            TimerReturnInfo info = updateTimer(&variables->playerMoveTimer, dt);
+
+                            e->T.pos.y = smoothStep01(e->roomStartPos.y, info.canonicalVal, e->roomStartPos.y - 1); 
+                            
+                            if(info.finished) {
+                                turnTimerOff(&variables->playerMoveTimer);
+                            }
+                        }
+                        // e->rb->dP.y = variables->roomSpeed;	
                     } else {
                         e->rb->dP.y = 0;
                     }
@@ -640,27 +624,14 @@ static inline void myEntity_addInstructionCard(MyGameState *gameState, GameInstr
     }
 }
 
-static inline void myEntity_checkHealthPoints(Entity *player, MyGameState *gameState, MyGameStateVariables *gameStateVariables) {
+static inline void myEntity_checkHealthPoints(Entity *player, MyGameState *gameState, MyGameStateVariables *gameStateVariables, EasyCamera *camera, MyEntityManager *manager, EasyTransitionState *transitionState) {
     if(player->healthPoints < 0) {
         assert(player->type == ENTITY_PLAYER);
         
-        player->healthPoints = player->maxHealthPoints;
-        //check game state
-        
-        gameState->lastGameMode = gameState->currentGameMode;
-        gameState->currentGameMode = MY_GAME_MODE_END_ROUND;
-        
-        setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
-        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
-        
-        setSoundType(AUDIO_FLAG_SCORE_CARD);
-        
-        gameStateVariables->pointLoadTimer = initTimer(0.3f*player->dropletCountStore, false);
-        gameStateVariables->lastCount = 0;
-        
-        gameState->animationTimer = initTimer(0.5f, false);
-        gameState->isIn = true;
-        
+        //NOTE(ollie): Send player back to overworld
+        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, camera, manager, gameStateVariables);
+        EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_CIRCLE_N64);
+
     }
 }
 
@@ -705,12 +676,17 @@ static inline void myEntity_startBoostPad(MyGameStateVariables *gameStateVariabl
 
 ///////////////////////************ Post collision update *************////////////////////
 
-static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, float dt, u32 flags) {
+static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyGameStateVariables *gameStateVariables, AppKeyStates *keyStates, RenderGroup *renderGroup, Matrix4 viewMatrix, Matrix4 perspectiveMatrix, EasyTransitionState *transitionState, EasyCamera *camera, float dt, u32 flags) {
     DEBUG_TIME_BLOCK();
     RenderProgram *mainShader = &glossProgram;
     renderSetShader(renderGroup, mainShader);
     setViewTransform(renderGroup, viewMatrix);
     setProjectionTransform(renderGroup, perspectiveMatrix);
+
+    ///////////////////////************* Update Camera ************////////////////////
+
+    camera->pos.y = lerp(camera->pos.y, 10*dt, gameStateVariables->player->T.pos.y);
+    ////////////////////////////////////////////////////////////////////
     
     for(int i = 0; i < manager->entities.count; ++i) {
         Entity *e = (Entity *)getElement(&manager->entities, i);
@@ -806,6 +782,35 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                                 
                                 myEntity_spinEntity(e);
                             }					
+                        }
+                    } break;
+                    case ENTITY_END_LEVEL: {
+                        //NOTE(ollie): Update the animation
+                        char *animationOn = UpdateAnimation(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, dt, 0);
+                        e->sprite = findTextureAsset(animationOn);
+
+                        //NOTE(ollie): Check for the collision with player
+                        if(!isOn(&e->fadeTimer) && e->collider->collisionCount > 0) {
+
+                            MyEntity_CollisionInfo info = MyEntity_hadCollisionWithType(manager, e->collider, ENTITY_PLAYER, EASY_COLLISION_ENTER); 
+                            
+                            //NOTE(ollie): There was a collision
+                            if(info.found) {
+                                assert(info.e->type == ENTITY_PLAYER);
+
+                                //NOTE(ollie): This is so we don't acccidently transition when were editing the level. 
+                                //TODO(ollie): Not needed on actually game build 
+                                // if(!DEBUG_global_PauseGame) 
+                                {
+                                    //NOTE(ollie): Send player back to overworld
+                                    MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, camera, manager, gameStateVariables);
+                                    EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_CIRCLE_N64);
+
+                                    //NOTE(ollie): Add the amber count, so they can use it out in the overworld
+                                    gameState->amberCount += info.e->dropletCountStore;
+                                }
+                                
+                            }                   
                         }
                     } break;
                     case ENTITY_TELEPORTER: {
@@ -1142,8 +1147,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                                 
                                 ///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
                                 if(myEntity_canPlayerBeHurt(player)) {
-                                    // myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
-                                    // myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+                                    myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
+                                    myEntity_checkHealthPoints(player, gameState, gameStateVariables, camera, manager, transitionState);
                                 }
                                 
                                 ////////////////////////////////////////////////////////////////////
@@ -1214,7 +1219,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                                 ///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
                                 if(myEntity_canPlayerBeHurt(player)) {
                                     myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
-                                    myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+                                    myEntity_checkHealthPoints(player, gameState, gameStateVariables, camera, manager, transitionState);
                                     myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
                                 }
                                 
@@ -1275,7 +1280,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                                 ///////////////////////************ Generic stuff for all things that hurt the player *************////////////////////
                                 if(myEntity_canPlayerBeHurt(player)) {
                                     myEntity_decreasePlayerHealthPoint(player, gameStateVariables);
-                                    myEntity_checkHealthPoints(player, gameState, gameStateVariables);
+                                    myEntity_checkHealthPoints(player, gameState, gameStateVariables, camera, manager, transitionState);
                                     myEntity_addInstructionCard(gameState, GAME_INSTRUCTION_CRAMP);
                                 }
                                 
@@ -1304,7 +1309,8 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     case ENTITY_ROOM: {
                         V3 roomWorldP = easyTransform_getWorldPos(&e->T);
                         if(gameStateVariables->mostRecentRoom == e) { //NOTE(ollie): Is the last room created, so see if it is time to create a new room
-                            if(roomWorldP.y <= -MY_ROOM_HEIGHT) {
+                            float boundaryToCreate = 0.5f*MY_ROOM_HEIGHT;
+                            if(roomWorldP.y <= boundaryToCreate) {
                                 V3 newPos = easyTransform_getWorldPos(&gameStateVariables->lastRoomCreated->T);
                                 newPos.y += MY_ROOM_HEIGHT;
                                 MyEntity_AddToCreateList(manager, ENTITY_ROOM, newPos);
@@ -1351,6 +1357,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                 //NOTE(ollie): Set the teleporter sound to the correct location
                 e->playingSound->location = easyTransform_getWorldPos(&e->T);
             }
+
             
             setModelTransform(renderGroup, easyTransform_getTransform(&e->T));
             
@@ -1802,6 +1809,57 @@ static Entity *initEnemyBullet(MyEntityManager *m, V3 pos) {
 
 ////////////////////////////////////////////////////////////////////
 
+//NOTE(ollie): End level teleport
+
+static Entity *initEndLevelTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGameState *gameState) {
+    Entity *e = (Entity *)getEmptyElement(&m->entities);
+    
+    e->name = "End level Teleporter";
+    float width = 7.0f;
+    
+    ///////////////////////************* Setup the animation ************////////////////////
+    //NOTE(ollie): Set the sentinel up
+    e->animationListSentintel.Next = e->animationListSentintel.Prev = &e->animationListSentintel;
+    ////////////////////////////////////////////////////////////////////
+    //NOTE(ollie): Add the animation to the list
+    AddAnimationToList(&gameState->animationItemFreeListPtr, &globalLongTermArena, &e->animationListSentintel, &m->teleporterAnimation);
+    
+    ////////////////////////////////////////////////////////////////////
+    
+    easyTransform_initTransform_withScale(&e->T, pos, v3(width, width, 1), EASY_TRANSFORM_STATIC_ID); 
+    if(parent) e->T.parent = &parent->T;
+    
+    e->active = true;
+#if DEBUG_ENTITY_COLOR
+    e->colorTint = COLOR_PINK;
+#else 
+    e->colorTint = COLOR_WHITE;
+#endif
+    e->type = ENTITY_END_LEVEL;
+    
+    e->fadeTimer = initTimer(0.3f, false);
+    turnTimerOff(&e->fadeTimer);
+    
+    ////Physics 
+    
+    e->rb = EasyPhysics_AddRigidBody(&m->physicsWorld, 1 / 10.0f, 0);
+    e->collider = EasyPhysics_AddCollider(&m->physicsWorld, &e->T, e->rb, EASY_COLLIDER_SPHERE, NULL_VECTOR3, true, v3(0.5f*width, 0, 0));
+    /////
+    
+    //NOTE(ollie): Play the teleporter sound
+
+    e->playingSound = playLocationGameSound(&globalLongTermArena, easyAudio_findSound("teleporter.wav"), 0, AUDIO_FOREGROUND, easyTransform_getWorldPos(&e->T));
+    EasySound_LoopSound(e->playingSound);
+
+    ////////////////////////////////////////////////////////////////////
+
+    return e;
+    
+    
+    
+}
+
+////////////////////////////////////////////////////////////////////
 //NOTE(ollie): Teleporter
 
 static Entity *initTeleporter(MyEntityManager *m, V3 pos, Entity *parent, MyGameState *gameState) {
@@ -2158,7 +2216,7 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         clampedPosition = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
         
         //NOTE(ollie): Clamp the position to be inside the lanes
-        clampedPosition.y = clamp(0, clampedPosition.y, MY_ROOM_HEIGHT);
+        // clampedPosition.y = clamp(0, clampedPosition.y, MY_ROOM_HEIGHT);
     }
 
     switch(type) {
@@ -2180,6 +2238,9 @@ static Entity *initEntityByType(MyEntityManager *entityManager, V3 worldP, Entit
         case ENTITY_BOSS: {
             //NOTE(ollie): Boss doesn't move with the room
             result = initBoss(entityManager, bossType, worldP, 0);
+        } break;
+        case ENTITY_END_LEVEL: {
+            result = initEndLevelTeleporter(entityManager, worldP, room, gameState);
         } break;
         case ENTITY_ENEMY: { 
             //NOTE(ollie): Enemies don't move with the room 
@@ -2255,6 +2316,20 @@ static void cleanUpEntities(MyEntityManager *manager, MyGameStateVariables *vari
                 }
                 memset(e, 0, sizeof(Entity));
                 assert(e->T.parent == 0);
+
+
+                //NOTE(ollie): Make sure we cleanup an other memory the entities are using here 
+                if(e->type == ENTITY_TELEPORTER) {
+                   
+                    easyAnimation_emptyAnimationContollerList(&gameState->animationItemFreeListPtr, &e->animationListSentintel);   
+                }
+                
+                if(e->playingSound) {
+                    easySound_endSound(e->playingSound);
+                }
+                ////////////////////////////////////////////////////////////////////
+                
+
 
 
                 removeElement_ordered(&manager->entities, i);

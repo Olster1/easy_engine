@@ -1608,6 +1608,10 @@ static inline bool easyMath_rayVsAABB3f(V3 origin, V3 dir, Rect3f b, V3 *hitPoin
     return true;              /* ray hits box */
 }
 
+#define X_AXIS v3(1, 0, 0)
+#define Y_AXIS v3(0, 1, 0)
+#define Z_AXIS v3(0, 0, 1)
+
 #define NULL_VECTOR2 v2(0, 0)
 #define NULL_VECTOR3 v3(0, 0, 0)
 

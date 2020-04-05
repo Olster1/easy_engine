@@ -5,17 +5,22 @@ typedef struct {
 	MyEntityManager *entityManager;
 	MyGameStateVariables *gameVariables;
 
-	Entity * player;
-
 	EasyCamera *camera;
 } MyTransitionData;
 
-static MyTransitionData *getTransitionData(MyGameState *gameState, MyGameMode newMode, EasyCamera *camera) {
-	MyTransitionData *result = (MyTransitionData *)malloc(sizeof(MyTransitionData));
+static MyTransitionData *getTransitionData(MyGameState *gameState, MyGameMode newMode, EasyCamera *camera, MyEntityManager *entityManager, MyGameStateVariables *gameVariables) {
+	//NOTE(ollie): We free this when 
+	MyTransitionData *result = (MyTransitionData *)easyPlatform_allocateMemory(sizeof(MyTransitionData), EASY_PLATFORM_MEMORY_ZERO);
 
 	result->gameState = gameState;
 	result->newMode = newMode;
 	result->camera = camera;
 
+	result->entityManager = entityManager;
+	result->gameVariables = gameVariables;
+
 	return result;
 }
+
+
+static void transitionCallBack(void *data_);

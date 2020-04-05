@@ -96,6 +96,21 @@ static void AddAnimationToList(animation_list_item **AnimationItemFreeListPtr, A
     
 }
 
+static void easyAnimation_emptyAnimationContollerList(animation_list_item **AnimationItemFreeListPtr, animation_list_item *AnimationListSentintel) {
+    //NOTE(ollie): While still things on the list
+    while(AnimationListSentintel->Next != AnimationListSentintel) {
+        animation_list_item *Item = AnimationListSentintel->Next;
+        //Remove from linked list
+        AnimationListSentintel->Next = Item->Next;
+        Item->Next->Prev = AnimationListSentintel;
+        
+        //Add to free list
+        Item->Next = *AnimationItemFreeListPtr;
+        *AnimationItemFreeListPtr = Item;
+    }
+    
+}
+
 static char *UpdateAnimation(animation_list_item **AnimationItemFreeListPtr, Arena *arena, animation_list_item *AnimationListSentintel, float dt, animation *NextAnimation) {
     animation_list_item *Item = AnimationListSentintel->Next;
     assert(Item != AnimationListSentintel);

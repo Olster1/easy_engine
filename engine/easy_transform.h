@@ -44,24 +44,32 @@ static inline void easyTransform_initTransform_withScale(EasyTransform *t, V3 po
 }
 
 static inline Matrix4 easyTransform_getTransform(EasyTransform *T) {
-	Matrix4 result;
-	EasyTransform *parent = T->parent;
-	Quaternion q = T->Q;
-	V3 s = T->scale;
-	V3 pos = T->pos;
+	Matrix4 result = mat4();
+	EasyTransform *parent = T;
+
+	/*
+	//NOTE(ollie): The way the transform works is that it keeps the translate out seperatley,
+					so things can just add the translation & doesn't effect the rotation of it 
+	*/
+
+	V3 translation = v3(0, 0, 0);
 	while(parent) {
-		s = v3_hadamard(s, parent->scale);
-		pos = v3_plus(pos, parent->pos);
-		q = quaternion_mult(parent->Q, q);
+
+		Matrix4 thisT = Matrix4_scale(mat4(), parent->scale);
+		thisT = Mat4Mult(quaternionToMatrix(parent->Q), thisT);
+		
+
+		//NOTE(ollie): Add the translation
+		translation = v3_plus(parent->pos, translation);
+
+		//NOTE(ollie): Combine it with the result
+		result = Mat4Mult(result, thisT);
+
 		parent = parent->parent;
 	}
 
-	//@speed This could proabably be speed up. Finding a formula that takes SQT & turns it into a matrix 
-	//Mmm, not sure the effect if I scale first then rotate, or vice versa?
-	result = quaternionToMatrix(q);
-	result = Mat4Mult(Matrix4_scale(mat4(), s), result);
-	result = Mat4Mult(Matrix4_translate(mat4(), pos), result);
-	////
+	//NOTE(ollie): Add the translation component. See comment above to see why
+	result = Mat4Mult(Matrix4_translate(mat4(), translation), result);
 
 	T->T = result;
 

@@ -9,5 +9,7 @@ void main (void) {
 	vec4 b = colorOut*colorOut.w;
 	vec4 c = b*texColor;
 	c *= alpha;
+
+	if(alpha == 0) discard;
     color = c;
 }

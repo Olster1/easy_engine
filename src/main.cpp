@@ -1,12 +1,13 @@
 #include "defines.h"
 #include "easy_headers.h"
 
+#include "myMissions.h"
 #include "myEntity.h"
 #include "myGameState.h"
 #include "world_generator.c"
+#include "myTransitions.h"
 #include "myEntity.c"
 #include "mySaveLoad.h"
-#include "myTransitions.h"
 //#include "myDialogue.h"
 #include "myOverworld.h"
 #include "myOverworld.c"
@@ -24,8 +25,9 @@ MY_GAME_MODE_END_ROUND,
 MY_GAME_MODE_INSTRUCTION_CARD,
 MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
+MY_GAME_MODE_MISSIONS
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_START_MENU//MY_GAME_MODE_OVERWORLD //MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_START_MENU //MY_GAME_MODE_OVERWORLD // // MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -60,16 +62,14 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     //NOTE(ollie): No tags to start with
     gameState->currentRoomTagCount = 0;
     ////////////////////////////////////////////////////////////////////
+
+    ///////////////////////************* Init World State ************////////////////////
         
     gameState->worldState = pushStruct(&globalLongTermArena, MyWorldState);
-    
-    myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(MY_WORLD_BOSS |
-    MY_WORLD_FIRE_BOSS |
-    MY_WORLD_PUZZLE |
-    MY_WORLD_ENEMIES |
-    MY_WORLD_OBSTACLES |
-    MY_WORLD_SPACE));
+    myWorlds_initWorldState(gameState->worldState);
 
+    ////////////////////////////////////////////////////////////////////
+    
     turnTimerOff(&gameState->animationTimer);
     gameState->isIn = false;
     
@@ -84,6 +84,14 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
         DEBUG_global_CameraMoveXY = true;
         
         cam->pos.z = -12;
+    } else if(GAME_STATE_TO_LOAD == MY_GAME_MODE_PLAY) {
+        myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(MY_WORLD_BOSS |
+        MY_WORLD_FIRE_BOSS |
+        MY_WORLD_PUZZLE |
+        MY_WORLD_ENEMIES |
+        MY_WORLD_OBSTACLES |
+        MY_WORLD_SPACE), 1028);
+
     }
     
     setSoundType(AUDIO_FLAG_MAIN);
@@ -100,7 +108,41 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     gameState->holdingAltitudeSlider = false;
     
     ////////////////////////////////////////////////////////////////////
+
+
+    ///////////////////////************* Init player state ************////////////////////
+    //NOTE(ollie): This will eventually be loaded from a save file
+    gameState->amberCount = 0;
+    gameState->itemCount = 0;
+    ////////////////////////////////////////////////////////////////////
+
+    //NOTE(ollie): Mission Notification Timer
+    gameState->missionNotficationTimer = initTimer(5.0f, false); 
+    turnTimerOff(&gameState->missionNotficationTimer);
     
+    ///////////////////////************ Main menu stuff*************////////////////////
+    particle_system_settings ps_set = InitParticlesSettings(PARTICLE_SYS_DEFAULT);
+
+    ps_set.VelBias = rect2f(5, -1, 10, 1);
+    ps_set.posBias = rect2f(0, -10, 0, 10);
+
+    // ps_set.angleForce = v2(1, 10);
+
+    ps_set.bitmapScale = 0.7f;
+
+    pushParticleBitmap(&ps_set, findTextureAsset("light_01.png"), "particle1");
+    // pushParticleBitmap(&ps_set, findTextureAsset("light_02.png"), "particle2");
+
+    InitParticleSystem(&gameState->mainMenu_particleSystem, &ps_set, 128);
+
+    setParticleLifeSpan(&gameState->mainMenu_particleSystem, 3.0f);
+
+    gameState->mainMenu_particleSystem.Active = true;
+    gameState->mainMenu_particleSystem.Set.Loop = true;
+
+    prewarmParticleSystem(&gameState->mainMenu_particleSystem, v3(1, 0, 0));
+    ////////////////////////////////////////////////////////////////////
+
     return gameState;
 } 
 
@@ -158,6 +200,10 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
     gameVariables->maxPlayerMoveSpeed = 1.0f;
     gameVariables->player = 0;
 
+    
+    gameVariables->playerMoveTimer = initTimer(0.7f, false); 
+    turnTimerOff(&gameVariables->playerMoveTimer);
+
     gameVariables->totalAmmoCount = MY_PLAYER_MAX_AMMO_COUNT;
     
     gameVariables->liveTimerCount = 0;
@@ -208,6 +254,36 @@ static void myGame_beginRound(MyGameState *gameState, MyGameStateVariables *game
     
 }
 
+static void transitionCallBack(void *data_) {
+    MyTransitionData *data = (MyTransitionData *)data_;
+    
+    data->gameState->lastGameMode = data->gameState->currentGameMode;
+    data->gameState->currentGameMode = data->newMode;
+    
+    if(data->newMode == MY_GAME_MODE_PLAY) {
+        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
+        setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
+    } else {
+        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0.5f);
+        setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0.5f);
+    }
+
+    //NOTE(ollie): Clear the round & begin new one
+    easyEntity_endRound(data->entityManager);
+    cleanUpEntities(data->entityManager, data->gameVariables, data->gameState);
+
+    if(data->newMode == MY_GAME_MODE_PLAY) {
+        myGame_beginRound(data->gameState, data->gameVariables, data->entityManager, data->camera);
+    }
+    ////////////////////////////////////////////////////////////////////
+
+    //NOTE(ollie): Unpause round it paused
+    DEBUG_global_PauseGame = false;
+
+    //NOTE(ol): Right now just using malloc & free
+    easyPlatform_freeMemory(data);
+}
+
 
 static void transitionCallBackRestartRound(void *data_) {
     MyTransitionData *data = (MyTransitionData *)data_;
@@ -223,21 +299,7 @@ static void transitionCallBackRestartRound(void *data_) {
     
     
     //NOTE(ol): Right now just using malloc & free
-    free(data);
-}
-
-
-static void transitionCallBack(void *data_) {
-    MyTransitionData *data = (MyTransitionData *)data_;
-    
-    data->gameState->lastGameMode = data->gameState->currentGameMode;
-    data->gameState->currentGameMode = data->newMode;
-    
-    setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0.5f);
-    setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0.5f);
-    
-    //NOTE(ol): Right now just using malloc & free
-    free(data);
+    easyPlatform_freeMemory(data);
 }
 
 static EasyTerrain *initTerrain(EasyModel fern, EasyModel grass) {
@@ -298,7 +360,7 @@ int main(int argc, char *args[]) {
         }
     }
     
-    V2 screenDim = v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
+    V2 screenDim = v2(0, 0);//v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
     V2 resolution = v2(DEFINES_RESOLUTION_X, DEFINES_RESOLUTION_Y);
     
     // screenDim = resolution;
@@ -328,6 +390,7 @@ int main(int argc, char *args[]) {
         }
 
         loadAndAddImagesToAssets("img/material_textures/");
+        loadAndAddImagesToAssets("img/extra_space_game_images/");
 
         {
             //NOTE(ollie): Compile obj files
@@ -468,7 +531,7 @@ int main(int argc, char *args[]) {
 
         MyGameStateVariables gameVariables = {};
         
-        if(GAME_STATE_TO_LOAD != MY_GAME_MODE_EDIT_LEVEL) {
+        if(GAME_STATE_TO_LOAD == MY_GAME_MODE_PLAY) {
             myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
         } else {
             myGame_resetGameVariables(&gameVariables, &camera);
@@ -483,9 +546,15 @@ int main(int argc, char *args[]) {
         
         EasySound_LoopSound(playGameSound(&globalLongTermArena, easyAudio_findSound("jazzChill.wav"), 0, AUDIO_BACKGROUND));
         EasySound_LoopSound(playScoreBoardSound(&globalLongTermArena, easyAudio_findSound("ambient1.wav"), 0, AUDIO_BACKGROUND));
-        
-        setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0);
-        setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0);
+            
+
+        if(GAME_STATE_TO_LOAD == MY_GAME_MODE_PLAY) {
+            setParentChannelVolume(AUDIO_FLAG_MAIN, 1, 0);
+            setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 0, 0);
+        } else {
+            setParentChannelVolume(AUDIO_FLAG_MAIN, 0, 0);
+            setParentChannelVolume(AUDIO_FLAG_SCORE_CARD, 1, 0);
+        }
         ////////////////////////////////////////////////////////////////////  
         
         ////////////*** Variables *****//////
@@ -791,7 +860,7 @@ int main(int argc, char *args[]) {
                 
                 ///////////////////////********* Drawing the background ****************////////////////////
                 {
-                Texture *bgTexture = findTextureAsset("fez.jpg");
+                Texture *bgTexture = findTextureAsset("fez2.png");
                 
                 float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
                 float xWidth = resolution.x;
@@ -820,7 +889,7 @@ int main(int argc, char *args[]) {
                 ////////////////////////////////////////////////////////////////////
                     
                 renderDisableBatchOnZ(globalRenderGroup);
-                updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.dt, updateFlags);
+                updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, transitionState, &camera, appInfo.dt, updateFlags);
                 drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
                 renderEnableBatchOnZ(globalRenderGroup);
 
@@ -954,31 +1023,11 @@ int main(int argc, char *args[]) {
             ///////////////////////************* Update the other game modes ************////////////////////
             static float zCoord = 1.0f; 
             
-            if(DEBUG_global_DrawFrameRate) {
-                char frameRate[256];
-                float xAt = 0.1f*resolution.x;
-                snprintf(frameRate, arrayCount(frameRate), "%f", 1.0f / appInfo.dt);
-                Rect2f bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->entities.count);
-                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.rigidBodies.count);
-                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.colliders.count);
-                outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                    
-            }
-            
+          
             switch (gameState->currentGameMode) {
                 case MY_GAME_MODE_START_MENU: {
                     {
-                        Texture *bgTexture = findTextureAsset("fez.jpg");
+                        Texture *bgTexture = findTextureAsset("fez2.png");
                         
                         float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
                         float xWidth = resolution.x;
@@ -991,14 +1040,18 @@ int main(int argc, char *args[]) {
 
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
                         
-                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, &camera);
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, &camera, entityManager, &gameVariables);
                         EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
                         
                     }
-                    
-                    Texture *spaceship = findTextureAsset("spaceship.png");
-                    renderTextureCentreDim(spaceship, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*spaceship->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
-                    outputTextNoBacking(debugFont, resolution.x / 2, resolution.y / 2, NEAR_CLIP_PLANE, resolution, "Gravity's Engine", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                    {
+                        float yAt = (0.9f*resolution.y / 2);
+
+                        Rect2f margin = rect2fMinDim(resolution.x / 2, 0, 0.3f*resolution.x, INFINITY);
+                        Texture *spaceship = findTextureAsset("spaceship.png");
+                        renderTextureCentreDim(spaceship, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*spaceship->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
+                        outputTextNoBacking(debugFont, resolution.x / 2, yAt, NEAR_CLIP_PLANE, resolution, "Gravity's Engine", margin, COLOR_BLACK, 1.5, true, appInfo.screenRelativeSize);
+                    }
                     
                 } break;
                 case MY_GAME_MODE_PLAY: {
@@ -1015,6 +1068,55 @@ int main(int argc, char *args[]) {
                     }
                     
                     outputTextNoBacking(mainFont, resolution.x / 2, resolution.y / 2, zCoord, resolution, "IS PAUSED!", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                } break;
+                case MY_GAME_MODE_MISSIONS: {
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&console)) {
+                        gameState->animationTimer = initTimer(0.5f, false);
+                        gameState->isIn = false;
+                    }
+                    
+                    float xAt = 0;
+                    
+                    if(isOn(&gameState->animationTimer)) {
+                        TimerReturnInfo timerInfo = updateTimer(&gameState->animationTimer, appInfo.dt);    
+                        
+                        if(gameState->isIn) {
+                            xAt = lerp(-resolution.x, timerInfo.canonicalVal, xAt);
+                        } else {
+                            xAt = lerp(xAt, timerInfo.canonicalVal, -resolution.x);
+                        }
+                        
+                        if(timerInfo.finished) {
+                            turnTimerOff(&gameState->animationTimer);
+                            if(!gameState->isIn) {
+                                gameState->lastGameMode = gameState->currentGameMode;
+                                gameState->currentGameMode = MY_GAME_MODE_OVERWORLD;
+                            }
+                        }
+                    } 
+
+                    float yAt = 0.1f*resolution.y;
+
+                    float fontSize = 1.3f;
+
+                    Rect2f margin = rect2fMinDim(xAt, yAt - mainFont->fontHeight, 0.9f*resolution.x, INFINITY);
+                    gameState->missionLerpValue = lerp(gameState->missionLerpValue, appInfo.dt, 1);
+
+                    ///////////////////////********** Draw backing***************////////////////////
+                    renderDrawRectCenterDim(v3(xAt, 0, 1), v2_scale(0.7f, v2(resolution.x, resolution.y)), COLOR_WHITE, 0, mat4(), OrthoMatrixToScreen(resolution.x, resolution.y));
+                    ////////////////////////////////////////////////////////////////////
+
+                    ///////////////////////********** Draw title ***************////////////////////
+                    Rect2f a = outputTextNoBacking(mainFont, xAt + 0.5f*resolution.x , yAt, NEAR_CLIP_PLANE, resolution, "Missions:", margin, lerpV4(v4(0, 0, 0, 0), gameState->missionLerpValue, COLOR_BLACK), fontSize, true, 1.0f);
+                    yAt += getDim(a).y;
+                    ////////////////////////////////////////////////////////////////////
+
+                    for(int i = 0; i < gameState->missionCount; i++) {
+                        MyMission *mission = gameState->missions[i]; 
+
+                        a = outputTextNoBacking(mainFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, mission->title, margin, lerpV4(v4(0, 0, 0, 0), gameState->missionLerpValue, COLOR_BLACK), fontSize, true, 1.0f);
+                        yAt += getDim(a).y;
+                    }
                 } break;
                 case MY_GAME_MODE_INSTRUCTION_CARD: {
                     
@@ -1084,10 +1186,7 @@ int main(int argc, char *args[]) {
                 case MY_GAME_MODE_END_ROUND: {
                     
                     if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(transitionState) && !easyConsole_isConsoleOpen(&console)) {
-                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera);
-                        data->entityManager = entityManager;
-                        data->gameVariables = &gameVariables;
-                        data->player = gameVariables.player;
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera, entityManager, &gameVariables);
                         EasyTransition_PushTransition(transitionState, transitionCallBackRestartRound, data, EASY_TRANSITION_FADE);
                         
                         gameState->animationTimer = initTimer(0.5f, false);
@@ -1160,7 +1259,7 @@ int main(int argc, char *args[]) {
                 case MY_GAME_MODE_OVERWORLD: {
                     ///////////////////////********* Drawing the background ****************////////////////////
                     {
-                    Texture *bgTexture = findTextureAsset("fez.jpg");
+                    Texture *bgTexture = findTextureAsset("fez2.png");
                     
                     float aspectRatio = (float)bgTexture->height / (float)bgTexture->width;
                     float xWidth = resolution.x;
@@ -1171,8 +1270,86 @@ int main(int argc, char *args[]) {
                     renderClearDepthBuffer(toneMappedBuffer.bufferId);
                     }
 
+                    {
+                        ///////////////////////************** Draw ui to show how many cyrstals the player has ***********////////////////////
+                        char buffer[512];
+                        // sprintf(buffer, "%d", player->healthPoints);
+                        
+                        Texture *dropletTex = findTextureAsset("crystal.png");
+                        float aspectRatio = (float)dropletTex->height / (float)dropletTex->width;
+                        float xWidth = 0.05f*resolution.x;
+                        float xHeight = xWidth*aspectRatio;
+                        renderTextureCentreDim(dropletTex, v3(0.1f*resolution.x, 0.1f*resolution.y, NEAR_CLIP_PLANE + 0.1f), v2(xWidth, xHeight), COLOR_WHITE, 0, mat4TopLeftToBottomLeft(resolution.y), mat4(),  OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));
+                        sprintf(buffer, "%d", gameVariables.player->dropletCount);
+                        outputText(mainFont, 0.15f*resolution.x, 0.1f*resolution.y + 0.3f*xHeight, NEAR_CLIP_PLANE + 0.1f, resolution, buffer, InfinityRect2f(), COLOR_WHITE, 1, true, appInfo.screenRelativeSize);
+                        
+                    }
+
+                    //NOTE(ollie): Draw Mission notification
+                    if(isOn(&gameState->missionNotficationTimer)) {
+                        TimerReturnInfo timerInfo = updateTimer(&gameState->missionNotficationTimer, appInfo.dt);    
+                        
+                        float canVal = timerInfo.canonicalVal;
+
+                        if(canVal < 0.3f) {
+                            canVal = inverse_lerp(0, canVal, 0.3f);
+                        } else if(canVal > 0.7f) {
+                            canVal = inverse_lerp(0.7f, canVal, 1.0f);
+                            canVal = 1.0f - canVal;
+                        } else {
+                            canVal = 1.0f;
+                        }
+                        
+                        canVal = smoothStep01(0, canVal, 1);
+                        char *text = (gameState->completedMission) ? "Mission Complete!" : "Mission Added";
+
+                        float notificationWidth = 0.3f*resolution.x;
+
+                        assert(canVal >= 0.0f && canVal <= 1.0f);
+
+                        float xAt = resolution.x - canVal*notificationWidth;
+                        float yAt = 0.1f*resolution.y;
+                        
+                        Rect2f margin = rect2fMinDim(xAt, yAt - mainFont->fontHeight, notificationWidth, INFINITY);
+
+                        Rect2f bounds = outputText(mainFont, xAt, yAt, NEAR_CLIP_PLANE, resolution, text, margin, COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+
+                        bounds.max.x = resolution.x;
+
+                        renderDrawRect(bounds, NEAR_CLIP_PLANE + 0.01f, COLOR_GOLD, 0, mat4TopLeftToBottomLeft(resolution.y), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+
+                        if(timerInfo.finished) {
+                            turnTimerOff(&gameState->missionNotficationTimer);
+                        }
+                    }
+                    ////////////////////////////////////////////////////////////////////
+
+
                     //NOTE(ollie): This is the overworld chooser, where we choose our level
-                    myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor, appInfo.dt, gameState);
+                    MyOverworld_ReturnData returnData = myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor, appInfo.dt, gameState);
+
+                    
+                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&console) && !returnData.transitionToLevel) {
+                        gameState->animationTimer = initTimer(0.5f, false);
+                        gameState->isIn = true;
+                        gameState->missionLerpValue = 0.0f;
+
+                        gameState->lastGameMode = gameState->currentGameMode;
+                        gameState->currentGameMode = MY_GAME_MODE_MISSIONS;
+
+                    }
+
+                    ////////////////////////////////////////////////////////////////////
+                    //NOTE(ollie): Update any changes that need to be made
+                    if(returnData.transitionToLevel) {
+                        myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(returnData.levelFlagsToLoad), returnData.levelLength);
+                            
+                        MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera, entityManager, &gameVariables);
+                        EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_CIRCLE_N64);
+
+                    }
+
+                        
                 } break;    
                 case MY_GAME_MODE_START: {
                     
@@ -1522,6 +1699,40 @@ int main(int argc, char *args[]) {
                     assert(false);
                 }
             }
+
+            //NOTE(ollie): Draw particle system for overworld & main menu
+            if(gameState->currentGameMode == MY_GAME_MODE_START_MENU || gameState->currentGameMode == MY_GAME_MODE_OVERWORLD) {
+                //NOTE(ollie): Particle System
+                
+                renderSetShader(globalRenderGroup, &textureProgram);
+
+                Matrix4 viewMatrix = easy3d_getWorldToView(&camera);
+                setViewTransform(globalRenderGroup, viewMatrix);
+                setProjectionTransform(globalRenderGroup, perspectiveMatrix);
+                drawAndUpdateParticleSystem(globalRenderGroup, &gameState->mainMenu_particleSystem, v3(-20, 0, 1), appInfo.dt, v3(0, 0, 0), COLOR_WHITE, true);
+            }
+
+            if(DEBUG_global_DrawFrameRate) {
+                char frameRate[256];
+                float xAt = 0.1f*resolution.x;
+                snprintf(frameRate, arrayCount(frameRate), "%f", 1.0f / appInfo.dt);
+                Rect2f bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->entities.count);
+                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.rigidBodies.count);
+                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                xAt += 1.5f*getDim(bounds).x;
+                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.colliders.count);
+                outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
+                
+                    
+            }
+            
             
             ////////////////////////////////////////////////////////////////////
             /*
@@ -1683,6 +1894,13 @@ int main(int argc, char *args[]) {
                             gameState->currentGameMode = MY_GAME_MODE_PLAY;
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
+
+                            myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(MY_WORLD_BOSS |
+                            MY_WORLD_FIRE_BOSS |
+                            MY_WORLD_PUZZLE |
+                            MY_WORLD_ENEMIES |
+                            MY_WORLD_OBSTACLES |
+                            MY_WORLD_SPACE), 1028);
                             
                             myGame_beginRound(gameState, &gameVariables, entityManager, &camera);
 

@@ -1,0 +1,6 @@
+{	width: 512;
+	height: 619;
+	uvCoords: 0.000610 0.000610 0.125000 0.151123;
+	name: "cup_empty.png";
+	fullName: "C:\Users\olive\Documents\easy_engine\bin\../res/img/spaceGame/cup_empty.png";
+}

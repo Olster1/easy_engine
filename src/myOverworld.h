@@ -4,6 +4,7 @@ FUNC(OVERWORLD_ENTITY_SHIP)\
 FUNC(OVERWORLD_ENTITY_PERSON)\
 FUNC(OVERWORLD_ENTITY_SHOP)\
 FUNC(OVERWORLD_ENTITY_LEVEL)\
+FUNC(OVERWORLD_ENTITY_COLLISION)\
 
 typedef enum {
 	MY_OVERWORLD_ENTITY_TYPE(ENUM)
@@ -12,25 +13,60 @@ typedef enum {
 static char *MyOverworldEntity_EntityTypeStrings[] = { MY_OVERWORLD_ENTITY_TYPE(STRING) };
 
 typedef struct {
+	//NOTE(ollie): The mission
+	MyMission *mission;
+
+	//NOTE(ollie): The message & responses
+	char *message;
+	char *yesAnswer;
+	char *noAnswer;
+	
+} MyMessage;
+
+typedef struct {
+	bool transitionToLevel;
+	u64 levelFlagsToLoad;
+	u32 levelLength;
+
+} MyOverworld_ReturnData;
+
+typedef struct {
 	OverworldEntityType type;
 	EasyTransform T;
 	V4 colorTint;
 
 	//NOTE(ollie): For the human types
-	char *message;
+	u32 messageCount;
+	u32 messageAt;
+	MyMessage messages[4];
+	bool resetMessage;
 	float lerpValue;
+
+	Texture *sprite;
+
+	
 	////////////////////////////////////////////////////////////////////
 
 	//NOTE(ollie): For the ship
+	//NOTE(ollie): For when we were using the mouse to move
 	V3 goalPosition;
-	float goalAngle;
+
+	particle_system shipFumes;
 	////////////////////////////////////////////////////////////////////
+	//NOTE(ollie): To rotate by itself
+	float goalAngle;
+	//NOTE(ollie): To move with arrow keys
+	V2 velocity;
+	////////////////////////////////////////////////////////////////////
+	float timeSinceLastBoost;
 
 	//NOTE(ollie): For the shop 
 	////////////////////////////////////////////////////////////////////
 
 	//NOTE(ollie): For the level 
-	u32 levelId;
+	u64 levelFlags;
+	//NOTE(ollie): Ideal level length, which should be save in the level description file
+	u32 levelLength;
 	//NOTE(ollie): Telelporter animation 
 	animation_list_item animationListSentintel;
 

@@ -31,3 +31,4 @@
 }
 
 	tag: "space";
+	tag: "amber";

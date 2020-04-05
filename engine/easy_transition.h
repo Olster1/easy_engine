@@ -4,7 +4,8 @@ typedef void transition_callback(void *data);
 
 typedef enum {
     EASY_TRANSITION_BLINDERS,
-    EASY_TRANSITION_FADE
+    EASY_TRANSITION_FADE,
+    EASY_TRANSITION_CIRCLE_N64
 } EasyTransitionType;
 
 typedef struct EasySceneTransition EasySceneTransition;
@@ -102,6 +103,12 @@ static bool EasyTransition_updateTransitions(EasyTransitionState *transState, V2
             } break;
             case EASY_TRANSITION_FADE: {
                 renderDrawRect(rect2f(0, 0, resolution.x, resolution.y), NEAR_CLIP_PLANE, v4(0, 0, 0, tValue), 0, mat4(), OrthoMatrixToScreen_BottomLeft(resolution.x, resolution.y));                    
+            } break;
+            case EASY_TRANSITION_CIRCLE_N64: {
+                EasyRender_CircleTransition_DataPacket *packet = (EasyRender_CircleTransition_DataPacket *)pushStruct(&globalPerFrameArena, EasyRender_CircleTransition_DataPacket);
+                
+                packet->circleRadius_01 = 1.0f - tValue;
+                renderBlitCircleTransition(globalRenderGroup, packet);
             } break;
             default: {
                 assert(false);

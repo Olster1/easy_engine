@@ -136,8 +136,10 @@ typedef struct PlayingSound {
     SoundType soundType;
     float volume; //percent of original volume
     
+    //NOTE(ollie): This is the next sound to play if it's looped or continues to next segment of song etc. 
     PlayingSound *nextSound;
     
+    //NOTE(ollie): The playing sounds is a big linked list, so this is pointing to the sound that's next into the list
     struct PlayingSound *next;
     
     //NOTE: For 3d sounds
@@ -150,6 +152,17 @@ typedef struct PlayingSound {
     //
 
 } PlayingSound;
+
+static void easySound_endSound(PlayingSound *sound) {
+    //NOTE(ollie): Since the sound is in a linked list, we can't remove
+    //NOTE(ollie):  it without prev pointer. So we just let the sound loop do it for us 
+    while(sound) {
+        sound->bytesAt = sound->wavFile->size;
+        sound = sound->nextSound;
+    }
+    
+    
+}
 
 typedef struct {
     //NOTE: Playing sounds lists
@@ -346,6 +359,13 @@ PlayingSound *playStartMenuSound(Arena *arena, WavFile *wavFile, PlayingSound *n
     result->soundType = AUDIO_FLAG_START_SCREEN;
     return result;
 }
+
+PlayingSound *playOverworldSound(Arena *arena, WavFile *wavFile, PlayingSound *nextSoundToPlay, AudioChannel channel) {
+    PlayingSound *result = playSound(arena, wavFile, nextSoundToPlay, channel);
+    result->soundType = AUDIO_FLAG_SCORE_CARD;
+    return result;
+}
+
 
 ///
 

@@ -1,0 +1,19 @@
+	id: 0;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 4.000000 0.000000;
+	rotation: 0.360864 -0.360865 -0.608092 0.608094;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 2;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 0.412464 -0.412468 0.574344 -0.574345;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
