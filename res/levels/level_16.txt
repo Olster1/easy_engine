@@ -1,0 +1,128 @@
+	id: 197;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: -1.970391 2.031625 -0.037278;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 194;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: -0.862045 2.031623 -0.037290;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 195;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: 2.096323 1.848100 -0.034093;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 196;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: 0.153937 2.000842 -0.036743;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 207;
+	teleporterId: 208;
+	entityType: "ENTITY_TELEPORTER";
+	position: -1.000000 1.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 209;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 2.000000 0.000000;
+	rotation: 0.705435 -0.705435 0.048596 -0.048595;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 212;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 2.000000 1.000000 0.000000;
+	rotation: 0.641355 -0.641266 -0.297882 0.297837;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 200;
+	modelName: "Arachnoid.obj";
+	entityType: "ENTITY_ENEMY";
+	position: 1.995696 2.308848 -0.041320;
+	rotation: 0.707107 -0.707107 0.000000 0.000000;
+	scale: 0.300000 0.300000 0.300000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 208;
+	teleporterId: 207;
+	entityType: "ENTITY_TELEPORTER";
+	position: 1.000000 3.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 201;
+	teleporterId: 202;
+	entityType: "ENTITY_TELEPORTER";
+	position: -1.000000 0.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 202;
+	teleporterId: 201;
+	entityType: "ENTITY_TELEPORTER";
+	position: 2.000000 1.000000 0.000000;
+	rotation: 1.000000 0.000000 0.000000 0.000000;
+	scale: 1.100000 1.100000 1.100000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 210;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 1.000000 0.000000;
+	rotation: -0.680313 0.680216 0.192992 -0.192964;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 206;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: 0.000000 3.000000 0.000000;
+	rotation: -0.370241 0.370239 0.602438 -0.602422;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	id: 211;
+	modelName: "Crystal.obj";
+	entityType: "ENTITY_DROPLET";
+	position: -1.000000 2.000000 0.000000;
+	rotation: -0.585831 0.585834 -0.395981 0.395980;
+	scale: 0.600000 0.600000 0.600000;
+	color: 1.000000 1.000000 1.000000 1.000000;
+}
+
+	tag: "space";
+	tag: "enemy";

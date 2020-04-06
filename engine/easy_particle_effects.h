@@ -45,8 +45,8 @@ struct particle_system_settings {
     Texture *Bitmaps[32];
     char *BitmapNames[32];
     unsigned int BitmapIndex;
-    Rect2f VelBias;
-    Rect2f posBias;
+    Rect3f VelBias;
+    Rect3f posBias;
 
     V2 angleBias;
     V2 angleForce;
@@ -131,7 +131,7 @@ inline void Reactivate(particle_system *System) {
 }
 
 inline void setParticleLifeSpan(particle_system *partSys, float value) {
-    partSys->creationTimer.period = 1.0f / value;
+    partSys->creationTimer.period = value / partSys->MaxParticleCount;
 }
 
 internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_system *System, V3 Origin, float dt, V3 Acceleration, V4 particleTint, bool render) {
@@ -144,7 +144,8 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
         depthFuncSaved = easyRender_setDepthFuncType(group, RENDER_DEPTH_FUNC_ALWAYS);
     }
     if(System->Active) {
-        float particleLifeSpan = 0;
+        float particleLifeSpan = System->creationTimer.period*System->MaxParticleCount;
+
         float GridScale = 0.4f;
         float Inv_GridScale = 1.0f / GridScale;
         
@@ -154,7 +155,7 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
 
         if(!System->Set.finished) {
             if(System->Set.type == PARTICLE_SYS_DEFAULT || System->Set.type == PARTICLE_SYS_SCALER) {        
-                particleLifeSpan = System->creationTimer.period*System->MaxParticleCount;
+                
                 Timer *timer = &System->creationTimer;
                 timer->value_ += dt;        
                 if(timer->value_ >= timer->period) {
@@ -180,11 +181,13 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
                     //NOTE(oliver): Paricles start with motion 
                     Particle->scale = v3(2, 2, 2);
                     Particle->P = v3(randomBetween(System->Set.posBias.min.x, System->Set.posBias.max.x),
-                                      randomBetween(System->Set.posBias.min.y, System->Set.posBias.max.y),
-                                     0);
+                                     randomBetween(System->Set.posBias.min.y, System->Set.posBias.max.y),
+                                     randomBetween(System->Set.posBias.min.z, System->Set.posBias.max.z));
+
                     Particle->dP = v3(randomBetween(System->Set.VelBias.min.x, System->Set.VelBias.max.x),
                                       randomBetween(System->Set.VelBias.min.y, System->Set.VelBias.max.y),
-                                      0);
+                                      randomBetween(System->Set.VelBias.min.z, System->Set.VelBias.max.z));
+
                     Particle->ddP = Acceleration;
                     Particle->lifeAt = 0;
 
@@ -361,34 +364,27 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
                 //NOTE(oliver): Color update
                 Particle->Color = v4_plus(v4_scale(dt, Particle->dColor), Particle->Color);
                 V4 Color = Particle->Color;
-                    
-    #if 0
-                float t_ = Particle->lifeAt / particleLifeSpan;
-                float alphaValue = smoothStep00(0, t_, 1);
-    #else
+                
+                ///////////////////////************ Update the alpha*************////////////////////
                 Particle->lifeAt += dt;
                 float minThreshold = 0.4f;
+                float maxThreshold = 0.8f;
+
                 float t = 1.0f;
-                if(Particle->lifeAt < minThreshold) {
-                    t = inverse_lerp(0, Particle->lifeAt, minThreshold);
+                float life_01 = (Particle->lifeAt / particleLifeSpan);
+                if(life_01 < minThreshold) {
+                    t =  life_01 / minThreshold;
                 }
-                float maxThreshold = particleLifeSpan - minThreshold;
-                if(Particle->lifeAt > maxThreshold) {
-                    t = inverse_lerp(particleLifeSpan, Particle->lifeAt, maxThreshold);
-                    
-                    if(t < 0) {
-                        t = 0;
-                    }
-                }
-                float alphaValue = t;
-    #endif
-
-                // assert(t >= 0 && t <= 1);
                 
-                alphaValue = clamp(0, alphaValue, 1);
+                if(life_01 > maxThreshold) {
+                    t =  (life_01 - maxThreshold) / (1.0f - maxThreshold);
+                    t = 1.0f - t;
+                }
 
-                Color.w = alphaValue;
-                // Color = COLOR_RED;
+                Color.w = clamp01(t);
+
+                ////////////////////////////////////////////////////////////////////
+               
                 
                 particle_system_settings *Set = &System->Set;
                 
@@ -423,11 +419,12 @@ internal inline void drawAndUpdateParticleSystem(RenderGroup *group, particle_sy
         }
         System->Set.LifeSpan -= dt;
         if(System->Set.LifeSpan <= 0.0f) {
+            //NOTE(ollie): Don't create anymore particles
             System->Set.finished = true;            
             
         }
 
-        if(System->Set.finished){// && deadCount == System->particleCount) {
+        if(System->Set.finished && deadCount == System->particleCount) {
             if(System->Set.Loop) {
                 Reactivate(System);
             } else {

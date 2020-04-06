@@ -100,8 +100,8 @@ static void myOverworld_initEntity_byType(MyGameState *gameState, MyOverworldSta
 				///////////////////////************* Particle system ************////////////////////
 				particle_system_settings ps_set = InitParticlesSettings(PARTICLE_SYS_DEFAULT);
 
-				ps_set.VelBias = rect2f(5, -1, 10, 1);
-				ps_set.posBias = rect2f(0, -10, 0, 10);
+				ps_set.VelBias = rect3f(5, -1, 0, 10, 1, 0);
+				ps_set.posBias = rect3f(0, -10, 0, 0, 10, 0);
 
 				// ps_set.angleForce = v2(1, 10);
 

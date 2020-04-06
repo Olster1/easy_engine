@@ -266,7 +266,7 @@ typedef enum {
 ///////////////////////************* pre collision update ************////////////////////
 
 
-static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, MyGameStateVariables *variables, float dt) {
+static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *keyStates, MyGameStateVariables *variables, MyGameState *gameState, float dt) {
     DEBUG_TIME_BLOCK();
     ///////////////////////*********** Update Game Variables **************////////////////////
     
@@ -275,9 +275,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
     float maxRoomSpeed = -3.0f;
     if(variables->roomSpeed < maxRoomSpeed) variables->roomSpeed = maxRoomSpeed;
     
-    
-    //NOTE(ollie): increase
-    
+   
     variables->playerMoveSpeed += 0.01f*dt;
     if(variables->playerMoveSpeed > variables->maxPlayerMoveSpeed) variables->playerMoveSpeed = variables->maxPlayerMoveSpeed;
     
@@ -302,23 +300,28 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                     }
                     
                     ///////////////////////********** Move forward ***************////////////////////
-                    if(wasPressed(keyStates->gameButtons, BUTTON_UP) && !isOn(&variables->playerMoveTimer)) {
-                        turnTimerOn(&variables->playerMoveTimer);
-                        for(int i = 0; i < manager->entities.count; ++i) {
-                            Entity *room = (Entity *)getElement(&manager->entities, i);
-                            if(room && room->active && room->type == ENTITY_ROOM) { 
-                                //NOTE(ollie): Set all rooms start pos
-                                room->roomStartPos = room->T.pos;
-                            }
-                        }
+                    if(wasPressed(keyStates->gameButtons, BUTTON_UP) && !isOn(&e->playerMoveTimer)) {
+                        turnTimerOn(&e->playerMoveTimer);
+                        Reactivate(&gameState->gridParticleSystem);
 
-                        V3 worldP = v3_plus(easyTransform_getWorldPos(&e->T), v3(0, 1, 0));
-                        variables->targetCell = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
+                        V3 worldP = easyTransform_getWorldPos(&e->T);
+                        V3 next_worldP = v3_plus(easyTransform_getWorldPos(&e->T), v3(0, 1, 0));
+                        e->startCell = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
+                        e->targetCell = v3(floor(next_worldP.x + 0.5f), floor(next_worldP.y + 0.5f), 0);
                     }
 
 
+                    ///////////////////////********** Upate the move timer ***************////////////////////
+                    if(isOn(&e->playerMoveTimer)) {
+                        TimerReturnInfo info = updateTimer(&e->playerMoveTimer, dt);
 
-
+                        e->T.pos = smoothStep01V3(e->startCell, info.canonicalVal, e->targetCell);
+                        if(info.finished) {
+                            turnTimerOff(&e->playerMoveTimer);
+                        }
+                    }
+                    ////////////////////////////////////////////////////////////////////
+                    
 
                     ////////////////////////////////////////////////////////////////////
                     
@@ -400,13 +403,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                         }
                     }
 
-                    ///////////////////////************ Draw the cell the player is moving to *************////////////////////
-                    if(isOn(&variables->playerMoveTimer)) {
-                            Matrix4 modelT = Matrix4_translate(mat4(), v3(variables->targetCell.x, variables->targetCell.y, variables->targetCell.z));
-                            setModelTransform(globalRenderGroup, modelT);
-                            renderDrawSprite(globalRenderGroup, &globalWhiteTexture, COLOR_GOLD);    
-                    }
-                    ////////////////////////////////////////////////////////////////////
+                   
                     
                     
                     
@@ -549,15 +546,9 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                 case ENTITY_ROOM: {
                     if(!DEBUG_global_PauseGame) {
                         //NOTE(ollie): move downwards
-                        if(isOn(&variables->playerMoveTimer)) {
-                            TimerReturnInfo info = updateTimer(&variables->playerMoveTimer, dt);
-
-                            e->T.pos.y = smoothStep01(e->roomStartPos.y, info.canonicalVal, e->roomStartPos.y - 1); 
-                            
-                            if(info.finished) {
-                                turnTimerOff(&variables->playerMoveTimer);
-                            }
-                        }
+                        // if(stillOn) {
+                        //     e->T.pos.y = smoothStep01(e->roomStartPos.y, canonicalMoveVal, e->roomStartPos.y - 1); 
+                        // }
                         // e->rb->dP.y = variables->roomSpeed;	
                     } else {
                         e->rb->dP.y = 0;
@@ -685,7 +676,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
     ///////////////////////************* Update Camera ************////////////////////
 
-    camera->pos.y = lerp(camera->pos.y, 10*dt, gameStateVariables->player->T.pos.y);
+    camera->pos.y = lerp(camera->pos.y, 10*dt, easyTransform_getWorldPos(&gameStateVariables->player->T).y);
     ////////////////////////////////////////////////////////////////////
     
     for(int i = 0; i < manager->entities.count; ++i) {
@@ -704,6 +695,22 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     	//NOTE(ollie): The player is the listener
                     	easySound_updateListenerPosition(globalSoundState, easyTransform_getWorldPos(&e->T));
                         //
+
+                        ///////////////////////************ Draw the cell the player is moving to *************////////////////////
+                        if(isOn(&e->playerMoveTimer)) {
+                                Matrix4 modelT = Matrix4_translate(mat4(), v3(e->targetCell.x, e->targetCell.y, e->targetCell.z));
+                                setModelTransform(globalRenderGroup, modelT);
+                                V4 color = COLOR_GOLD;
+                                color.w = smoothStep00(0, getTimerValue01(&e->playerMoveTimer), 1.0f);
+                                renderDrawSprite(globalRenderGroup, &globalWhiteTexture, color);    
+                        }
+
+                        
+
+                        // setViewTransform(renderGroup, Matrix4_translate(mat4(), v3_scale(-1, camera->pos)));
+                        // drawAndUpdateParticleSystem(globalRenderGroup, &gameState->gridParticleSystem, e->targetCell, dt, v3(0, 0, 0), COLOR_WHITE, true);
+                        // setViewTransform(renderGroup, viewMatrix);
+                        ////////////////////////////////////////////////////////////////////
 
 
                         if(!isOn(&e->playerReloadTimer)) {

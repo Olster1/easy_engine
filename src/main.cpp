@@ -27,7 +27,7 @@ MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 MY_GAME_MODE_MISSIONS
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_START_MENU //MY_GAME_MODE_OVERWORLD // // MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_PLAY //MY_GAME_MODE_START_MENU //MY_GAME_MODE_OVERWORLD // // MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -123,8 +123,8 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     ///////////////////////************ Main menu stuff*************////////////////////
     particle_system_settings ps_set = InitParticlesSettings(PARTICLE_SYS_DEFAULT);
 
-    ps_set.VelBias = rect2f(5, -1, 10, 1);
-    ps_set.posBias = rect2f(0, -10, 0, 10);
+    ps_set.VelBias = rect3f(5, -1, 0, 10, 1, 0);
+    ps_set.posBias = rect3f(0, -10, 0, 0, 10, 0);
 
     // ps_set.angleForce = v2(1, 10);
 
@@ -141,6 +141,31 @@ static inline MyGameState *myGame_initGameState(MyEntityManager *entityManager, 
     gameState->mainMenu_particleSystem.Set.Loop = true;
 
     prewarmParticleSystem(&gameState->mainMenu_particleSystem, v3(1, 0, 0));
+    ////////////////////////////////////////////////////////////////////
+
+    ///////////////////////************ Grid particle system for in the levels when player moves *************////////////////////
+    ps_set = InitParticlesSettings(PARTICLE_SYS_DEFAULT);
+
+    ps_set.VelBias = rect3f(0, 0, -1, 0, 0, -3);
+    ps_set.posBias = rect3f(-1, -1, 0, 1, 1, 0);
+
+    // ps_set.angleForce = v2(1, 10);
+
+    ps_set.bitmapScale = 0.2f;
+
+    ps_set.MaxLifeSpan = ps_set.LifeSpan = 1.0f;
+
+    pushParticleBitmap(&ps_set, findTextureAsset("light_01.png"), "particle1");
+    // pushParticleBitmap(&ps_set, findTextureAsset("light_02.png"), "particle2");
+
+    InitParticleSystem(&gameState->gridParticleSystem, &ps_set, 16);
+
+    setParticleLifeSpan(&gameState->gridParticleSystem, 1.0f);
+
+
+    gameState->gridParticleSystem.Active = false;
+    gameState->gridParticleSystem.Set.Loop = false;
+
     ////////////////////////////////////////////////////////////////////
 
     return gameState;
@@ -201,9 +226,7 @@ static void myGame_resetGameVariables(MyGameStateVariables *gameVariables, EasyC
     gameVariables->player = 0;
 
     
-    gameVariables->playerMoveTimer = initTimer(0.7f, false); 
-    turnTimerOff(&gameVariables->playerMoveTimer);
-
+    
     gameVariables->totalAmmoCount = MY_PLAYER_MAX_AMMO_COUNT;
     
     gameVariables->liveTimerCount = 0;
@@ -249,6 +272,10 @@ static void myGame_beginRound(MyGameState *gameState, MyGameStateVariables *game
     
     gameVariables->player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
     
+    gameVariables->player->playerMoveTimer = initTimer(0.7f, false); 
+    turnTimerOff(&gameVariables->player->playerMoveTimer);
+
+
     gameVariables->mostRecentRoom = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 0, 0), gameState);
     gameVariables->lastRoomCreated = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 5, 0), gameState);
     
@@ -877,10 +904,10 @@ int main(int argc, char *args[]) {
                         if(!isOn(&gameVariables.lerpTimer)) {
                             //NOTE(ollie): Update the camera distance 
                             gameVariables.cameraDistance = lerp(gameVariables.cameraDistance, appInfo.dt*1, gameVariables.cameraTargetPos); 
-                            camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
+                            // camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
                         }
                     }
-                    updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, appInfo.dt);
+                    updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, gameState, appInfo.dt);
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
                 
@@ -1889,6 +1916,20 @@ int main(int argc, char *args[]) {
                         } else {
                             easyConsole_addToStream(&console, "must pass a number");
                         }
+
+                    } else if(stringsMatchNullN("angle", token.at, token.size)) {
+                        token = easyConsole_seeNextToken(&console);
+                        if(token.type == TOKEN_INTEGER || token.type == TOKEN_FLOAT) {
+                            token = easyConsole_getNextToken(&console);
+                            gameVariables.angleDegreesAltitude = (token.type == TOKEN_FLOAT) ? token.floatVal : (float)token.intVal;
+                        
+                            camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
+                            camera.orientation = myGame_getCameraOrientation(camera.pos, gameVariables.centerPos);
+                        } else {
+                            easyConsole_addToStream(&console, "must pass a number");
+                        }
+
+                        
                     } else if(stringsMatchNullN("play", token.at, token.size)) {
                             DEBUG_global_PauseGame = false;
                             gameState->currentGameMode = MY_GAME_MODE_PLAY;

@@ -138,6 +138,12 @@ typedef struct Entity {
             
             Timer moveTimer;
             int startLane; //for the move lerp
+
+            //NOTE(ollie): For moving the player in turnbased format
+            V3 targetCell;
+            V3 startCell;
+            Timer playerMoveTimer;
+            
             
             MoveOption moveList;
             MoveOption *freeList;
@@ -270,10 +276,6 @@ typedef struct {
     //NOTE(ollie): Ammo info
     s32 totalAmmoCount;
 
-
-    //NOTE(ollie): For moving the player in turnbased format
-    Timer playerMoveTimer;
-    V3 targetCell;
 
 } MyGameStateVariables;
 

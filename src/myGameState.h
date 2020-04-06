@@ -200,6 +200,8 @@ typedef struct
 
 	particle_system mainMenu_particleSystem;
 	////////////////////////////////////////////////////////////////////
+
+	particle_system gridParticleSystem;
 } MyGameState;
 
 
