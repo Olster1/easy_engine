@@ -1,3 +1,27 @@
+/*
+How to use: 
+
+//NOTE(ollie): Setup the camera
+EasyCamera camera;
+easy3d_initCamera(&camera, v3(0, 0, 0));
+
+//NOTE(ollie): Every frame 
+while(true) {
+
+	//NOTE(ollie): Move the timer
+	EasyCamera_MoveType camMoveTypes = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
+	
+	//NOTE(ollie): Update the camera
+	easy3d_updateCamera(&camera, &keyStates, sensitvity, cameraMovePower, dt, camMoveTypes);
+	
+	//NOTE(ollie): For diffuse lighting
+	easy_setEyePosition(globalRenderGroup, camera.pos);	
+
+
+}
+
+*/
+
 typedef struct {
 	V3 pos;
 	Quaternion orientation;

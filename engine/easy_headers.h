@@ -91,13 +91,19 @@ static char* globalExeBasePath;
 #include "easy_transition.h"
 
 #include "easy_asset_loader.h"
-#include "easy_os.h"
+
+
+#include "easy_keyState.h"
+#include "easy_console.h"
+#include "easy_flash_text.h"
 #include "easy_editor.h"
+#include "easy_profiler_draw.h"
+
+#include "easy_os.h"
 #include "easy_camera.h"
 #include "easy_tile.h"
 // #include "easy_ui.h"
-#include "easy_console.h"
-#include "easy_flash_text.h"
+
 #include "easy_ast.h"
 
 #define GJK_IMPLEMENTATION 
@@ -107,6 +113,6 @@ static char* globalExeBasePath;
 #include "easy_physics.h"
 
 // #include "easy_write.h"
-#include "easy_profiler_draw.h"
+
 
 

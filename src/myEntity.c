@@ -248,6 +248,13 @@ static inline Entity *MyEntity_findEntityById_(MyEntityManager *manager, u32 id,
     return result;
 }
 
+static inline float myEntity_calculateBulletSpeed() {
+    float blocksPerMove = 2.0f;
+    float result = blocksPerMove/PLAYER_MOVE_TIMER_PERIOD;
+
+    return result;
+}
+
 
 
 ////////////////////////////////////////////////////////////////////
@@ -300,15 +307,15 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                     }
                     
                     ///////////////////////********** Move forward ***************////////////////////
-                    if(wasPressed(keyStates->gameButtons, BUTTON_UP) && !isOn(&e->playerMoveTimer)) {
-                        turnTimerOn(&e->playerMoveTimer);
-                        Reactivate(&gameState->gridParticleSystem);
+                    // if(wasPressed(keyStates->gameButtons, BUTTON_UP) && !isOn(&e->playerMoveTimer)) {
+                    //     turnTimerOn(&e->playerMoveTimer);
+                    //     Reactivate(&gameState->gridParticleSystem);
 
-                        V3 worldP = easyTransform_getWorldPos(&e->T);
-                        V3 next_worldP = v3_plus(easyTransform_getWorldPos(&e->T), v3(0, 1, 0));
-                        e->startCell = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
-                        e->targetCell = v3(floor(next_worldP.x + 0.5f), floor(next_worldP.y + 0.5f), 0);
-                    }
+                    //     V3 worldP = easyTransform_getWorldPos(&e->T);
+                    //     V3 next_worldP = v3_plus(easyTransform_getWorldPos(&e->T), v3(0, 1, 0));
+                    //     e->startCell = v3(floor(worldP.x + 0.5f), floor(worldP.y + 0.5f), 0);
+                    //     e->targetCell = v3(floor(next_worldP.x + 0.5f), floor(next_worldP.y + 0.5f), 0);
+                    // }
 
 
                     ///////////////////////********** Upate the move timer ***************////////////////////
@@ -510,6 +517,10 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                     
                 } break;
                 case ENTITY_BULLET: {
+                    // if(isOn(&variables->player->playerMoveTimer)) 
+                    {
+                         e->rb->dP.y = myEntity_calculateBulletSpeed();
+                     } 
                     // e->rb->accumTorque = v3(0, 0, 30.0f);
                 } break;
                 case ENTITY_ASTEROID: {
@@ -526,7 +537,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
 
                 } break;
                 case ENTITY_ENEMY_BULLET: {
-
+                         e->rb->dP.y = -myEntity_calculateBulletSpeed();
                 } break;
                 case ENTITY_SOUND_CHANGER: {
                     
@@ -549,7 +560,7 @@ static void updateEntitiesPrePhysics(MyEntityManager *manager, AppKeyStates *key
                         // if(stillOn) {
                         //     e->T.pos.y = smoothStep01(e->roomStartPos.y, canonicalMoveVal, e->roomStartPos.y - 1); 
                         // }
-                        // e->rb->dP.y = variables->roomSpeed;	
+                        e->rb->dP.y = variables->roomSpeed;	
                     } else {
                         e->rb->dP.y = 0;
                     }
@@ -678,6 +689,30 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
 
     camera->pos.y = lerp(camera->pos.y, 10*dt, easyTransform_getWorldPos(&gameStateVariables->player->T).y);
     ////////////////////////////////////////////////////////////////////
+
+    ///////////////////////************ Draw the cell the player is moving to *************////////////////////
+    if(isOn(&gameStateVariables->player->playerMoveTimer)) {
+            Matrix4 modelT = Matrix4_translate(mat4(), v3(gameStateVariables->player->targetCell.x, gameStateVariables->player->targetCell.y, 0.5f));
+            setModelTransform(globalRenderGroup, modelT);
+            V4 color = COLOR_GOLD;
+            color.w = smoothStep00(0, getTimerValue01(&gameStateVariables->player->playerMoveTimer), 1.0f);
+            renderDrawSprite(globalRenderGroup, &globalWhiteTexture, color);    
+    }
+    ///////////////////////********** Draw the board as well***************////////////////////
+    // renderSetShader(renderGroup, &phongProgram);
+    // for(int y = 0; y < 10; y++) {
+    //     for(int x = -0.5f*MAX_LANE_COUNT; x <= 0.5f*MAX_LANE_COUNT; x++) {
+    //        Matrix4 modelT = Matrix4_translate(Matrix4_scale_uniformly(mat4(), 0.8f), v3(x, y, 2));
+    //        setModelTransform(globalRenderGroup, modelT);
+
+    //        renderDrawCube(globalRenderGroup, &globalWhiteMaterial, COLOR_BLUE);    
+            
+        
+    //     }
+    // }
+    // renderSetShader(renderGroup, mainShader);
+
+    ////////////////////////////////////////////////////////////////////
     
     for(int i = 0; i < manager->entities.count; ++i) {
         Entity *e = (Entity *)getElement(&manager->entities, i);
@@ -696,14 +731,11 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     	easySound_updateListenerPosition(globalSoundState, easyTransform_getWorldPos(&e->T));
                         //
 
-                        ///////////////////////************ Draw the cell the player is moving to *************////////////////////
-                        if(isOn(&e->playerMoveTimer)) {
-                                Matrix4 modelT = Matrix4_translate(mat4(), v3(e->targetCell.x, e->targetCell.y, e->targetCell.z));
-                                setModelTransform(globalRenderGroup, modelT);
-                                V4 color = COLOR_GOLD;
-                                color.w = smoothStep00(0, getTimerValue01(&e->playerMoveTimer), 1.0f);
-                                renderDrawSprite(globalRenderGroup, &globalWhiteTexture, color);    
-                        }
+                       
+                        
+
+                        
+                        ////////////////////////////////////////////////////////////////////
 
                         
 
@@ -749,8 +781,12 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                         
                     } break;
                     case ENTITY_BULLET: {
+                        TimerReturnInfo lifeSpanInfo = {0};
+                        // if(isOn(&gameStateVariables->player->playerMoveTimer)) 
+                        {
+                            lifeSpanInfo = updateTimer(&e->lifespanTimer, dt);    
+                        }
                         
-                        TimerReturnInfo lifeSpanInfo = updateTimer(&e->lifespanTimer, dt);
                         
                         ///////////////////////************ Update the color of the bullet *************////////////////////
                         if(isOn(&e->bulletColorTimer)) {
@@ -1116,8 +1152,12 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                     } break;
                     case ENTITY_ENEMY_BULLET: {
                         ///////////////////////*********** Update lifespan timers **************////////////////////
-                       
-                        TimerReturnInfo lifespanInfo = updateTimer(&e->lifespanTimer, dt);
+                        TimerReturnInfo lifespanInfo = {0};
+                        // if(isOn(&gameStateVariables->player->playerMoveTimer)) 
+                        {
+                            lifespanInfo = updateTimer(&e->lifespanTimer, dt);
+                        }
+                        
                         
                         ///////////////////////************ Update the color of the bullet *************////////////////////
                         if(isOn(&e->bulletColorTimer)) {
@@ -1375,7 +1415,7 @@ static void updateEntities(MyEntityManager *manager, MyGameState *gameState, MyG
                 
                 if(e->model || e->type == ENTITY_BULLET || e->type == ENTITY_SOUND_CHANGER || e->type == ENTITY_ENEMY_BULLET) {
                     renderSetShader(renderGroup, &phongProgram);
-                    if(e->type == ENTITY_BULLET || e->type == ENTITY_SOUND_CHANGER || e->type == ENTITY_ENEMY_BULLET) {
+                    if(e->type == ENTITY_BULLET || e->type == ENTITY_SOUND_CHANGER || e->type == ENTITY_ENEMY_BULLET || e->type == ENTITY_SCENERY) {
                         renderDrawCube(globalRenderGroup, &globalWhiteMaterial, e->colorTint);
                     } else {
                         renderModel(renderGroup, e->model, e->colorTint);	
@@ -1468,6 +1508,10 @@ static void resetPlayer(Entity *e, MyGameStateVariables *variables, Texture *tex
 
     e->playerReloadTimer = initTimer(10.0f, false);
     turnTimerOff(&e->playerReloadTimer);
+
+    e->playerMoveTimer = initTimer(PLAYER_MOVE_TIMER_PERIOD, false); 
+    turnTimerOff(&e->playerMoveTimer);
+
         
     assert(variables->totalAmmoCount > 0);
     e->ammoCount = variables->totalAmmoCount; 
@@ -1547,7 +1591,7 @@ static Entity *initBullet(MyEntityManager *m, V3 pos) {
     
     /////
     
-    e->rb->dP.y = 5;
+    e->rb->dP.y = myEntity_calculateBulletSpeed();
     //NOTE(ollie): Rotate around all directions
     e->rb->dA = v3(1, 1, 0);
     
@@ -1809,7 +1853,7 @@ static Entity *initEnemyBullet(MyEntityManager *m, V3 pos) {
     e->rb->dA = v3(1, 1, 0);
 
     //NOTE(ollie): Start bullet moving
-    e->rb->dP.y = -5;
+    e->rb->dP.y = -myEntity_calculateBulletSpeed();
     
     return e;
 }

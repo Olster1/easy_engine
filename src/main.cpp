@@ -27,7 +27,7 @@ MY_GAME_MODE_START,
 MY_GAME_MODE_EDIT_LEVEL
 MY_GAME_MODE_MISSIONS
 */
-#define GAME_STATE_TO_LOAD MY_GAME_MODE_PLAY //MY_GAME_MODE_START_MENU //MY_GAME_MODE_OVERWORLD // // MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
+#define GAME_STATE_TO_LOAD MY_GAME_MODE_START_MENU //MY_GAME_MODE_OVERWORLD // // MY_GAME_MODE_PLAY //MY_GAME_MODE_EDIT_LEVEL 
 
 //If we are editing a level, the level we want to enter into on startup
 #define LEVEL_TO_LOAD 0
@@ -272,9 +272,7 @@ static void myGame_beginRound(MyGameState *gameState, MyGameStateVariables *game
     
     gameVariables->player = initPlayer(entityManager, gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
     
-    gameVariables->player->playerMoveTimer = initTimer(0.7f, false); 
-    turnTimerOff(&gameVariables->player->playerMoveTimer);
-
+    
 
     gameVariables->mostRecentRoom = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 0, 0), gameState);
     gameVariables->lastRoomCreated = myWorlds_findNextRoom(gameState->worldState, entityManager, v3(0, 5, 0), gameState);
@@ -401,8 +399,6 @@ int main(int argc, char *args[]) {
         easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
 
 
-
-
         {
             DEBUG_TIME_BLOCK_NAMED("Load teleporter atlas")
             // easyAtlas_createTextureAtlas_withDownsize("img/teleporter/", "img/teleporter", &globalPerFrameArena, TEXTURE_FILTER_LINEAR, 5, 0.25f, 4096, 4096);        
@@ -469,10 +465,6 @@ int main(int argc, char *args[]) {
         // easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/BebasNeue-Regular.ttf", &globalPerFrameArena), 0, 255);    
         EasyFont_Font *mainFont = easyFont_loadFontAtlas(concatInArena(globalExeBasePath, "fontAtlas_BebasNeue-Regular", &globalPerFrameArena), &globalLongTermArena);   
         
-        // easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena), 0, 255);    
-        EasyFont_Font *debugFont = easyFont_loadFontAtlas(concatInArena(globalExeBasePath, "fontAtlas_UbuntuMono-Regular", &globalPerFrameArena), &globalLongTermArena);   
-        globalDebugFont = debugFont;
-        
         char *minerDialogue = concatInArena(globalExeBasePath, "/../src/dialogue/test.txt", &globalPerFrameArena);
         
         // myDialogue_compileProgram(minerDialogue);
@@ -501,23 +493,8 @@ int main(int argc, char *args[]) {
         
         bool hasBlackBars = true;
         bool running = true;
-        AppKeyStates keyStates = {};
-        
-        
-        EasyConsole console = {};
-        easyConsole_initConsole(&console, BUTTON_TILDE);
-        
-        DEBUG_globalEasyConsole = &console;
-        
-        EasyEditor *editor = pushStruct(&globalLongTermArena, EasyEditor);
-        easyEditor_initEditor(editor, globalRenderGroup, globalDebugFont, (resolution.y / resolution.x), &keyStates, resolution);
-        
-        easyFlashText_initManager(&globalFlashTextManager, mainFont, (resolution.y / resolution.x));
-        
         bool inEditor = false;
-        
-        EasyTransitionState *transitionState = EasyTransition_initTransitionState(easyAudio_findSound("ting.wav"));
-        
+
         ///////////************************/////////////////
         
         
@@ -545,9 +522,6 @@ int main(int argc, char *args[]) {
         //NOTE(ollie): Initing the Entity Manager
         
         MyEntityManager *entityManager = initEntityManager();
-        
-        ///////////////////////************ Load the resources *************////////////////////
-        
         
         ////////////////////////////////////////////////////////////////////
         
@@ -591,14 +565,12 @@ int main(int argc, char *args[]) {
         int toneMapId = 0;
         bool controllingPlayer = true;
         
-        EasyProfile_ProfilerDrawState *profilerState = EasyProfiler_initProfilerDrawState(); 
-        
         MyOverworldState *overworldState = initOverworld(projectionMatrixFOV(90.0f, resolution.x/resolution.y), (resolution.y/resolution.x), mainFont, gameState);
                 
         ///////////************************/////////////////
         while(running) {
             
-            easyOS_processKeyStates(&keyStates, resolution, &screenDim, &running, !hasBlackBars);
+            easyOS_processKeyStates(&appInfo.keyStates, resolution, &screenDim, &running, !hasBlackBars);
             easyOS_beginFrame(resolution, &appInfo);
             
             beginRenderGroupForFrame(globalRenderGroup);
@@ -612,9 +584,9 @@ int main(int argc, char *args[]) {
             renderSetViewPort(0, 0, resolution.x, resolution.y);
             
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
-                if(wasPressed(keyStates.gameButtons, BUTTON_F1)) {
+                if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_F1)) {
                     inEditor = !inEditor;
-                    easyEditor_stopInteracting(editor);
+                    easyEditor_stopInteracting(appInfo.editor);
                 }
             } else {
                 inEditor = false;
@@ -622,7 +594,7 @@ int main(int argc, char *args[]) {
             
             
             EasyCamera_MoveType camMove = EASY_CAMERA_MOVE_NULL;
-            if(DEBUG_global_IsFlyMode && !easyConsole_isOpen(&console) && !easyEditor_isInteracting(editor) && !inEditor) {
+            if(DEBUG_global_IsFlyMode && !easyConsole_isOpen(&appInfo.console) && !easyEditor_isInteracting(appInfo.editor) && !inEditor) {
                 camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
                 
                 if(DEBUG_global_CameraMoveXY) camMove = easyCamera_addFlag(camMove, EASY_CAMERA_MOVE_XY);
@@ -631,7 +603,7 @@ int main(int argc, char *args[]) {
                 
             }
             
-            easy3d_updateCamera(&camera, &keyStates, 1, cameraMovePower, appInfo.dt, camMove);
+            easy3d_updateCamera(&camera, &appInfo.keyStates, 1, cameraMovePower, appInfo.dt, camMove);
             
             camMove = EASY_CAMERA_MOVE_NULL;
             
@@ -657,17 +629,17 @@ int main(int argc, char *args[]) {
                 V2 movePower = v2(0, 0);
                 float power = 10;
                 ///////////////////////************* Move the center position ************////////////////////
-                if(!easyConsole_isOpen(&console)) {
-                    if(isDown(keyStates.gameButtons, BUTTON_RIGHT)) {
+                if(!easyConsole_isOpen(&appInfo.console)) {
+                    if(isDown(appInfo.keyStates.gameButtons, BUTTON_RIGHT)) {
                         movePower.x = power;
                     }
-                    if(isDown(keyStates.gameButtons, BUTTON_LEFT)) {
+                    if(isDown(appInfo.keyStates.gameButtons, BUTTON_LEFT)) {
                         movePower.x = -power;
                     }
-                    if(isDown(keyStates.gameButtons, BUTTON_UP)) {
+                    if(isDown(appInfo.keyStates.gameButtons, BUTTON_UP)) {
                         movePower.y = power;
                     }
-                    if(isDown(keyStates.gameButtons, BUTTON_DOWN)) {
+                    if(isDown(appInfo.keyStates.gameButtons, BUTTON_DOWN)) {
                         movePower.y = -power;
                     }
                 }
@@ -712,9 +684,9 @@ int main(int argc, char *args[]) {
                 
                 V4 altitudeColor = COLOR_AQUA;
                 Rect2f altitudeSlider = rect2fMinDim(0, sliderScreenPos, sliderSize, sliderSize);
-                if(inBounds(keyStates.mouseP_left_up, altitudeSlider, BOUNDS_RECT)) {
+                if(inBounds(appInfo.keyStates.mouseP_left_up, altitudeSlider, BOUNDS_RECT)) {
                     altitudeColor = COLOR_YELLOW;
-                    if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
                         gameState->holdingAltitudeSlider = true; 
                     }
                 }
@@ -723,7 +695,7 @@ int main(int argc, char *args[]) {
                     altitudeColor = COLOR_BLUE; 
                     
                     //NOTE(ollie): Work out slider's new position
-                    float targetPos = lerp(sliderScreenPos, 0.25f, keyStates.mouseP_left_up.y);
+                    float targetPos = lerp(sliderScreenPos, 0.25f, appInfo.keyStates.mouseP_left_up.y);
                     gameState->altitudeSliderAt = (targetPos - sliderMin) / (sliderMax - sliderMin);
                     
                     //NOTE(ollie): Clamp the slider
@@ -745,7 +717,7 @@ int main(int argc, char *args[]) {
                     
                 }
                 
-                if(wasReleased(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                if(wasReleased(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
                     gameState->holdingAltitudeSlider = false;
                     altitudeColor = COLOR_AQUA;
                 }
@@ -759,7 +731,7 @@ int main(int argc, char *args[]) {
                 
                 ////////////////////////////////////////////////////////////////////
                 
-                if(wasPressed(keyStates.gameButtons, BUTTON_BOARD_LEFT)) {
+                if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_BOARD_LEFT)) {
                     gameVariables.startPos = myGame_getCameraPosition(gameVariables.angleDegreesAltitude, gameVariables.angleType);
                     int value = (int)gameVariables.angleType - 1;
                     if(value < 0) {
@@ -770,7 +742,7 @@ int main(int argc, char *args[]) {
                     turnTimerOn(&gameVariables.lerpTimer);
                 }
                 
-                if(wasPressed(keyStates.gameButtons, BUTTON_BOARD_RIGHT)) {
+                if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_BOARD_RIGHT)) {
                     gameVariables.startPos = myGame_getCameraPosition(gameVariables.angleDegreesAltitude, gameVariables.angleType);
                     
                     int value = (int)gameVariables.angleType + 1;
@@ -872,7 +844,7 @@ int main(int argc, char *args[]) {
             ///////////////////////************ Update entities here *************////////////////////
             
             u32 updateFlags = 0;
-            if((gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) && !easyConsole_isConsoleOpen(&console)) updateFlags |= MY_ENTITIES_UPDATE;
+            if((gameState->currentGameMode == MY_GAME_MODE_PLAY || gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) && !easyConsole_isConsoleOpen(&appInfo.console)) updateFlags |= MY_ENTITIES_UPDATE;
             
             if(gameState->currentGameMode == MY_GAME_MODE_PLAY ||
                gameState->currentGameMode == MY_GAME_MODE_PAUSE ||
@@ -907,7 +879,7 @@ int main(int argc, char *args[]) {
                             // camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
                         }
                     }
-                    updateEntitiesPrePhysics(entityManager, &keyStates, &gameVariables, gameState, appInfo.dt);
+                    updateEntitiesPrePhysics(entityManager, &appInfo.keyStates, &gameVariables, gameState, appInfo.dt);
                     EasyPhysics_UpdateWorld(&entityManager->physicsWorld, appInfo.dt);
                 }
                 
@@ -916,7 +888,7 @@ int main(int argc, char *args[]) {
                 ////////////////////////////////////////////////////////////////////
                     
                 renderDisableBatchOnZ(globalRenderGroup);
-                updateEntities(entityManager, gameState, &gameVariables, &keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, transitionState, &camera, appInfo.dt, updateFlags);
+                updateEntities(entityManager, gameState, &gameVariables, &appInfo.keyStates, globalRenderGroup, viewMatrix, perspectiveMatrix, appInfo.transitionState, &camera, appInfo.dt, updateFlags);
                 drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
                 renderEnableBatchOnZ(globalRenderGroup);
 
@@ -1065,10 +1037,10 @@ int main(int argc, char *args[]) {
                         renderClearDepthBuffer(toneMappedBuffer.bufferId);
                     }
 
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&appInfo.console)) {
                         
                         MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_OVERWORLD, &camera, entityManager, &gameVariables);
-                        EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
+                        EasyTransition_PushTransition(appInfo.transitionState, transitionCallBack, data, EASY_TRANSITION_FADE);
                         
                     }
                     {
@@ -1077,19 +1049,19 @@ int main(int argc, char *args[]) {
                         Rect2f margin = rect2fMinDim(resolution.x / 2, 0, 0.3f*resolution.x, INFINITY);
                         Texture *spaceship = findTextureAsset("spaceship.png");
                         renderTextureCentreDim(spaceship, v3(-0.15f*resolution.x, 0, 0.5f), v2(0.15*resolution.x, 0.15*resolution.x*spaceship->aspectRatio_h_over_w), COLOR_WHITE, 0, mat4(), mat4(),  OrthoMatrixToScreen(resolution.x, resolution.y));
-                        outputTextNoBacking(debugFont, resolution.x / 2, yAt, NEAR_CLIP_PLANE, resolution, "Gravity's Engine", margin, COLOR_BLACK, 1.5, true, appInfo.screenRelativeSize);
+                        outputTextNoBacking(globalDebugFont, resolution.x / 2, yAt, NEAR_CLIP_PLANE, resolution, "Gravity's Engine", margin, COLOR_BLACK, 1.5, true, appInfo.screenRelativeSize);
                     }
                     
                 } break;
                 case MY_GAME_MODE_PLAY: {
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ESCAPE)) {
                         gameState->lastGameMode = gameState->currentGameMode;
                         gameState->currentGameMode = MY_GAME_MODE_PAUSE;
                     }
                     
                 } break;
                 case MY_GAME_MODE_PAUSE: {
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ESCAPE)) {
                         gameState->lastGameMode = gameState->currentGameMode;
                         gameState->currentGameMode = MY_GAME_MODE_PLAY;
                     }
@@ -1097,7 +1069,7 @@ int main(int argc, char *args[]) {
                     outputTextNoBacking(mainFont, resolution.x / 2, resolution.y / 2, zCoord, resolution, "IS PAUSED!", InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
                 } break;
                 case MY_GAME_MODE_MISSIONS: {
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&console)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&appInfo.console)) {
                         gameState->animationTimer = initTimer(0.5f, false);
                         gameState->isIn = false;
                     }
@@ -1147,7 +1119,7 @@ int main(int argc, char *args[]) {
                 } break;
                 case MY_GAME_MODE_INSTRUCTION_CARD: {
                     
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&console)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ENTER) && !easyConsole_isConsoleOpen(&appInfo.console)) {
                         gameState->animationTimer = initTimer(0.5f, false);
                         gameState->isIn = false;
                     }
@@ -1212,9 +1184,9 @@ int main(int argc, char *args[]) {
                 } break;
                 case MY_GAME_MODE_END_ROUND: {
                     
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(transitionState) && !easyConsole_isConsoleOpen(&console)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ENTER) && !EasyTransition_InTransition(appInfo.transitionState) && !easyConsole_isConsoleOpen(&appInfo.console)) {
                         MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera, entityManager, &gameVariables);
-                        EasyTransition_PushTransition(transitionState, transitionCallBackRestartRound, data, EASY_TRANSITION_FADE);
+                        EasyTransition_PushTransition(appInfo.transitionState, transitionCallBackRestartRound, data, EASY_TRANSITION_FADE);
                         
                         gameState->animationTimer = initTimer(0.5f, false);
                         gameState->isIn = false;
@@ -1237,7 +1209,7 @@ int main(int argc, char *args[]) {
                         if(timerInfo.finished) {
                             turnTimerOff(&gameState->animationTimer);
                         }
-                    } else if(EasyTransition_InTransition(transitionState)) {
+                    } else if(EasyTransition_InTransition(appInfo.transitionState)) {
                         xAt = resolution.x;       
                     }
                     
@@ -1353,10 +1325,10 @@ int main(int argc, char *args[]) {
 
 
                     //NOTE(ollie): This is the overworld chooser, where we choose our level
-                    MyOverworld_ReturnData returnData = myOverworld_updateOverworldState(globalRenderGroup, &keyStates, overworldState, editor, appInfo.dt, gameState);
+                    MyOverworld_ReturnData returnData = myOverworld_updateOverworldState(globalRenderGroup, &appInfo.keyStates, overworldState, appInfo.editor, appInfo.dt, gameState);
 
                     
-                    if(wasPressed(keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&console) && !returnData.transitionToLevel) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_ESCAPE) && !easyConsole_isConsoleOpen(&appInfo.console) && !returnData.transitionToLevel) {
                         gameState->animationTimer = initTimer(0.5f, false);
                         gameState->isIn = true;
                         gameState->missionLerpValue = 0.0f;
@@ -1372,7 +1344,7 @@ int main(int argc, char *args[]) {
                         myWorlds_generateWorld(gameState->worldState, (MyWorldFlags)(returnData.levelFlagsToLoad), returnData.levelLength);
                             
                         MyTransitionData *data = getTransitionData(gameState, MY_GAME_MODE_PLAY, &camera, entityManager, &gameVariables);
-                        EasyTransition_PushTransition(transitionState, transitionCallBack, data, EASY_TRANSITION_CIRCLE_N64);
+                        EasyTransition_PushTransition(appInfo.transitionState, transitionCallBack, data, EASY_TRANSITION_CIRCLE_N64);
 
                     }
 
@@ -1388,7 +1360,7 @@ int main(int argc, char *args[]) {
 
                     float zAtInViewSpace = -1 * camera.pos.z;
 
-                    V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
+                    V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, appInfo.keyStates.mouseP_left_up, resolution, zAtInViewSpace, cameraToWorld);
                     V3 rayDirection = v3_minus(worldP, camera.pos);
                     
 
@@ -1471,9 +1443,9 @@ int main(int argc, char *args[]) {
                             addElementInfinteAlloc_notPointer(&rectModels, data);
                             
                             V4 color = COLOR_GREY;
-                            if(inBounds(keyStates.mouseP_left_up, imageR, BOUNDS_RECT)) {
+                            if(inBounds(appInfo.keyStates.mouseP_left_up, imageR, BOUNDS_RECT)) {
                                 color = COLOR_YELLOW;
-                                if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                                if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
                                     gameState->modelSelected = modelIndex - 1; //minus one since we already incremented it
                                 }
                             }
@@ -1517,31 +1489,31 @@ int main(int argc, char *args[]) {
 #endif
                     ////////////////////////////////////////////////////////////////////
                     
-                    if(isDown(keyStates.gameButtons, BUTTON_R)) {
+                    if(isDown(appInfo.keyStates.gameButtons, BUTTON_R)) {
                         DEBUG_global_CamNoRotate = false;
                     } else {
                         DEBUG_global_CamNoRotate = true;
                     }
                     
-                    easyEditor_startWindow(editor, "Editor Tools", 400, 100);
+                    easyEditor_startWindow(appInfo.editor, "Editor Tools", 400, 100);
                     
-                    gameState->modelSelected = easyEditor_pushList(editor, "Model: ", allModelsForEditorNames, allModelsForEditorNamesCount);
-                    gameState->entityTypeSelected = easyEditor_pushList(editor, "Entities: ", MyEntity_EntityTypeStrings, arrayCount(MyEntity_EntityTypeStrings));
+                    gameState->modelSelected = easyEditor_pushList(appInfo.editor, "Model: ", allModelsForEditorNames, allModelsForEditorNamesCount);
+                    gameState->entityTypeSelected = easyEditor_pushList(appInfo.editor, "Entities: ", MyEntity_EntityTypeStrings, arrayCount(MyEntity_EntityTypeStrings));
                     
                     if(gameState->entityTypeSelected == ENTITY_BOSS) {
-                        gameState->editorSelectedBossType = (EntityBossType)easyEditor_pushList(editor, "BossType: ", MyEntity_EntityBossTypeStrings, arrayCount(MyEntity_EntityBossTypeStrings));    
+                        gameState->editorSelectedBossType = (EntityBossType)easyEditor_pushList(appInfo.editor, "BossType: ", MyEntity_EntityBossTypeStrings, arrayCount(MyEntity_EntityBossTypeStrings));    
                     }
                     
                     //TODO(ollie): Get this to be more reliable!! it crashes right now
                     // easyConsole_addToStream(&console, str);
-                    if(easyEditor_pushButton(editor, "Save Room")) {
+                    if(easyEditor_pushButton(appInfo.editor, "Save Room")) {
                         easyFlashText_addText(&globalFlashTextManager, "SAVED");
                         myLevels_saveLevel(gameState->currentLevelEditing, entityManager, gameState);
                     }
                     
-                    easyEditor_endWindow(editor); //might not actually need this
+                    easyEditor_endWindow(appInfo.editor); //might not actually need this
                     
-                    if(wasPressed(keyStates.gameButtons, BUTTON_F6)) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_F6)) {
                         gameState->currentGameMode = MY_GAME_MODE_PLAY;
                         easyEntity_endRound(entityManager);
                         cleanUpEntities(entityManager, &gameVariables, gameState);
@@ -1553,15 +1525,15 @@ int main(int argc, char *args[]) {
                     }
                     Rect2f boardBounds = rect2fMinDim(-0.5f*MAX_LANE_COUNT, 0, MAX_LANE_COUNT, MY_ROOM_HEIGHT);
                     
-                    if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE) && !editor->isHovering) {
+                    if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE) && !appInfo.editor->isHovering) {
                         
-                        if(isDown(keyStates.gameButtons, BUTTON_SHIFT)) {
+                        if(isDown(appInfo.keyStates.gameButtons, BUTTON_SHIFT)) {
 
                             EntityType entTypeToInit = (EntityType)gameState->entityTypeSelected;
 
                             if(!myEntity_entityIsClamped(entTypeToInit) || (myEntity_entityIsClamped(entTypeToInit) && hit && tAt > 0.0f && inBounds(hitPoint.xy, boardBounds, BOUNDS_RECT))) {
                                 
-                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
+                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, appInfo.keyStates.mouseP_left_up, resolution, zAtInViewSpace, easy3d_getViewToWorld(&camera));
                                 
                                 
                                 assert(gameState->modelSelected < allModelsForEditor.count);
@@ -1630,9 +1602,9 @@ int main(int argc, char *args[]) {
                         }
                         
                         if(rayInfo.didHit) {
-                            if(!editor->isHovering) {
+                            if(!appInfo.editor->isHovering) {
                                 entityHit->colorTint = COLOR_BLUE;
-                                if(wasPressed(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                                if(wasPressed(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
                                     gameState->holdingEntity = true;
                                     gameState->hotEntity = entityHit;    
                                 }
@@ -1640,7 +1612,7 @@ int main(int argc, char *args[]) {
                         }   
                     }
                     
-                    if(wasReleased(keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+                    if(wasReleased(appInfo.keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
                         gameState->holdingEntity = false;
                     }
                     
@@ -1668,15 +1640,15 @@ int main(int argc, char *args[]) {
                                 float zFromCamera = dotV3(v3_minus(entPos, camera.pos), zAxis);
                                 ////////////////////////////////////////////////////////////////////
                                 
-                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, keyStates.mouseP_left_up, resolution, zFromCamera, easy3d_getViewToWorld(&camera));
+                                V3 worldP = screenSpaceToWorldSpace(perspectiveMatrix, appInfo.keyStates.mouseP_left_up, resolution, zFromCamera, easy3d_getViewToWorld(&camera));
                                 easyTransform_setWorldPos(T, worldP);    
                             }
                             
                         }
                         
-                        easyEditor_startDockedWindow(editor, "Entity", EASY_EDITOR_DOCK_BOTTOM_LEFT);
+                        easyEditor_startDockedWindow(appInfo.editor, "Entity", EASY_EDITOR_DOCK_BOTTOM_LEFT);
                         
-                        easyEditor_pushFloat3(editor, "Position:", &T->pos.x, &T->pos.y, &T->pos.z);
+                        easyEditor_pushFloat3(appInfo.editor, "Position:", &T->pos.x, &T->pos.y, &T->pos.z);
                         
                         ////////////////////////////////////////////////////////////////////
                         //NOTE(ollie): Rotation with euler angles
@@ -1690,7 +1662,7 @@ int main(int argc, char *args[]) {
                         tempEulerAngles.z = easyMath_radiansToDegrees(tempEulerAngles.z);
                         
                         
-                        easyEditor_pushFloat3(editor, "Rotation:", &tempEulerAngles.x, &tempEulerAngles.y, &tempEulerAngles.z);
+                        easyEditor_pushFloat3(appInfo.editor, "Rotation:", &tempEulerAngles.x, &tempEulerAngles.y, &tempEulerAngles.z);
                         
                         //NOTE(ollie): Convert back to radians
                         tempEulerAngles.x = easyMath_degreesToRadians(tempEulerAngles.x);
@@ -1701,24 +1673,24 @@ int main(int argc, char *args[]) {
                         
                         ////////////////////////////////////////////////////////////////////
                         
-                        easyEditor_pushFloat1(editor, "Scale:", &T->scale.x);
+                        easyEditor_pushFloat1(appInfo.editor, "Scale:", &T->scale.x);
                         T->scale.y = T->scale.z = T->scale.x;
                         
-                        easyEditor_pushColor(editor, "Color: ", &hotEntity->colorTint);
+                        easyEditor_pushColor(appInfo.editor, "Color: ", &hotEntity->colorTint);
                         
-                        if(easyEditor_pushButton(editor, "Delete")) {
+                        if(easyEditor_pushButton(appInfo.editor, "Delete")) {
                             easyFlashText_addText(&globalFlashTextManager, "Deleted");
                             MyEntity_MarkForDeletion(&hotEntity->T);
                             gameState->hotEntity = 0;
                             gameState->holdingEntity = false;
                         }
                         
-                        if(easyEditor_pushButton(editor, "Release entity")) {
+                        if(easyEditor_pushButton(appInfo.editor, "Release entity")) {
                             gameState->hotEntity = 0;
                             gameState->holdingEntity = false;
                         }
                         
-                        easyEditor_endWindow(editor); //might not actually need this
+                        easyEditor_endWindow(appInfo.editor); //might not actually need this
                         
                     }
                 } break;
@@ -1739,26 +1711,7 @@ int main(int argc, char *args[]) {
                 drawAndUpdateParticleSystem(globalRenderGroup, &gameState->mainMenu_particleSystem, v3(-20, 0, 1), appInfo.dt, v3(0, 0, 0), COLOR_WHITE, true);
             }
 
-            if(DEBUG_global_DrawFrameRate) {
-                char frameRate[256];
-                float xAt = 0.1f*resolution.x;
-                snprintf(frameRate, arrayCount(frameRate), "%f", 1.0f / appInfo.dt);
-                Rect2f bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->entities.count);
-                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.rigidBodies.count);
-                bounds = outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                xAt += 1.5f*getDim(bounds).x;
-                snprintf(frameRate, arrayCount(frameRate), "%d", entityManager->physicsWorld.colliders.count);
-                outputTextNoBacking(mainFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo.screenRelativeSize);
-                
-                    
-            }
+            
             
             
             ////////////////////////////////////////////////////////////////////
@@ -1770,30 +1723,30 @@ int main(int argc, char *args[]) {
 
             easyEditor_endWindow(editor); //might not actually need this
             */
-            /////////////////////// DRAWING & UPDATE CONSOLE /////////////////////////////////
-            if(easyConsole_update(&console, &keyStates, appInfo.dt, (resolution.y / resolution.x))) {
-                EasyToken token = easyConsole_getNextToken(&console);
+            /////////////////////// DRAWING & UPDATE e /////////////////////////////////
+            if(easyConsole_update(&appInfo.console, &appInfo.keyStates, appInfo.dt, (resolution.y / resolution.x))) {
+                EasyToken token = easyConsole_getNextToken(&appInfo.console);
                 if(token.type == TOKEN_WORD) {
                     if(stringsMatchNullN("camPower", token.at, token.size)) {
-                        token = easyConsole_seeNextToken(&console);
+                        token = easyConsole_seeNextToken(&appInfo.console);
                         if(token.type == TOKEN_FLOAT) {
-                            token = easyConsole_getNextToken(&console);
+                            token = easyConsole_getNextToken(&appInfo.console);
                             cameraMovePower = token.floatVal;
                         } else if(token.type == TOKEN_INTEGER) {
-                            token = easyConsole_getNextToken(&console);
+                            token = easyConsole_getNextToken(&appInfo.console);
                             cameraMovePower = (float)token.intVal;    
                         } else {
-                            easyConsole_addToStream(&console, "must pass a number");
+                            easyConsole_addToStream(&appInfo.console, "must pass a number");
                         }
                         
                     } else if(stringsMatchNullN("wireframe", token.at, token.size)) {
-                        token = easyConsole_getNextToken(&console);
+                        token = easyConsole_getNextToken(&appInfo.console);
                         if(stringsMatchNullN("on", token.at, token.size)) {
                             DEBUG_drawWireFrame = true;
                         } else if(stringsMatchNullN("off", token.at, token.size)) {
                             DEBUG_drawWireFrame = false;
                         } else {
-                            easyConsole_addToStream(&console, "parameter not understood");
+                            easyConsole_addToStream(&appInfo.console, "parameter not understood");
                         }
                         
                     } else if(stringsMatchNullN("bloom", token.at, token.size)) {
@@ -1801,7 +1754,7 @@ int main(int argc, char *args[]) {
                     } else if(stringsMatchNullN("camPos", token.at, token.size)) { 
                         char buffer[256];
                         sprintf(buffer, "camera pos: %f %f %f\n", camera.pos.x, camera.pos.y, camera.pos.z);
-                        easyConsole_addToStream(&console, buffer);
+                        easyConsole_addToStream(&appInfo.console, buffer);
                     } else if(stringsMatchNullN("movePlayer", token.at, token.size)) { 
                         DEBUG_global_movePlayer = !DEBUG_global_movePlayer;
 
@@ -1809,14 +1762,14 @@ int main(int argc, char *args[]) {
                         if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
 
                             for(s32 i = 0; i < gameState->currentRoomTagCount; ++i) {
-                                easyConsole_addToStream(&console, gameState->currentRoomTags[i]);
+                                easyConsole_addToStream(&appInfo.console, gameState->currentRoomTags[i]);
                             }
                         }
                     } else if(stringsMatchNullN("addtag", token.at, token.size)) {
                         if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
-                            token = easyConsole_seeNextToken(&console);
+                            token = easyConsole_seeNextToken(&appInfo.console);
                             if(token.type == TOKEN_WORD) {
-                                token = easyConsole_getNextToken(&console);
+                                token = easyConsole_getNextToken(&appInfo.console);
                                 char *stringToAdd = token.at;
                                 u32 strLength = token.size;
 
@@ -1831,15 +1784,15 @@ int main(int argc, char *args[]) {
                                 }
 
                                 if(found) {
-                                    easyConsole_addToStream(&console, "Tag already added");
+                                    easyConsole_addToStream(&appInfo.console, "Tag already added");
                                     //NOTE(ollie): Release the new string, already in the array
                                     easyPlatform_freeMemory(newString);
                                 } else {
                                     if(gameState->currentRoomTagCount < arrayCount(gameState->currentRoomTags)) {
                                         gameState->currentRoomTags[gameState->currentRoomTagCount++] = newString;   
-                                        easyConsole_addToStream(&console, "Added tag"); 
+                                        easyConsole_addToStream(&appInfo.console, "Added tag"); 
                                     } else {
-                                        easyConsole_addToStream(&console, "Tags full");
+                                        easyConsole_addToStream(&appInfo.console, "Tags full");
                                         easyPlatform_freeMemory(newString);
                                     }
                                     
@@ -1847,16 +1800,16 @@ int main(int argc, char *args[]) {
                                 
 
                             } else {
-                                easyConsole_addToStream(&console, "Expected a word as a tag");    
+                                easyConsole_addToStream(&appInfo.console, "Expected a word as a tag");    
                             }
                         } else {
-                            easyConsole_addToStream(&console, "Not in edit mode");
+                            easyConsole_addToStream(&appInfo.console, "Not in edit mode");
                         }
                     } else if(stringsMatchNullN("removetag", token.at, token.size)) {
                         if(gameState->currentGameMode == MY_GAME_MODE_EDIT_LEVEL) {
-                            token = easyConsole_seeNextToken(&console);
+                            token = easyConsole_seeNextToken(&appInfo.console);
                             if(token.type == TOKEN_WORD) {
-                                token = easyConsole_getNextToken(&console);
+                                token = easyConsole_getNextToken(&appInfo.console);
                                 char *stringToAdd = token.at;
                                 u32 strLength = token.size;
 
@@ -1876,21 +1829,21 @@ int main(int argc, char *args[]) {
                                 }
 
                                 if(!found) {
-                                    easyConsole_addToStream(&console, "No tag found");
+                                    easyConsole_addToStream(&appInfo.console, "No tag found");
                                     
                                 } 
                                 
 
                             } else {
-                                easyConsole_addToStream(&console, "Expected a word as a tag");    
+                                easyConsole_addToStream(&appInfo.console, "Expected a word as a tag");    
                             }
                         } else {
-                            easyConsole_addToStream(&console, "Not in edit mode");
+                            easyConsole_addToStream(&appInfo.console, "Not in edit mode");
                         }
                     } else if(stringsMatchNullN("edit", token.at, token.size)) {
-                        token = easyConsole_seeNextToken(&console);
+                        token = easyConsole_seeNextToken(&appInfo.console);
                         if(token.type == TOKEN_INTEGER) {
-                            token = easyConsole_getNextToken(&console);
+                            token = easyConsole_getNextToken(&appInfo.console);
                             int levelToLoad = token.intVal;
 
                             //NOTE(ollie): Set the level were currently editing to use later
@@ -1906,7 +1859,7 @@ int main(int argc, char *args[]) {
                             gameVariables.player = initPlayer(entityManager, &gameVariables, findTextureAsset("cup_empty.png"), findTextureAsset("cup_half_full.png"));
                             
                             gameState->currentRoomBeingEdited = myLevels_loadLevel(levelToLoad, entityManager, v3(0, 0, 0), gameState);
-                            easyConsole_addToStream(&console, "loaded level");
+                            easyConsole_addToStream(&appInfo.console, "loaded level");
                             
                             DEBUG_global_IsFlyMode = true;
                             DEBUG_global_CameraMoveXY = true;
@@ -1914,19 +1867,19 @@ int main(int argc, char *args[]) {
                         
 
                         } else {
-                            easyConsole_addToStream(&console, "must pass a number");
+                            easyConsole_addToStream(&appInfo.console, "must pass a number");
                         }
 
                     } else if(stringsMatchNullN("angle", token.at, token.size)) {
-                        token = easyConsole_seeNextToken(&console);
+                        token = easyConsole_seeNextToken(&appInfo.console);
                         if(token.type == TOKEN_INTEGER || token.type == TOKEN_FLOAT) {
-                            token = easyConsole_getNextToken(&console);
+                            token = easyConsole_getNextToken(&appInfo.console);
                             gameVariables.angleDegreesAltitude = (token.type == TOKEN_FLOAT) ? token.floatVal : (float)token.intVal;
                         
                             camera.pos = myGame_getCameraGlobalPosition(&gameVariables, gameVariables.cameraDistance);
                             camera.orientation = myGame_getCameraOrientation(camera.pos, gameVariables.centerPos);
                         } else {
-                            easyConsole_addToStream(&console, "must pass a number");
+                            easyConsole_addToStream(&appInfo.console, "must pass a number");
                         }
 
                         
@@ -1950,12 +1903,12 @@ int main(int argc, char *args[]) {
                             easyEntity_endRound(entityManager);
                             cleanUpEntities(entityManager, &gameVariables, gameState);
                             
-                            easyConsole_addToStream(&console, "entered overworld");
+                            easyConsole_addToStream(&appInfo.console, "entered overworld");
                     } else {
-                        easyConsole_parseDefault(&console, token);
+                        easyConsole_parseDefault(&appInfo.console, token);
                     }
                 } else {
-                    easyConsole_parseDefault(&console, token);
+                    easyConsole_parseDefault(&appInfo.console, token);
                 }
             }
             //////////////////////////////////////////////////////////////////////////////////////////////
@@ -1963,14 +1916,14 @@ int main(int argc, char *args[]) {
             /////////////////////// DRAWING & UPDATE IN GAME EDITOR ///////////////////////////////// 
             
             if(inEditor) {
-                easyEditor_startWindow(editor, "Lister Panel", 100, 100);
+                easyEditor_startWindow(appInfo.editor, "Lister Panel", 100, 100);
                 {
-                    easyEditor_pushSlider(editor, "Level move speed: ", &gameVariables.roomSpeed, -3.0f, -0.5f);
-                    easyEditor_pushSlider(editor, "Player move speed: ", &gameVariables.playerMoveSpeed, 0.1f, 1.0f);
+                    easyEditor_pushSlider(appInfo.editor, "Level move speed: ", &gameVariables.roomSpeed, -3.0f, -0.5f);
+                    easyEditor_pushSlider(appInfo.editor, "Player move speed: ", &gameVariables.playerMoveSpeed, 0.1f, 1.0f);
                     
-                    easyEditor_pushFloat1(editor, "min player move speed: ", &gameVariables.minPlayerMoveSpeed);
-                    easyEditor_pushFloat1(editor, "max player move speed: ", &gameVariables.maxPlayerMoveSpeed);
-                    easyEditor_pushSlider(editor, "Scale: ", &globalTileScale, 0.1f, 1.0f);
+                    easyEditor_pushFloat1(appInfo.editor, "min player move speed: ", &gameVariables.minPlayerMoveSpeed);
+                    easyEditor_pushFloat1(appInfo.editor, "max player move speed: ", &gameVariables.maxPlayerMoveSpeed);
+                    easyEditor_pushSlider(appInfo.editor, "Scale: ", &globalTileScale, 0.1f, 1.0f);
                     
                 }
                 // static V3 v = {};
@@ -1998,44 +1951,16 @@ int main(int argc, char *args[]) {
                 //     easyEditor_pushFloat3(editor, "", &v.x, &v.y, &v.z);
                 // }
                 
-                easyEditor_endWindow(editor); //might not actuall need this
+                easyEditor_endWindow(appInfo.editor); //might not actuall need this
                 
                 
                 
             }
-            easyEditor_endEditorForFrame(editor);
-            
-            easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo.dt);
-            
-            //////////////////////////////////// DRAW THE UI ITEMS ///////
-            
-            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
-            
-            
-            //////////////////////////////////////////////////////////////////////////////////////////////
-            
-            //NOTE(ollie): Make sure the transition is on top
-            renderClearDepthBuffer(toneMappedBuffer.bufferId);
-            
-            EasyTransition_updateTransitions(transitionState, resolution, appInfo.dt);
-            
-            drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
-            
-            ///////////////////////********** Drawing the Profiler Graph ***************////////////////////
-            renderClearDepthBuffer(toneMappedBuffer.bufferId);
-            
-            EasyProfile_DrawGraph(profilerState, (resolution.y / resolution.x), &keyStates, appInfo.dt, resolution);
-            
-            drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
-            
-            ////////////////////////////////////////////////////////////////////////////
-            
-            easyOS_updateHotKeys(&keyStates);
+
             easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, hasBlackBars);
-            
-            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(keyStates.gameButtons, BUTTON_F4))
-                DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame, "Per frame")
-                easyOS_endKeyState(&keyStates);
+            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(appInfo.keyStates.gameButtons, BUTTON_F4))
+            DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame, "Per frame")
+            easyOS_endKeyState(&appInfo.keyStates);
         }
         easyOS_endProgram(&appInfo);
     }

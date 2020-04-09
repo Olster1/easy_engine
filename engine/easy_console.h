@@ -1,3 +1,10 @@
+/*
+	How to use: 
+	
+	//NOTE(ollie): Check if the console is open
+	easyConsole_isOpen(&console)
+*/
+
 typedef enum {
 	EASY_CONSOLE_CLOSED,
 	EASY_CONSOLE_OPEN_MID,

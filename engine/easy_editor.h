@@ -6,6 +6,15 @@ Use example::
 easyEditor_initEditor(EasyEditor *e, RenderGroup *group, Font *font, float aspectRatio_yOverX, AppKeyStates *keyStates);
 
 while(running) {
+
+	if(!easyEditor_isInteracting(editor)) {
+		Do something
+	}
+
+	if(!editor.isHovering) {
+		do something else when not hovering over editor
+	}
+
 	easyEditor_startWindow(e)
 	
 	static V3 v = {};

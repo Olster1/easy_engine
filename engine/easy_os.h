@@ -19,6 +19,14 @@ typedef struct {
 	float idealFrameTime;
 	s64 lastTime;
 
+	//NOTE(ollie): Extra modules
+	EasyConsole console;
+	EasyEditor *editor;
+	EasyTransitionState *transitionState;
+	AppKeyStates keyStates;
+	EasyProfile_ProfilerDrawState *profilerState;
+	////////////////////////////////////////////////////////////////////
+
 	bool firstFrame;
 	//
 
@@ -210,6 +218,30 @@ void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
     result->pixelsToMeters = Matrix4_scale(mat4(), v3(1.0f / ratio, 1.0f / ratio, 1));
     result->screenRelativeSize = screenRelativeSize;
     /////
+
+
+
+    // easyFont_createSDFFont(concatInArena(globalExeBasePath, "/fonts/UbuntuMono-Regular.ttf", &globalPerFrameArena), 0, 255);    
+    globalDebugFont = easyFont_loadFontAtlas(concatInArena(globalExeBasePath, "fontAtlas_UbuntuMono-Regular", &globalPerFrameArena), &globalLongTermArena);   
+
+    ///////////////////////********** Setup the console & editor etc. ***************////////////////////    
+    
+    
+    easyConsole_initConsole(&result->console, BUTTON_TILDE);
+    
+    DEBUG_globalEasyConsole = &result->console;
+    
+    result->editor = pushStruct(&globalLongTermArena, EasyEditor);
+    easyEditor_initEditor(result->editor, globalRenderGroup, globalDebugFont, (resolution->y / resolution->x), &result->keyStates, *resolution);
+    
+    easyFlashText_initManager(&globalFlashTextManager, globalDebugFont, (resolution->y / resolution->x));
+    
+    result->transitionState = EasyTransition_initTransitionState(0);
+
+    result->profilerState = EasyProfiler_initProfilerDrawState(); 
+    ////////////////////////////////////////////////////////////////////
+
+
 }
 
 void easyOS_endProgram(OSAppInfo *appInfo) {
@@ -243,30 +275,6 @@ float easyOS_getScreenRatio(V2 screenDim, V2 resolution) {
 	return screenRatio;
 }
 
-
-typedef struct {
-	GameButton gameButtons[BUTTON_COUNT];
-    	
-    V2 mouseP_01;
-	V2 mouseP;
-	V2 mouseP_yUp;
-	V2 mouseP_left_up;
-
-	char *inputString;
-    
-	int scrollWheelY;
-} AppKeyStates;
-
-static inline V2 easyInput_mouseToResolution(AppKeyStates *input, V2 resolution) {
-	V2 result = v2(input->mouseP_01.x*resolution.x, input->mouseP_01.y*resolution.y);
-	return result;
-}
-
-static inline V2 easyInput_mouseToResolution_originLeftBottomCorner(AppKeyStates *input, V2 resolution) {
-	V2 result = v2(input->mouseP_01.x*resolution.x, (1.0f - input->mouseP_01.y)*resolution.y);
-	return result;
-}
-
 static inline void easyOS_updateHotKeys(AppKeyStates *keyStates) {
 	DEBUG_TIME_BLOCK()
 	///////////////////////*********** Update Any Hotkeys **************////////////////////
@@ -287,6 +295,48 @@ static inline void easyOS_updateHotKeys(AppKeyStates *keyStates) {
 
 static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int compositedFrameBufferId, OSAppInfo *appInfo, bool blackBars) {
 	DEBUG_TIME_BLOCK()
+
+	///////////////////////************ Final engine specific drawing *************////////////////////
+
+	if(DEBUG_global_DrawFrameRate) {
+	    char frameRate[256];
+	    float xAt = 0.1f*resolution.x;
+	    snprintf(frameRate, arrayCount(frameRate), "%f", 1.0f / appInfo->dt);
+	    Rect2f bounds = outputTextNoBacking(globalDebugFont, xAt, 0.1f*resolution.y, NEAR_CLIP_PLANE, resolution, frameRate, InfinityRect2f(), COLOR_BLACK, 1, true, appInfo->screenRelativeSize);
+	        
+	}
+
+	easyEditor_endEditorForFrame(appInfo->editor);
+	
+	easyFlashText_updateManager(&globalFlashTextManager, globalRenderGroup, appInfo->dt);
+	
+	//////////////////////////////////// DRAW THE UI ITEMS ///////
+	
+	drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
+	
+	
+	//////////////////////////////////////////////////////////////////////////////////////////////
+	
+	//NOTE(ollie): Make sure the transition is on top
+	renderClearDepthBuffer(compositedFrameBufferId);
+	
+	EasyTransition_updateTransitions(appInfo->transitionState, resolution, appInfo->dt);
+	
+	drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
+	
+	///////////////////////********** Drawing the Profiler Graph ***************////////////////////
+	renderClearDepthBuffer(compositedFrameBufferId);
+	
+	EasyProfile_DrawGraph(appInfo->profilerState, (resolution.y / resolution.x), &appInfo->keyStates, appInfo->dt, resolution);
+	
+	drawRenderGroup(globalRenderGroup, RENDER_DRAW_SORT);
+	
+	////////////////////////////////////////////////////////////////////////////
+	
+	easyOS_updateHotKeys(&appInfo->keyStates);
+
+	////////////////////////////////////////////////////////////////////
+
 	SDL_Window *windowHandle = appInfo->windowHandle;
 	unsigned int backBufferId = appInfo->frameBackBufferId;
 	unsigned int renderbufferId = appInfo->renderBackBufferId;
@@ -379,6 +429,7 @@ static inline void easyOS_endFrame(V2 resolution, V2 screenDim, unsigned int com
     releaseMemoryMark(&perFrameArenaMark);
 	}
 }
+
 
 static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V2 *screenDim, bool *running, bool stretched) {
 	DEBUG_TIME_BLOCK()

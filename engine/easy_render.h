@@ -1,3 +1,24 @@
+/*
+    How to use the renderer:
+
+    renderSetShader(renderGroup, &phongProgram);
+    setModelTransform(renderGroup, mat4());
+    setViewTransform(renderGroup, viewMatrix);
+    setProjectionTransform(renderGroup, perspectiveMatrix);
+    
+    drawSprite(renderGroup)
+ 
+
+*/
+
+
+
+
+
+
+
+
+
 
 // static float global_debug_sphere_model_data[] = {
 //     0.000000f,-1.000000f,0.000000f,0.425323f,-0.850654f,0.309011f,-0.162456f,-0.850654f,

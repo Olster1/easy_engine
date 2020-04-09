@@ -8,10 +8,12 @@
 static float globalTileScale = 0.9f;
 
 #define MAX_LANE_COUNT 5
-#define MY_ROOM_HEIGHT 40
+#define MY_ROOM_HEIGHT 5
 #define DEBUG_ENTITY_COLOR 0
 
 #define MY_PLAYER_MAX_AMMO_COUNT 20
+
+#define PLAYER_MOVE_TIMER_PERIOD 0.7f
 
 #define CHOC_INCREMENT 0.1f
 
