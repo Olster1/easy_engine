@@ -27,6 +27,10 @@ typedef struct {
 	EasyProfile_ProfilerDrawState *profilerState;
 	////////////////////////////////////////////////////////////////////
 
+	//NOTE(ollie): Whether the game is running for the game loop 
+	bool running;
+	bool hasBlackBars;
+
 	bool firstFrame;
 	//
 
@@ -240,6 +244,9 @@ void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 
     result->profilerState = EasyProfiler_initProfilerDrawState(); 
     ////////////////////////////////////////////////////////////////////
+
+    result->running = true;
+    result->hasBlackBars = true;
 
 
 }
