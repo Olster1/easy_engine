@@ -1,22 +1,17 @@
 #include "defines.h"
 #include "easy_headers.h"
 
+#include "window_scene.h"
+#include "logicBlock.c"
+#include "logic_ui.c"
 #include "gameState.h"
 #include "gameScene.c"
+#include "draw_windows.c"
+
 
 int main(int argc, char *args[]) {
-    //NOTE(ollie): Have to do this first since our profiler relies on it
-    EasyTime_setupTimeDatums();
-    DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame, "Main: Intial setup");
     
-    if(argc > 1) {
-        for(int i = 0; i < argc; i++) {
-            if(cmpStrNull("shaders", args[i])) {
-                globalDebugWriteShaders = true;    
-            }
-            
-        }
-    }
+    EASY_ENGINE_ENTRY_SETUP()
     
     V2 screenDim = v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
     V2 resolution = v2(DEFINES_RESOLUTION_X, DEFINES_RESOLUTION_Y);
@@ -46,6 +41,8 @@ int main(int argc, char *args[]) {
             //////////////////////////////////////////////////
         
         }
+
+        loadAndAddImagesToAssets("img/engine_icons/");
         
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, 0));
@@ -57,9 +54,23 @@ int main(int argc, char *args[]) {
         easy_addLight(globalRenderGroup, light);
         
 
-        
-
         GameState *gameState = initGameState((resolution.y / resolution.x));
+
+        GameScene *mainScene = findGameSceneByName(gameState, "Main");
+
+        WindowScene *playWindow = findFirstWindowByType(gameState, WINDOW_TYPE_SCENE_GAME);
+
+        assert(mainScene);
+
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_CLEAR_COLOR);
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_LOOP);
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_DRAW_RECTANGLE);
+        // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_POP_SCOPE);
+        // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_POP_SCOPE);
+
+        assert(playWindow);
+        compileLogicBlocks(&mainScene->logicSet, &mainScene->vmMachine, easyRender_getDefaultFauxResolution(getDim(playWindow->dim)));
+
 
         ///////////************************/////////////////
         while(appInfo.running) {
@@ -76,7 +87,7 @@ int main(int argc, char *args[]) {
             renderEnableDepthTest(globalRenderGroup);
             renderEnableCulling(globalRenderGroup);
             setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA);
-            renderSetViewPort(0, 0, resolution.x, resolution.y);
+            renderSetViewport(globalRenderGroup, 0, 0, resolution.x, resolution.y);
             
             
             EasyCamera_MoveType camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
@@ -89,15 +100,25 @@ int main(int argc, char *args[]) {
             Matrix4 viewMatrix = easy3d_getWorldToView(&camera);
             Matrix4 perspectiveMatrix = projectionMatrixFOV(camera.zoom, resolution.x/resolution.y);
 
-            ///////////////////////************* Update the scenes ************////////////////////
-                
+            ///////////////////////************* Update the Windows ************////////////////////
+
+            updateAndRenderSceneWindows(gameState, &appInfo);
+            
             ////////////////////////////////////////////////////////////////////
 
+
+            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
+
+            //NOTE(ollie): Make sure the scene chooser is on top
+            renderClearDepthBuffer(toneMappedBuffer.bufferId);
+            
             ///////////////////////************ Draw the scenes menu *************////////////////////
 
             updateAndRenderGameSceneMenuBar(gameState, &appInfo);
 
             ////////////////////////////////////////////////////////////////////
+
+            drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
             
             //NOTE(ollie): Update the console
             if(easyConsole_update(&appInfo.console, &appInfo.keyStates, appInfo.dt, (resolution.y / resolution.x))) {
