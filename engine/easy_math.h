@@ -551,9 +551,9 @@ Rect2f rect2f(float minX,
 Rect2f InfinityRect2f() {
     Rect2f result = {};
     
-    result.minX = 0;
+    result.minX = -INFINITY_VALUE;
     result.maxX = INFINITY_VALUE;
-    result.minY = 0;
+    result.minY = -INFINITY_VALUE;
     result.maxY = INFINITY_VALUE;
     
     return result;
@@ -1216,6 +1216,11 @@ inline bool easyMath_mat4AreEqual(Matrix4 *a, Matrix4 *b) {
     }
 
 
+    return result;
+}
+
+static bool easyMath_rect2fAreEqual(Rect2f a, Rect2f b) {
+    bool result = (a.min.x == b.min.x && a.max.x == b.max.x && a.min.y == b.min.y && a.max.y == b.max.y);
     return result;
 }
 

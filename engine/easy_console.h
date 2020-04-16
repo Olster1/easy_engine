@@ -22,7 +22,8 @@ typedef struct {
 
 	InputBuffer buffer;
 
-	char lastString[INPUT_BUFFER_SIZE];
+	//NOTE(ollie): Since the buffer doesn't resize for the input, it's ok if we just have a static array here
+	char lastString[EASY_STRING_INPUT_BUFFER_SIZE_INCREMENT];
 
 	int streamSize;
 	int streamAt;
@@ -43,14 +44,13 @@ inline void easyConsole_initConsole(EasyConsole *c, ButtonType hotkey) {
 	c->state = EASY_CONSOLE_CLOSED;
 	c->expandTimer = initTimer(0.2f, false);
 	turnTimerOff(&c->expandTimer);
-	c->buffer.length = 0;
-	c->buffer.cursorAt = 0;
-	c->buffer.chars[0] = '\0';
+
+	easyString_initInputBuffer(&c->buffer, false);
 
 	c->tokenizer.parsing = false;
 
 	c->streamAt = 0;
-	c->streamSize = 10000;
+	c->streamSize = 1000;
 	c->bufferStream = pushArray(&globalLongTermArena, c->streamSize, char);
 	c->bufferStream[0] = '\0';
 }
@@ -59,41 +59,34 @@ inline void easyConsole_addToStream(EasyConsole *c, char *toAdd) {
 	DEBUG_TIME_BLOCK()
 	char *at = toAdd;
 
-	bool readyToBreak = false;
-	bool copying = true;
-	while(copying) {
-		if(c->streamAt >= c->streamSize) {
-			assert(c->streamAt == c->streamSize);
-			// @Speed
-			int baseIndex = 0;
-			int offset = 2048;
-			for(int i = offset; i < c->streamAt; ++i) {
-			    c->bufferStream[baseIndex++] = c->bufferStream[i]; 
-			}
-			c->bufferStream[baseIndex++] = '\0';
-			assert(baseIndex <= c->streamSize);
-			c->streamAt -= offset;
-		}
-		if(readyToBreak) {
-			assert(c->streamAt < c->streamSize);
-			c->bufferStream[c->streamAt++] = '\n';
-			copying = false;
-			break;
-		}
+	// [0]1|[1]2|[2]3|[3]4|[X]
 
-		assert(*at != '\0');
-		if(copying) {
-			assert(c->streamAt < c->streamSize);
-			c->bufferStream[c->streamAt++] =  *at;
-			at++;
-
-			if(*at == '\0') {
-				readyToBreak = true;
-			}
-		}
-
-		
+	//TODO(ollie): Make new string length function that differentiates between string size in bytes, and string unicode character length
+	u32 newSize = c->streamAt + easyString_getSizeInBytes_utf8(toAdd);
+	//NOTE(ollie): We reached maximum capacity, so just nuke the whole buffer
+	if(newSize > (c->streamSize - 2)) { //NOTE(ollie): -2 for Null terminator space & newline
+		c->streamAt = 0;	
+		c->bufferStream[0] = '\0';
 	}
+
+	while(*at) {
+		char *prevPtr = at;
+		easyUnicode_utf8ToUtf32((unsigned char **)&at, true);
+		s32 sizeInBytesOfUnicode = (s32)(at - prevPtr);
+		assert(sizeInBytesOfUnicode >= 0);
+
+		//NOTE(ollie): This is to make sure we keep all unicode bytes together
+		if((c->streamAt + sizeInBytesOfUnicode) <= (c->streamSize - 2)) { //NOTE(ollie): minus 2 for newline as well
+			easyPlatform_copyMemory(&c->bufferStream[c->streamAt], prevPtr, sizeInBytesOfUnicode);
+			c->streamAt += sizeInBytesOfUnicode;		
+		}
+	}
+
+	assert(c->streamAt <= (c->streamSize - 2));
+	//NOTE(ollie): Add null terminator now
+	c->bufferStream[c->streamAt++] = '\n';
+	assert(c->streamAt < c->streamSize);
+	c->bufferStream[c->streamAt] = '\0';
 }
 
 
@@ -190,7 +183,10 @@ inline bool easyConsole_update(EasyConsole *c, AppKeyStates *keyStates, float dt
 	}
 
 	if(result) {
+		//NOTE(ollie): Move the current buffer into the saved buffer to tokenize
 		nullTerminateBuffer(c->lastString, c->buffer.chars, c->buffer.length);
+
+		//NOTE(ollie): Clear the input buffer out
 		c->buffer.length = 0;
 		c->buffer.cursorAt = 0;
 		c->buffer.chars[0] = '\0';

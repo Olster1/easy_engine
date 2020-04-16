@@ -14,6 +14,7 @@ FUNC(LOGIC_BLOCK_DRAW_CIRCLE)\
 FUNC(LOGIC_BLOCK_WHILE)\
 FUNC(LOGIC_BLOCK_DRAW_CUBE)\
 FUNC(LOGIC_BLOCK_VARIABLE_INIT)\
+FUNC(LOGIC_BLOCK_PRINT)\
 
 
 typedef enum {
@@ -22,31 +23,76 @@ typedef enum {
 
 static char *global_logicBlockTypeStrings[] = { LOGIC_BLOCK_TYPE(STRING) };
 
-static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Set Background Color", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable" };
+static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable", "Print" };
 
 static LogicBlockType global_logicBlockTypes[] = { LOGIC_BLOCK_TYPE(ENUM) };
+
+typedef struct {
+	//NOTE(ollie): This string is allocated as a global string stored in the exe, so we never have to free it. 
+	char *name;
+	VarType varType;
+
+	//NOTE(ollie): Buffer to edit with the ui, we then create ast out of it when we compile
+	s32 innerCount;
+	InputBuffer buffers[8];
+} LogicParameter;	
 
 typedef struct {
 	LogicBlockType type;
 
 	//NOTE(ollie): For rendering when the user hovers over the block, to make room
+	//NOTE(ollie): Top spacing
 	float extraSpacing;
 	float currentSpacing;
+
+	//NOTE(ollie): For rendering when it is open
+	float bottomSpacing;
+	float currentBottomSpacing;
 
 	//NOTE(ollie): For rendering the drop down options
 	bool isOpen;
 
 	//NOTE(ollie): Parameters into the functions
 	u32 parameterCount;
-	EasyVM_Variable parameters[32];	
+	LogicParameter parameters[32];	
+
 } LogicBlock;
 
-static void logicBlock_addParameter(LogicBlock *block, char *name, VarType type) {
-	assert(block->parameterCount < arrayCount(block->parameters));
-	EasyVM_Variable *var = block->parameters + block->parameterCount++;
 
-	u8 bogus[256];
-	easyVM_assignVariable(var, type, bogus);
+static inline s32 logicBlock_getInnerParamCount(LogicParameter *param) {
+	s32 result = 0;
+
+	VarType type = param->varType;
+	if(type == VAR_V4) {
+		result = 4;
+	} else if(type == VAR_V3) {
+		result = 3;
+	} else if(type == VAR_V2) {
+		result = 2;
+	} else {
+		result = 1;
+	}
+
+	return result;
+
+}
+
+static void logicBlock_addParameter(LogicBlock *block, char *name, VarType type, char *valueAsString) {
+	assert(block->parameterCount < arrayCount(block->parameters));
+	LogicParameter *var = block->parameters + block->parameterCount++;
+
+	//NOTE(ollie): Assign the name
+	//NOTE(ollie): This string should only be a global string, so we never have to free it!
+	var->name = name;
+	var->varType = type;
+
+	var->innerCount = logicBlock_getInnerParamCount(var);
+	
+	//Where we first put the string in the buffer, do it by the type of the variable? 
+	for(int j = 0; j < var->innerCount; ++j) {
+		easyString_initInputBuffer(&var->buffers[j], true);	
+		splice(&var->buffers[j], valueAsString, true);	
+	}
 }
 
 
@@ -54,17 +100,26 @@ typedef struct {
 	InfiniteAlloc logicBlocks;
 } LogicBlock_Set;
 
-static LogicBlock initBlock(LogicBlockType type) {
+static void logicBlock_deinit(LogicBlock *block) {
+	for(int i = 0; i < block->parameterCount; ++i) {
+		LogicParameter *param = block->parameters + i;
+		for(int j = 0; j < param->innerCount; ++j) {
+			easyString_deleteInputBuffer(&param->buffers[j]);		
+		}
+	}
+}
+
+static void initBlock(LogicBlock *block, LogicBlockType type) {
 	//NOTE(ollie): Clear all fields
-	LogicBlock block = {0};
+	zeroStruct(block, LogicBlock);
 
 	//NOTE(ollie): Set the type
-	block.type = type;
+	block->type = type;
 
 	//NOTE(ollie): Add parameters to the functions
 	switch(type) {
 		case LOGIC_BLOCK_CLEAR_COLOR: {
-			logicBlock_addParameter(&block, "Color", VAR_V4);
+			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 		} break;
 		case LOGIC_BLOCK_PUSH_SCOPE: {
 
@@ -73,12 +128,12 @@ static LogicBlock initBlock(LogicBlockType type) {
 
 		} break;
 		case LOGIC_BLOCK_LOOP: {
-			logicBlock_addParameter(&block, "Count", VAR_INT);
+			logicBlock_addParameter(block, "Count", VAR_INT, "10");
 		} break;
 		case LOGIC_BLOCK_DRAW_RECTANGLE: {
-			logicBlock_addParameter(&block, "Size", VAR_V2);
-			logicBlock_addParameter(&block, "Position", VAR_V3);
-			logicBlock_addParameter(&block, "Color", VAR_V4);
+			logicBlock_addParameter(block, "Size", VAR_V2, "100");
+			logicBlock_addParameter(block, "Position", VAR_V3, "100");
+			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 		} break;
 		case LOGIC_BLOCK_PLAY_SOUND: {
 
@@ -105,14 +160,16 @@ static LogicBlock initBlock(LogicBlockType type) {
 
 		} break;
 		case LOGIC_BLOCK_VARIABLE_INIT: {
-
+			logicBlock_addParameter(block, "Name", VAR_STRING, "Empty");
+			logicBlock_addParameter(block, "Value", VAR_NULL, "\"Empty\"");
+		} break;
+		case LOGIC_BLOCK_PRINT: {
+			logicBlock_addParameter(block, "Value", VAR_STRING, "\"Empty\"");
 		} break;
 		default: {
 			assert(false);
 		}
 	}
-	
-	return block;
 }
 
 static void initLogicBlockSet(LogicBlock_Set *set) {
@@ -121,7 +178,8 @@ static void initLogicBlockSet(LogicBlock_Set *set) {
 }
 
 static void pushLogicBlock(LogicBlock_Set *set, LogicBlockType type) {
-	LogicBlock block = initBlock(type);
+	LogicBlock block;
+	initBlock(&block, type);
 	
 	addElementInfinteAlloc_notPointer(&set->logicBlocks, block);
 }
@@ -142,21 +200,25 @@ static void spliceLogicBlock(LogicBlock_Set *set, LogicBlockType type, s32 index
 	//NOTE(ollie): Now add the new one
 	LogicBlock *block = getElementFromAlloc(&set->logicBlocks, index, LogicBlock);
 	assert(block);
-
-	LogicBlock newBlock = initBlock(type);
-	newBlock.type = type;
-
-	//NOTE(ollie): Override the one in the place
-	*block = newBlock;
+	
+	initBlock(block, type);
 }
 
 static void removeLogicBlock(LogicBlock_Set *set, s32 index) {
+
+	//NOTE(ollie): Cleanup any memory being used, this is the input buffers used.
+	LogicBlock *blockRemoved = getElementFromAlloc(&set->logicBlocks, index, LogicBlock);
+	logicBlock_deinit(blockRemoved);
+	////////////////////////////////////////////////////////////////////
+
 	//NOTE(ollie): Start from the other end, and move them all up one
-	for(int i = (set->logicBlocks.count - 1); i > index; i--) {
+	for(int i = index; i < (set->logicBlocks.count - 1); i++) {
 		LogicBlock *blockA = getElementFromAlloc(&set->logicBlocks, i, LogicBlock);
-		LogicBlock *blockB = getElementFromAlloc(&set->logicBlocks, i - 1, LogicBlock);
-		*blockB = *blockA;
+		LogicBlock *blockB = getElementFromAlloc(&set->logicBlocks, i + 1, LogicBlock);
+
+		*blockA = *blockB;
 	}
+
 
 	//NOTE(ollie): Now minus 1 of the end
 	set->logicBlocks.count--;
@@ -184,12 +246,203 @@ static inline EasyVM_Variable logicBlock_initVarV4(float x, float y, float z, fl
 	return var;
 }
 
+static inline EasyVM_Variable logicBlock_initFloat(float value) {
+	EasyVM_Variable var = {0};
+	var.type = VAR_FLOAT;
+	var.floatVal = value;
+	return var;
+}
+
+static void writeArguments(EasyVM_State *state, LogicBlock *block) {
+	//NOTE(ollie): Take memory mark
+	MemoryArenaMark memoryMark = takeMemoryMark(&globalScratchArena);
+	////////////////////////////////////////////////////////////////////
+
+	for(int paramIndex = 0; paramIndex < block->parameterCount; ++paramIndex) {
+		LogicParameter *param = block->parameters + paramIndex;
+
+		/*
+		2 + 3 / 9 + (2 * 4)
+
+		2 + o
+			|
+			3 / 9 + o
+					|
+					2 * 4
+
+		push value always
+		if next node is parent, go down
+		push value 
+		check next node, if not parent
+		push value
+		then push math_operator
+		then check if next node is parent, do down
+		push value always
+		check next node, 
+		not parent 
+		so push value, 
+		then math_operator
+		no end so go back to parent node
+		look back and push math_operator
+
+		continue on -> look past push, 
+		go up to parent if finished
+		look back push math math_operator 
+
+
+		push 2 [2]
+		push 3 [2 3]
+		push 9 [2 3 9]
+		divide
+		push 2 [2 0.33 2]
+		push 4 [2 0.33 2 4]
+		mult
+		add
+		add
+		*/
+
+		for(int innerIndex = 0; innerIndex < param->innerCount; ++innerIndex) {
+
+			EasyAst ast = easyAst_generateAst(param->buffers[innerIndex].chars, &globalScratchArena);
+
+			EasyAst_Node *nodeAt = &ast.parentNode;
+
+			assert(nodeAt->type == EASY_AST_NODE_BEGIN_NODE);
+			assert(!nodeAt->child);
+			
+			//NOTE(ollie): Go to the next node of the beginning node
+			nodeAt = nodeAt->next;
+
+			//TODO(ollie): Issue message to user that the variable box is empty
+			assert(nodeAt);
+
+			bool finished = false;
+
+			while(nodeAt) {
+
+				//NOTE(ollie): When we go down a node, we shouldn't advance 
+				bool advanceNode = true;
+
+				///////////////////////*********** Add Literal Opcode **************////////////////////
+				if(nodeAt->type == EASY_AST_NODE_PRIMITIVE) {
+					//NOTE(ollie): We always push primitive op codes no matter what since it works out that way
+					//NOTE(ollie): with our stack machine vm. But we have to do stuff to get the math operators in 
+					//NOTE(ollie): order. Mainly we skip the math operator, add whatever is at that node, then go back one 
+					//NOTE(ollie): Add add the math operator
+					EasyVM_Variable varToWrite = {0}; 
+					if(nodeAt->token.type == TOKEN_FLOAT) {
+						//NOTE(ollie): Write the float to a variable
+						varToWrite.type = VAR_FLOAT;
+						varToWrite.floatVal = nodeAt->token.floatVal;
+					} else if(nodeAt->token.type == TOKEN_INTEGER) {
+						//NOTE(ollie): Write the integer to a variable
+						//TODO(ollie): Hack: we just override types to be floats so we don't get error in vm when it expects float not integer
+						varToWrite.type = VAR_FLOAT;
+						varToWrite.floatVal = (float)nodeAt->token.intVal;
+					} else if(nodeAt->token.type == TOKEN_STRING) {
+						varToWrite.type = VAR_STRING;
+							
+						//NOTE(ollie): This string is stored in the text input buffer for the variables. 
+						//NOTE(ollie): We want to copy this string to a new buffer (the VM string arena), 
+						//NOTE(ollie): Since we will be altering it while VM is running. 
+						//NOTE(ollie): In the program it then can look up this pointer to the arena
+						varToWrite.stringVal = nullTerminateArena(nodeAt->token.at, nodeAt->token.size, &state->stringArena);
+						
+					} else {
+						assert(false);
+					}
+
+					easyVM_writeLiteral(state, varToWrite);
+
+					//NOTE(ollie): There has to be a math operator every second node
+					if(nodeAt->next && !(nodeAt->next->type == EASY_AST_NODE_OPERATOR_MATH || nodeAt->next->type == EASY_AST_NODE_EVALUATE)) {
+						finished = true;
+						easyAst_addError(&ast, "There is supposed to be a math symbol following literals. ", 0);
+					}
+
+				} else if(nodeAt->type == EASY_AST_NODE_VARIABLE) {
+
+				} else if(nodeAt->type == EASY_AST_NODE_EVALUATE) {
+					//NOTE(ollie): Do nothing 
+				} else if(nodeAt->type == EASY_AST_NODE_OPERATOR_FUNCTION) {
+
+				} else if(nodeAt->type == EASY_AST_NODE_OPERATOR_MATH) {
+					int l = 0;
+				} else if(nodeAt->type == EASY_AST_NODE_PARENT) {
+					assert(nodeAt->child);
+					nodeAt = nodeAt->child;
+
+					advanceNode = false;
+
+				} else {
+					easyAst_addError(&ast, "There was a unkown symbol in the expression.", 0);
+					assert(false);
+				}
+
+				if(advanceNode) {
+					
+					///////////////////////*********** Add Math Opcode **************////////////////////
+					if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
+						easyVM_writeMathOpCode(state, nodeAt);
+					}
+					////////////////////////////////////////////////////////////////////
+
+					if(nodeAt->next) {
+						//NOTE(ollie): Just go to the next node straight away
+						nodeAt = nodeAt->next;
+					} else {
+						bool keepPopping = true;
+
+						while(keepPopping) {
+							//NOTE(ollie): If there is a parent of this nod, pop up because we know the current node doesn't have a next node 
+							if(nodeAt->parent) {
+								assert(!nodeAt->next);
+								//NOTE(ollie): Got back to the parent node, however we want to now add the math operator 
+								nodeAt = nodeAt->parent;
+
+								///////////////////////*********** Add Math Opcode **************////////////////////
+								//NOTE(ollie): We add it here since we about to move on from this node, and the math symbol before this node 
+								//NOTE(ollie): wouldn't have been added yet as an opcode 
+								if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
+									easyVM_writeMathOpCode(state, nodeAt);
+								}
+								////////////////////////////////////////////////////////////////////
+
+							} else {
+								//NOTE(ollie): We're finished evaluating the syntax tree, so stop walking it.
+								assert(!nodeAt->next);
+								keepPopping = false;
+
+								//NOTE(ollie): Just for debug
+								finished = true;
+									
+								//NOTE(ollie): Set nodeAt to null so the loop finishes
+								nodeAt = 0;
+							}
+
+							if(nodeAt && nodeAt->next) {
+								//NOTE(ollie):  Since we pop back to the node we would have entered & therefore have already evaluated, we want to go to the next node
+								nodeAt = nodeAt->next;
+								keepPopping = false;
+							} 
+						} 
+					}	
+				}
+				
+			}
+		}
+	}
+	////////////////////////////////////////////////////////////////////
+	releaseMemoryMark(&memoryMark);
+}
+
 ////////////////////////////////////////////////////////////////////
 
 static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuaxResolution) {
-	// sceneDim = Rect2f
-	//NOTE(ollie): Reset the bytes
-	state->opCodeStreamLength = 0;
+	///////////////////////********** Reset the VM ***************////////////////////
+	easyVM_resetVM(state);
+	////////////////////////////////////////////////////////////////////
+
 	for(u32 blockIndex = 0; blockIndex < set->logicBlocks.count; ++blockIndex) {
 	    LogicBlock *block = getElementFromAlloc(&set->logicBlocks, blockIndex, LogicBlock);
 
@@ -224,19 +477,23 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		
 	    	} break;
 	    	case LOGIC_BLOCK_DRAW_RECTANGLE: {
-	    		easyVM_writeLiteral(state, logicBlock_initVarV4(1, 0, 0, 1));
-	    		easyVM_writeLiteral(state, logicBlock_initVarV2(100, 100));
-	    		easyVM_writeLiteral(state, logicBlock_initVarV3(100, 100, NEAR_CLIP_PLANE));
+	    		writeArguments(state, block);
 	    		easyVM_writeOpCode(state, OP_CODE_DRAW_RECTANGLE);
 	    	} break;
 	    	case LOGIC_BLOCK_CLEAR_COLOR: {
-	    		easyVM_writeLiteral(state, logicBlock_initVarV4(1, 1, 0, 1));
-	    		easyVM_writeLiteral(state, logicBlock_initVarV2(fuaxResolution.x, fuaxResolution.y));
+	    		writeArguments(state, block);
+	    		easyVM_writeLiteral(state, logicBlock_initFloat(fuaxResolution.x));
+	    		easyVM_writeLiteral(state, logicBlock_initFloat(fuaxResolution.y));
+
 	    		easyVM_writeOpCode(state, OP_CODE_CLEAR_COLOR);
+	    	} break;
+	    	case LOGIC_BLOCK_PRINT: {
+	    		writeArguments(state, block);
+	    		easyVM_writeOpCode(state, OP_CODE_PRINT);
 	    	} break;
 	    	default: {
 	    		//NOTE(ollie): Shouldn't be here!
-	    		assert(false);
+	    		// assert(false);
 	    	}
 	    }
 	}

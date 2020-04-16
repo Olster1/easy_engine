@@ -48,10 +48,19 @@ static void easyPlatform_freeMemory(void *memory) {
 }
 
 
-static void easyPlatform_copyMemory(void *to, void *from, u32 sizeInBytes) {
+static inline void easyPlatform_copyMemory(void *to, void *from, u32 sizeInBytes) {
     memcpy(to, from, sizeInBytes);
 }
 
+static inline u8 * easyPlatform_reallocMemory(void *from, u32 oldSize, u32 newSize) {
+    u8 *result = (u8 *)easyPlatform_allocateMemory(newSize, EASY_PLATFORM_MEMORY_ZERO);
+
+    easyPlatform_copyMemory(result, from, oldSize);
+
+    easyPlatform_freeMemory(from);
+
+    return result;
+}
 
 #define EASY_PLATFORM_H 1
 #endif

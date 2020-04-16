@@ -67,6 +67,7 @@ static char* globalExeBasePath;
 #include "easy_perlin.h"
 
 #include "easy_utf8.h"
+#include "easy_string.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -111,6 +112,7 @@ static char* globalExeBasePath;
 
 #include "easy_collision.h"
 #include "easy_physics.h"
+#include "easy_vm.h"
 
 // #include "easy_write.h"
 

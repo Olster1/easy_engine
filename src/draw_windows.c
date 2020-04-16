@@ -12,6 +12,7 @@ static inline Rect2f drawBlockWithName(GameState *gameState, float *xAt, float *
 
 	return dim;
 }
+ 
 
 static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *activeScene, WindowScene *window, OSAppInfo *appInfo) {
     LogicBlock_Set *logicSet = &activeScene->logicSet;
@@ -40,6 +41,7 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
     for(u32 blockIndex = 0; blockIndex < logicSet->logicBlocks.count; ++blockIndex) {
         LogicBlock *block = getElementFromAlloc(&logicSet->logicBlocks, blockIndex, LogicBlock);
 
+         float maxBottomSpacing = block->parameterCount*globalDebugFont->fontHeight;
 
         switch(block->type) {
         	case LOGIC_BLOCK_PUSH_SCOPE: {
@@ -76,8 +78,136 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
 
         		Rect2f checkBounds = rect2fMinDim(bounds_.min.x, bounds_.min.y - expansionSize - padding, dim.x, expansionSize + padding + dim.y);
 
-
+        		///////////////////////************ Draw the drop down parameters if it's open*************////////////////////
         		
+        		//NOTE(ollie): First update space for the menu to go in
+        		block->currentBottomSpacing = lerp(block->currentBottomSpacing, 10*appInfo->dt, block->bottomSpacing);
+        		float tempX = xAt;
+        		float tempY = yAt; 
+
+        		yAt += block->currentBottomSpacing;
+
+        		///////////////////////************* if the param menu is open ************////////////////////
+        		if(block->isOpen || block->currentBottomSpacing > 1) {
+        			V4 color = COLOR_GREY;
+        			color.w = block->currentBottomSpacing / maxBottomSpacing;
+
+        			V4 fontColor = COLOR_BLACK;
+        			fontColor.w = color.w;
+
+        			#define LOGIC_PARAM_MARGIN 5
+
+        			float cachedX = tempX;
+        				
+        			///////////////////////*********** Loop through all the parameters **************////////////////////
+        			for(int paramIndex = 0; paramIndex < block->parameterCount; ++paramIndex) {
+        				LogicParameter *param = block->parameters + paramIndex;
+        				float temp = tempY; 
+        				Rect2f paramBounds = drawBlockWithName(gameState, &tempX, &tempY, param->name, color, fontColor);
+        				//NOTE(ollie): Restore y coord so we don't move down the line
+        				tempY = temp;
+
+        				V2 paramDim = getDim(paramBounds);
+        			
+        				tempX += paramDim.x + LOGIC_PARAM_MARGIN;
+
+        				s32 innerIndexCount = param->innerCount;
+
+			    		////////////////////////////////////////////////////////////////////
+
+        				///////////////////////************ Loop through each number combining the variable *************////////////////////
+			    		for(s32 innerIndex = 0; innerIndex < innerIndexCount; ++innerIndex) {
+
+			    			V4 bufferColor = COLOR_WHITE;
+
+			    			InteractionId paramId = interaction_getNullId();
+			    			paramId.type = INTERACTION_EDIT_PARAMETER;
+			    			paramId.windowId = window;
+			    			paramId.blockType = block->type;
+			    			paramId.index = blockIndex;
+			    			paramId.index2 = paramIndex;
+			    			paramId.index3 = innerIndex;
+
+			    			//NOTE(ollie): Make sure we don't go over 8 values. I think this won't happen
+			    			assert(innerIndex < arrayCount(param->buffers));
+
+			    			InputBuffer *buffer = &param->buffers[innerIndex];
+
+			    			if(logicUi_isInteraction(&gameState->interactionState, paramId)) {
+
+			    				ProgramInteraction *hold = logicUI_visitInteraction(&gameState->interactionState);
+
+			    				///////////////////////************ Where we actually interact with the values for the parameters*************////////////////////
+			    				
+		    					if(wasPressed(appInfo->keyStates.gameButtons, BUTTON_ENTER)) {
+
+		    						//NOTE(ollie): Recompile what we added in
+		    						WindowScene *playWindow = findFirstWindowByType(gameState, WINDOW_TYPE_SCENE_GAME);
+		    						compileLogicBlocks(&activeScene->logicSet, &activeScene->vmMachine, easyRender_getDefaultFauxResolution(getDim(playWindow->dim)));
+
+		    						logicUI_endInteraction(&gameState->interactionState);
+		    					} else {
+		    						bufferColor = COLOR_GREEN;
+
+		    						//NOTE: update buffer input
+		    						if(appInfo->keyStates.inputString) {
+		    							splice(buffer, appInfo->keyStates.inputString, true);
+		    						}
+
+		    						if(wasPressed(appInfo->keyStates.gameButtons, BUTTON_BACKSPACE)) {
+		    							splice(buffer, "1", false);
+		    						}
+
+		    						if(wasPressed(appInfo->keyStates.gameButtons, BUTTON_BOARD_LEFT) && buffer->cursorAt > 0) {
+		    							buffer->cursorAt--;
+		    						}
+		    						if(wasPressed(appInfo->keyStates.gameButtons, BUTTON_BOARD_RIGHT) && buffer->cursorAt < buffer->length) {
+		    							buffer->cursorAt++;
+		    						}
+		    						////
+		    					}
+		    				} 
+
+		    				char *string = buffer->chars;
+		    				bool displayString = true;
+		    				if(strlen(string) == 0) {
+		    					string = "Null";
+		    					displayString = false;
+		    				}
+		    				temp = tempY; 
+	        				Rect2f innerParamBounds = drawBlockWithName(gameState, &tempX, &tempY, buffer->chars, bufferColor, fontColor);
+
+	        				///////////////////////********** Start interaction if user clicks ***************////////////////////
+
+				    		//NOTE(ollie): Start interaction
+			    			if(!logicUI_isInteracting(&gameState->interactionState) && inBounds(mouseP, innerParamBounds, BOUNDS_RECT)) {
+			    				if(wasPressed(appInfo->keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
+			    					ProgramInteraction *interaction = logicUI_startInteraction(&gameState->interactionState, paramId);
+			    				}
+			    			}
+			    			////////////////////////////////////////////////////////////////////
+
+	        				//NOTE(ollie): Restore y coord so we don't move down the line
+	        				tempY = temp;
+
+	        				V2 paramDim = getDim(innerParamBounds);
+
+	        				tempX += paramDim.x + LOGIC_PARAM_MARGIN;
+
+		    				////////////////////////////////////////////////////////////////////
+			    		} //NOTE(ollie): End of the member params 
+
+			    		tempY += globalDebugFont->fontHeight;
+			    		tempX = cachedX;
+
+        				
+
+        			}
+
+        			#undef LOGIC_PARAM_MARGIN
+        			
+        		}
+
         		///////////////////////*********** Add a new block into the list**************////////////////////
         		InteractionId id = gameState->interactionState.interaction.id;
         		if(logicUI_isInteracting(&gameState->interactionState) && id.type == INTERACTION_MOVE_LOGIC_BLOCK && id.windowId->type == WINDOW_TYPE_SCENE_LOGIC_BLOCKS_CHOOSER) {
@@ -156,6 +286,7 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
 
     			    if(wasReleased(appInfo->keyStates.gameButtons, BUTTON_LEFT_MOUSE)) {
 
+    			    	ProgramInteraction *interaction = &gameState->interactionState.interaction;
     			    	//NOTE(ollie): Check if hovering over the trash can
     			    	if(inTrashCan) {
     			    		shouldDelete = true;
@@ -166,7 +297,18 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
     			    		gameState->activeUIAnimation = gameState->interactionState.interaction;
     			    		gameState->activeUIAnimation.animationTimer = initTimer(0.6f, false);	
 
-    			    		block->isOpen = !block->isOpen; 
+    			    		// if(getLength(v2_minus(mouseP, interaction->startPos)) < 10) 
+    			    		{ //NOTE(ollie): haven't moved it much
+    			    			block->isOpen = !block->isOpen; 	
+    			    			if(block->isOpen) {
+    			    				//NOTE(ollie): Open the paramter menu
+    			    				block->bottomSpacing = maxBottomSpacing;
+    			    			} else {
+    			    				//NOTE(ollie): Close the paramter menu
+    			    				block->bottomSpacing = 0;
+    			    			}
+    			    		}
+    			    		
     			    	}
     			    	
     			    	//NOTE(ollie): Stop interacting

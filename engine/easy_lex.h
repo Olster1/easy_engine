@@ -307,6 +307,8 @@ EasyToken lexGetToken_(EasyTokenizer *tokenizer, bool advanceWithToken) {
                         at++;
                     }
                     if(*at) at += 2;
+                } else {
+                    at++;
                 }
                 token.size = at - token.at;
             } else {

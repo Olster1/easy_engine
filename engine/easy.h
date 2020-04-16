@@ -62,6 +62,7 @@ float min(float a, float b) {
 #define COLOR_GREY v4(0.5f, 0.5f, 0.5f, 1)
 #define COLOR_LIGHT_GREY v4(0.8f, 0.8f, 0.8f, 1)
 #define COLOR_GOLD v4(1.0f, 0.8f, 0.0f, 1)
+#define COLOR_ORANGE v4(1.0f, 0.5f, 0.0f, 1)
 
 #define Kilobytes(size) (size*1024)
 #define Megabytes(size) (Kilobytes(size)*1024) 
@@ -208,6 +209,7 @@ void releaseMemoryMark(MemoryArenaMark *mark) {
 
 static Arena globalLongTermArena;
 static Arena globalPerFrameArena;
+static Arena globalScratchArena;
 static MemoryArenaMark perFrameArenaMark;
 
 
@@ -256,48 +258,6 @@ char *concat_(char *a, s32 lengthA, char *b, s32 lengthB, Arena *arena) {
     return newString;
 }
 
-//NOTE(ollie): I don't think this handles unicode?
-static char *easyString_copyToHeap(char *at, s32 length) {
-    //NOTE(ollie): Get memory from heap
-    char *result = (char *)easyPlatform_allocateMemory(sizeof(char)*(length + 1), EASY_PLATFORM_MEMORY_NONE);
-    //NOTE(ollie): Copy the string
-    easyPlatform_copyMemory(result, at, sizeof(char)*length);
-    //NOTE(ollie): Null terminate the string
-    result[length] = '\0'; //Null terminate
-
-    return result;
-}
-
-//TODO(ollie): Don't think this handles unicode?
-static char *easyString_copyToBuffer(char *at, char *buffer, u32 bufferLen) {
-    
-    assert(strlen(at) < bufferLen); //NOTE(ollie): Accounting for the null terminator 
-    //NOTE(ollie): Copy the string
-    easyPlatform_copyMemory(buffer, at, sizeof(char)*bufferLen);
-    //NOTE(ollie): Null terminate the string
-    buffer[bufferLen - 1] = '\0'; //Null terminate
-
-    return buffer;
-}
-
-char *easyString_copyToArena(char *a, Arena *arena) {
-    s32 newStrLen = strlen(a) + 1;
-    
-    char *newString = (char *)pushArray(arena, newStrLen, char);
-
-    assert(newString);
-    
-    newString[newStrLen - 1] = '\0';
-    
-    char *at = newString;
-    for (int i = 0; i < (newStrLen - 1); ++i)
-    {
-        *at++ = a[i];
-    }
-    assert(newString[newStrLen - 1 ] == '\0');
-
-    return newString;
-}
 
 int findEnumValue(char *name, char **names, int nameCount) {
     int result = -1; //not found
@@ -355,30 +315,45 @@ typedef struct {
     int transitionCount;
 } GameButton;
 
-#define INPUT_BUFFER_SIZE 1028
+#define EASY_STRING_INPUT_BUFFER_SIZE_INCREMENT 1028
 typedef struct {
-    char chars[INPUT_BUFFER_SIZE];
+    char *chars;
+
+    //NOTE(ollie): Wether the buffer can resize or not
+    bool canResize;
+    //
+
+    u32 totalAllocatedBytes;
+
     unsigned int length;
     int cursorAt;
 } InputBuffer;
 
+static void easyString_initInputBuffer(InputBuffer *buffer, bool canResize) {
+    zeroStruct(buffer, InputBuffer);
+    buffer->totalAllocatedBytes = EASY_STRING_INPUT_BUFFER_SIZE_INCREMENT;
+    buffer->chars = (char *)easyPlatform_allocateMemory(buffer->totalAllocatedBytes, EASY_PLATFORM_MEMORY_ZERO);
+    buffer->canResize = canResize;
 
-
-#define wasPressed(buttonArray, index) (buttonArray[index].isDown && buttonArray[index].transitionCount != 0)  
-
-#define wasReleased(buttonArray, index) (!buttonArray[index].isDown && buttonArray[index].transitionCount != 0)  
-
-#define isDown(buttonArray, index) (buttonArray[index].isDown)  
-
-void sdlProcessGameKey(GameButton *button, bool isDown, bool repeated) {
-    button->isDown = isDown;
-    if(!repeated) {
-        button->transitionCount++;
-    }
 }
 
-void splice(InputBuffer *buffer, char *string, bool addString) { //if false will remove string
-    char tempChars[INPUT_BUFFER_SIZE] = {};
+static void easyString_deleteInputBuffer(InputBuffer *buffer) {
+    easyPlatform_freeMemory(buffer->chars);
+}
+
+static void splice(InputBuffer *buffer, char *string, bool addString) { //if false will remove string
+    //NOTE(ollie): Take memory mark
+    MemoryArenaMark memoryMark = takeMemoryMark(&globalScratchArena);
+    ////////////////////////////////////////////////////////////////////
+
+    ///////////////////////*********** Buffer hasn't been allocated **************////////////////////
+    if(!buffer->chars) {
+        //NOTE(ollie): Since it hasn't been implicily consructed, we assume user just wants a fixed size buffer 
+        easyString_initInputBuffer(buffer, false);        
+    }
+    ////////////////////////////////////////////////////////////////////
+
+    char *tempChars = pushArray(&globalScratchArena, buffer->totalAllocatedBytes, char);
     int tempCharCount = 0;
     
     char *at = string;
@@ -387,18 +362,29 @@ void splice(InputBuffer *buffer, char *string, bool addString) { //if false will
     for(int i = buffer->cursorAt; i < buffer->length; ++i) {
         tempChars[tempCharCount++] = buffer->chars[i]; 
     }
+
+    ///////////////////////*********** Reallocate the array **************////////////////////
+    if(addString) {
+        u32 stringLength = strlen(at);
+        if(buffer->canResize && ((buffer->length + stringLength) > (buffer->totalAllocatedBytes - 1))) {
+            u32 oldSize = buffer->totalAllocatedBytes;
+            buffer->totalAllocatedBytes += max(EASY_STRING_INPUT_BUFFER_SIZE_INCREMENT, stringLength);
+
+            buffer->chars = (char *)easyPlatform_reallocMemory(buffer->chars, oldSize, buffer->totalAllocatedBytes); 
+        }
+    }
     
     while(*at) {
         
         if(addString) { //adding
-            
-            if(buffer->length < (sizeof(buffer->chars) - 1)) {
-                
+            ////////////////////////////////////////////////////////////////////
+            if(buffer->length < (buffer->totalAllocatedBytes - 1)) {
+                //NOTE(ollie): Add the character to the array
                 buffer->chars[buffer->cursorAt++] = *at;
-                buffer->length++;
+                buffer->length++;    
             }
-            
         } else {
+            //NOTE(ollie): Deleteing a string
             if(buffer->length) {
                 buffer->chars[buffer->cursorAt--] = *at;
                 buffer->length--;
@@ -411,8 +397,24 @@ void splice(InputBuffer *buffer, char *string, bool addString) { //if false will
     for(int i = 0; i < tempCharCount; ++i) {
         buffer->chars[buffer->cursorAt + i] = tempChars[i]; 
     }
-    assert(buffer->length < arrayCount(buffer->chars));
+    assert(buffer->length < buffer->totalAllocatedBytes);
     buffer->chars[buffer->length] = '\0'; //null terminate buffer
+
+    ////////////////////////////////////////////////////////////////////
+    releaseMemoryMark(&memoryMark);
+}
+
+#define wasPressed(buttonArray, index) (buttonArray[index].isDown && buttonArray[index].transitionCount != 0)  
+
+#define wasReleased(buttonArray, index) (!buttonArray[index].isDown && buttonArray[index].transitionCount != 0)  
+
+#define isDown(buttonArray, index) (buttonArray[index].isDown)  
+
+void sdlProcessGameKey(GameButton *button, bool isDown, bool repeated) {
+    button->isDown = isDown;
+    if(!repeated) {
+        button->transitionCount++;
+    }
 }
 
 //TODO: Make this more robust TODO: I don't think this is neccessary??

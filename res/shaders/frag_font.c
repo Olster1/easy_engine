@@ -15,10 +15,12 @@ void main (void) {
 	vec4 c = colorOut; //NOTE(ollie): Premultiply the alpha
 	alpha = smoothstep(0.5f, 0.5f + smoothing, alpha);
 
-	c.r*=alpha*c.a;
-	c.g*=alpha*c.a;
-	c.b*=alpha*c.a;
+	//NOTE(ollie): Premultiply the alpha
 	c.a*=alpha;
+	c.r*=c.a;
+	c.g*=c.a;
+	c.b*=c.a;
+	
 
 	if(c.a <= 0.0f) discard;
 

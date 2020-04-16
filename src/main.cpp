@@ -16,11 +16,11 @@ int main(int argc, char *args[]) {
     V2 screenDim = v2(DEFINES_WINDOW_SIZE_X, DEFINES_WINDOW_SIZE_Y); //init in create app function
     V2 resolution = v2(DEFINES_RESOLUTION_X, DEFINES_RESOLUTION_Y);
     
-    OSAppInfo appInfo = easyOS_createApp("Easy Engine", &screenDim, false);
+    OSAppInfo *appInfo = easyOS_createApp("Easy Engine", &screenDim, false);
     
-    if(appInfo.valid) {
+    if(appInfo->valid) {
         
-        easyOS_setupApp(&appInfo, &resolution, RESOURCE_PATH_EXTENSION);
+        easyOS_setupApp(appInfo, &resolution, RESOURCE_PATH_EXTENSION);
 
         FrameBuffer mainFrameBuffer;
         FrameBuffer toneMappedBuffer;
@@ -73,14 +73,14 @@ int main(int argc, char *args[]) {
 
 
         ///////////************************/////////////////
-        while(appInfo.running) {
+        while(appInfo->running) {
             
-            easyOS_processKeyStates(&appInfo.keyStates, resolution, &screenDim, &appInfo.running, !appInfo.hasBlackBars);
-            easyOS_beginFrame(resolution, &appInfo);
+            easyOS_processKeyStates(&appInfo->keyStates, resolution, &screenDim, &appInfo->running, !appInfo->hasBlackBars);
+            easyOS_beginFrame(resolution, appInfo);
             
             beginRenderGroupForFrame(globalRenderGroup);
             
-            clearBufferAndBind(appInfo.frameBackBufferId, COLOR_BLACK, FRAMEBUFFER_COLOR, 0);
+            clearBufferAndBind(appInfo->frameBackBufferId, COLOR_BLACK, FRAMEBUFFER_COLOR, 0);
             clearBufferAndBind(mainFrameBuffer.bufferId, COLOR_WHITE, mainFrameBuffer.flags, globalRenderGroup);
             clearBufferAndBind(toneMappedBuffer.bufferId, COLOR_PINK, toneMappedBuffer.flags, globalRenderGroup);
             
@@ -92,7 +92,7 @@ int main(int argc, char *args[]) {
             
             EasyCamera_MoveType camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
                 
-            easy3d_updateCamera(&camera, &appInfo.keyStates, 1, 100.0f, appInfo.dt, camMove);
+            easy3d_updateCamera(&camera, &appInfo->keyStates, 1, 100.0f, appInfo->dt, camMove);
 
             easy_setEyePosition(globalRenderGroup, camera.pos);
             
@@ -102,7 +102,7 @@ int main(int argc, char *args[]) {
 
             ///////////////////////************* Update the Windows ************////////////////////
 
-            updateAndRenderSceneWindows(gameState, &appInfo);
+	            updateAndRenderSceneWindows(gameState, appInfo);
             
             ////////////////////////////////////////////////////////////////////
 
@@ -114,32 +114,32 @@ int main(int argc, char *args[]) {
             
             ///////////////////////************ Draw the scenes menu *************////////////////////
 
-            updateAndRenderGameSceneMenuBar(gameState, &appInfo);
+            updateAndRenderGameSceneMenuBar(gameState, appInfo);
 
             ////////////////////////////////////////////////////////////////////
 
             drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
             
             //NOTE(ollie): Update the console
-            if(easyConsole_update(&appInfo.console, &appInfo.keyStates, appInfo.dt, (resolution.y / resolution.x))) {
-                EasyToken token = easyConsole_getNextToken(&appInfo.console);
+            if(easyConsole_update(&appInfo->console, &appInfo->keyStates, appInfo->dt, (resolution.y / resolution.x))) {
+                EasyToken token = easyConsole_getNextToken(&appInfo->console);
                 if(token.type == TOKEN_WORD) {
                     // if(stringsMatchNullN("camPower", token.at, token.size)) {
                     // }
                 } else {
-                    easyConsole_parseDefault(&appInfo.console, token);
+                    easyConsole_parseDefault(&appInfo->console, token);
                 }
             }
 
 
             //////////////////////////////////////////////////////////////////////////////////////////////
 
-            easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, &appInfo, appInfo.hasBlackBars);
-            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(appInfo.keyStates.gameButtons, BUTTON_F4))
+            easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, appInfo, appInfo->hasBlackBars);
+            DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(appInfo->keyStates.gameButtons, BUTTON_F4))
             DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame, "Per frame")
-            easyOS_endKeyState(&appInfo.keyStates);
+            easyOS_endKeyState(&appInfo->keyStates);
         }
-        easyOS_endProgram(&appInfo);
+        easyOS_endProgram(appInfo);
     }
     return(0);
 }

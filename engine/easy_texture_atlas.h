@@ -215,6 +215,8 @@ static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *
         
 		V2 bufferDim = v2(sizeX, sizeY);
 
+		renderSetViewport(globalRenderGroup, 0, 0, bufferDim.x, bufferDim.y);
+
 		//NOTE(ollie): Add new dimension to the dimensions
 		assert(result.count < arrayCount(result.dimensions));
 		result.count++;
@@ -308,7 +310,7 @@ static inline EasyAtlas_Dimensions easyAtlas_drawAtlas(char *folderName, Arena *
 		}
         
         if(outputImageFile) {
-			renderSetViewPort(0, 0, bufferDim.x, bufferDim.y);
+			
 			drawRenderGroup(globalRenderGroup, RENDER_DRAW_DEFAULT);
 	        
 			glFlush();

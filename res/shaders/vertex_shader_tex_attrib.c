@@ -11,6 +11,7 @@ uniform mat4 projection;
 
 out vec4 colorOut; //out going
 out vec2 texUV_out;
+out vec2 uv01;
 
 void main() {
     
@@ -20,4 +21,5 @@ void main() {
     int xAt = int(texUV.x*2);
     int yAt = int(texUV.y*2) + 1;
     texUV_out = vec2(uvAtlas[xAt], uvAtlas[yAt]);
+    uv01 = texUV;
 }

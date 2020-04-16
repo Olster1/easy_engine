@@ -2,6 +2,7 @@ typedef enum {
 	INTERACTION_NULL,
 	INTERACTION_WINDOW_RESIZE,
 	INTERACTION_MOVE_LOGIC_BLOCK,
+	INTERACTION_EDIT_PARAMETER,
 } InteractionType;
 
 typedef struct {
@@ -11,6 +12,8 @@ typedef struct {
 	LogicBlockType blockType;
 
 	s32 index;
+	s32 index2;
+	s32 index3;
 } InteractionId;
 
 typedef struct {
@@ -18,7 +21,7 @@ typedef struct {
 
 	bool isActive;
 	bool shouldEnd;
-
+	
 	//NOTE(ollie): To seeif we should release the item
 	bool wasVisitedInFrame; 
 
@@ -57,7 +60,7 @@ static void initInteractionState(InteractionState *state) {
 }
 
 static inline bool interaction_areIdsEqual(InteractionId a, InteractionId b) {
-	bool result = (a.windowId == b.windowId) && (a.block == b.block) && (a.type == b.type) && (a.blockType == b.blockType) && (a.index == b.index);
+	bool result = (a.windowId == b.windowId) && (a.block == b.block) && (a.type == b.type) && (a.blockType == b.blockType) && (a.index == b.index) && (a.index2 == b.index2) && (a.index3 == b.index3);
 	return result;
 }
 

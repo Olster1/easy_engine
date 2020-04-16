@@ -259,6 +259,7 @@ RenderProgram phongProgram;
 RenderProgram glossProgram;
 RenderProgram skyboxProgram;
 RenderProgram textureProgram;
+RenderProgram textureOutlineProgram;
 RenderProgram skyQuadProgram;
 RenderProgram terrainProgram;
 RenderProgram toneMappingProgram;
@@ -752,6 +753,8 @@ typedef struct {
     
     V4 color;
 
+    Rect2f viewport;
+
     void *dataPacket_; //Cast later on in the function
     
     int bufferId;
@@ -849,9 +852,13 @@ typedef struct {
     BlendFuncType blendFuncType;
     EasyRender_DepthFunc depthFuncType;
 
+    Rect2f viewPort;
+
     bool cullingEnabled;
 
     void *dataPacket; 
+
+    Rect2f viewport;
 
     float zAt;
 
@@ -891,6 +898,8 @@ typedef struct {
     InfiniteAlloc scissorsTests;
 
     V3 eyePos;
+
+    Rect2f viewport;
 
     bool cullingEnabled;
 
@@ -956,6 +965,7 @@ static inline bool easyRender_canItemBeBatched(RenderItem *i, EasyRender_BatchQu
         i->depthTest == j->depthTest &&
         i->blendFuncType == j->blendFuncType &&
         i->depthFuncType == j->depthFuncType &&
+        easyMath_rect2fAreEqual(i->viewport, j->viewport) &&
         i->zAt == j->zAt &&
         easyMath_mat4AreEqual(&i->pMat, &j->pMat) &&
         i->dataPacket_ == j->dataPacket);
@@ -1150,12 +1160,16 @@ static inline void renderDisableBatchOnZ(RenderGroup *group) {
     group->batchOnZ = true;
 }
 
-static inline void renderDisableDepthTest(RenderGroup *group) {
+static inline bool renderDisableDepthTest(RenderGroup *group) {
+    bool oldVal = group->currentDepthTest;
     group->currentDepthTest = false;
+    return oldVal;
 }
 
-static inline void renderEnableDepthTest(RenderGroup *group) {
+static inline bool renderEnableDepthTest(RenderGroup *group) {
+    bool oldVal = group->currentDepthTest;
     group->currentDepthTest = true;
+    return oldVal;
 }
 
 static inline BlendFuncType setBlendFuncType(RenderGroup *group, BlendFuncType type) {
@@ -1174,8 +1188,19 @@ static inline EasyRender_DepthFunc easyRender_setDepthFuncType(RenderGroup *grou
 
 static RenderGroup *globalRenderGroup;
 
-void renderSetViewPort(float x0, float y0, float x1, float y1) {
-    glViewport(x0, y0, x1, y1);
+static inline Rect2f renderSetViewport(RenderGroup *group, float x0, float y0, float x1, float y1) {
+    Rect2f oldViewPort = group->viewport;
+    group->viewport = rect2f(x0, y0, x1, y1);
+
+    return oldViewPort;
+}
+
+static V2 easyRender_getDefaultFauxResolution(V2 dim) {
+    float w = 1920;
+    float ratio = dim.y / dim.x;
+    V2 result = v2(w, ratio*w);
+
+    return result;
 }
 
 static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex *triangleData, int triCount, unsigned int *indicesData, int indexCount, RenderProgram *program, char *name, ShapeType type, Texture *texture, Matrix4 mMat, Matrix4 vMat, Matrix4 pMat, V4 color, float zAt, EasyMaterial *material, void *dataPacket) {
@@ -1192,6 +1217,8 @@ static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex
     query.program = program; 
     query.type = type;
     query.dataPacket = dataPacket;
+    query.viewport = group->viewport;
+
     if(texture) {
         query.textureHandle = texture->id;
         assert(query.textureHandle > 0);    
@@ -1233,6 +1260,7 @@ static RenderItem *pushRenderItem(VaoHandle *handles, RenderGroup *group, Vertex
     info->color = color;
     info->zAt = zAt;
     info->dataPacket_ = dataPacket;
+    info->viewport = group->viewport;
 
     info->material = material;
     info->triCount = triCount; 
@@ -1588,6 +1616,9 @@ void enableRenderer(int width, int height, Arena *arena) {
     textureProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, fragment_shader_texture_shader, false);
     renderCheckError();
 
+    textureOutlineProgram = createProgramFromFile(vertex_shader_tex_attrib_shader, fragment_shader_texture_outline_shader, false);
+    renderCheckError();
+
     skyQuadProgram = createProgramFromFile(vertex_sky_quad_shader, frag_sky_quad_shader, false);
     renderCheckError();
 
@@ -1935,7 +1966,8 @@ static void renderDrawSprite(RenderGroup *group, Texture *sprite, V4 colorTint) 
 }
 
 static void renderDrawQuad(RenderGroup *group, V4 colorTint) {
-    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, "Quad", SHAPE_TEXTURE, &globalWhiteTexture, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, group->modelTransform.E_[14], 0, 0);
+    float sortZ = Mat4Mult(group->viewTransform, group->modelTransform).val[14];
+    pushRenderItem(&globalQuadVaoHandle, group, globalQuadPositionData, arrayCount(globalQuadPositionData), globalQuadIndicesData, arrayCount(globalQuadIndicesData), group->currentShader, "Quad", SHAPE_TEXTURE, &globalWhiteTexture, group->modelTransform, group->viewTransform, group->projectionTransform, colorTint, sortZ, 0, 0);
 }
 
 #if DEVELOPER_MODE
@@ -2797,6 +2829,21 @@ static inline void easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items
         if(info->depthTest) {
             glEnable(GL_DEPTH_TEST);
             renderCheckError();
+
+            switch(info->depthFuncType) {
+                case RENDER_DEPTH_FUNC_LESS: {
+                    glDepthFunc(GL_LESS);
+                    renderCheckError();
+                } break;
+                case RENDER_DEPTH_FUNC_LESS_EQUAL: {
+                    glDepthFunc(GL_LEQUAL);
+                    renderCheckError();
+                } break;
+                case RENDER_DEPTH_FUNC_ALWAYS: {
+                    glDepthFunc(GL_ALWAYS);
+                    renderCheckError();
+                } break;
+            }
         } else {
             glDisable(GL_DEPTH_TEST);
             renderCheckError();
@@ -2844,20 +2891,10 @@ static inline void easyRender_DrawBatch(RenderGroup *group, InfiniteAlloc *items
             }
         }
 
-        switch(info->depthFuncType) {
-            case RENDER_DEPTH_FUNC_LESS: {
-                glDepthFunc(GL_LESS);
-                renderCheckError();
-            } break;
-            case RENDER_DEPTH_FUNC_LESS_EQUAL: {
-                glDepthFunc(GL_LEQUAL);
-                renderCheckError();
-            } break;
-            case RENDER_DEPTH_FUNC_ALWAYS: {
-                glDepthFunc(GL_ALWAYS);
-                renderCheckError();
-            } break;
-        }
+        
+
+        V2 vp = getDim(info->viewport);
+        glViewport(info->viewport.min.x, info->viewport.min.y, vp.x, vp.y);
 
         InfiniteAlloc allInstanceData = initInfinteAlloc(float);        
         

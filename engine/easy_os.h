@@ -36,13 +36,32 @@ typedef struct {
 
 } OSAppInfo;
 
-OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
+//NOTE(ollie): Have to do this first since our profiler relies on it
+#define EASY_ENGINE_ENTRY_SETUP() EasyTime_setupTimeDatums();\
+DEBUG_TIME_BLOCK_FOR_FRAME_BEGIN(beginFrame, "Main: Intial setup");\
+if(argc > 1) {\
+    for(int i = 0; i < argc; i++) {\
+        if(cmpStrNull("shaders", args[i])) {\
+            globalDebugWriteShaders = true;    \
+        }\
+        \
+    }\
+}\
+
+OSAppInfo *easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 	DEBUG_TIME_BLOCK()
-	OSAppInfo result = {};
-	result.valid = true;
+	///////////////////////************ Create the arenas *************////////////////////
+	globalLongTermArena = createArena(Kilobytes(200));
+	globalPerFrameArena = createArena(Kilobytes(100));
+	globalScratchArena = createArena(Kilobytes(100));
+	////////////////////////////////////////////////////////////////////
+
+	OSAppInfo *result = pushStruct(&globalLongTermArena, OSAppInfo);
+	
+	result->valid = true;
 	if (SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO|SDL_INIT_TIMER|SDL_INIT_GAMECONTROLLER) != 0) {
 		assert(!"sdl not initialized");
-		result.valid = false;
+		result->valid = false;
 		return result;
 	} 
 
@@ -78,7 +97,7 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
     // 	printf("%s\n", "fullscreen");	
     }
     
-    result.windowHandle = SDL_CreateWindow(
+    result->windowHandle = SDL_CreateWindow(
         windowName,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 
         screenDim->x,
@@ -86,7 +105,7 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
         windowFlags);
 
     if(fullscreen) {
-    	if(SDL_SetWindowFullscreen(result.windowHandle, SDL_WINDOW_FULLSCREEN) < 0) {
+    	if(SDL_SetWindowFullscreen(result->windowHandle, SDL_WINDOW_FULLSCREEN) < 0) {
     	    printf("couldn't set to full screen\n");
     	}
     }
@@ -94,45 +113,45 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
     SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1); 
     
     // result.threadContext = SDL_GL_CreateContext(result.windowHandle);
-    result.renderContext = SDL_GL_CreateContext(result.windowHandle);
-    if(result.renderContext) {
+    result->renderContext = SDL_GL_CreateContext(result->windowHandle);
+    if(result->renderContext) {
       
         int interval = 1;
 		if(!DEBUG_global_VsyncIsOn) {
 			interval = 0;    	
 		}
     
-        if(SDL_GL_MakeCurrent(result.windowHandle, result.renderContext) == 0) {
+        if(SDL_GL_MakeCurrent(result->windowHandle, result->renderContext) == 0) {
             if(SDL_GL_SetSwapInterval(interval) == 0) {
             } else {
 #if DESKTOP
                 assert(!"Couldn't set swap interval\n");
-                result.valid = false;
+                result->valid = false;
 #endif
             }
         } else {
             assert(!"Couldn't make context current\n");
-            result.valid = false;
+            result->valid = false;
         }
     } else {
         assert(!"couldn't make a context");
-        result.valid = false;
+        result->valid = false;
     }
     
     SDL_SysWMinfo sysInfo;
     SDL_VERSION(&sysInfo.version);
     
-    SDL_bool sysResult = SDL_GetWindowWMInfo(result.windowHandle, &sysInfo);
+    SDL_bool sysResult = SDL_GetWindowWMInfo(result->windowHandle, &sysInfo);
     if(!sysResult) {
         printf("%s\n", SDL_GetError());
         assert(!"couldn't get info");
-        result.valid = false;
+        result->valid = false;
     }
     
     //TODO make this handle windows //
 #if !DESKTOP
-    result.frameBackBufferId = sysInfo.info.uikit.framebuffer;
-    result.renderBackBufferId = sysInfo.info.uikit.colorbuffer;
+    result->frameBackBufferId = sysInfo.info.uikit.framebuffer;
+    result->renderBackBufferId = sysInfo.info.uikit.colorbuffer;
 #endif
     
     return result;
@@ -140,8 +159,7 @@ OSAppInfo easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 
 void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 	DEBUG_TIME_BLOCK()
-	globalLongTermArena = createArena(Kilobytes(200));
-	globalPerFrameArena = createArena(Kilobytes(100));
+	
     assets = (Asset **)pushSize(&globalLongTermArena, GLOBAL_ASSET_ARRAY_SIZE*sizeof(Asset *));
 
     ///////////////////////*********** Init the sound state **************////////////////////
