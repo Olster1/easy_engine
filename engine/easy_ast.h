@@ -28,6 +28,9 @@ FUNC(EASY_AST_NODE_OPERATOR_CONDITIONAL)\
 FUNC(EASY_AST_NODE_OPERATOR_MAIN)\
 FUNC(EASY_AST_NODE_ARRAY_IDENTIFIER)\
 FUNC(EASY_AST_NODE_OPERATOR_END_LINE)\
+FUNC(EASY_AST_NODE_FUNCTION_SIN)\
+FUNC(EASY_AST_NODE_FUNCTION_COS)\
+
 
 typedef enum {
 	EASY_AST_NODE_TYPE(ENUM)
@@ -609,14 +612,18 @@ static EasyAst easyAst_generateAst(char *streamNullTerminated, Arena *arena) {
         	case TOKEN_WORD: {
         		///////////////////////************ Language Keywords *************////////////////////
         		if(stringsMatchNullN("main", token.at, token.size)) {
-        			easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MAIN, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	
+        			easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MAIN, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
+        		} else if(stringsMatchNullN("cos", token.at, token.size)) {
+        			easyAst_pushNode(&ast, EASY_AST_NODE_FUNCTION_COS, token, EASY_AST_NODE_PRECEDENCE_BRANCH);
+        		} else if(stringsMatchNullN("sin", token.at, token.size)) {
+        			easyAst_pushNode(&ast, EASY_AST_NODE_FUNCTION_SIN, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
         		} else if(stringsMatchNullN("if", token.at, token.size)) {
-        			easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_IF, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	
+        			easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_IF, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
         		} else {
         			EasyToken nxtToken = lexSeeNextToken(&tokenizer);
         			if(nxtToken.type == TOKEN_OPEN_PARENTHESIS) {
         				//NOTE(ollie): Is a function 
-        				easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_FUNCTION, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	
+        				easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_FUNCTION, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
         			} else {
         				//NOTE(ollie): Is a variable
         				easyAst_pushNode(&ast, EASY_AST_NODE_VARIABLE, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	

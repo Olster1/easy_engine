@@ -19,6 +19,9 @@ typedef enum {
 	OP_CODE_PRINT, //NOTE(ollie): Printing to the console
 	OP_CODE_RETURN, //NOTE(ollie): Return from a function
 	OP_CODE_EXIT, //NOTE(ollie): Exit the program
+	//NOTE(ollie): Intrinsics 
+	OP_CODE_SIN,
+	OP_CODE_COSINE,
 
 	//NOTE(ollie): Stuff the engine actually does
 	OP_CODE_DRAW_RECTANGLE,
@@ -41,6 +44,9 @@ typedef struct {
 	//NOTE(ollie): Scope depth
 	s32 depth;
 
+	//NOTE(ollie): Whether the value is a pointer
+	bool isPointer;
+
 	////////////////////////////////////////////////////////////////////
 	//NOTE(ollie): Actual variable
 
@@ -56,9 +62,6 @@ typedef struct {
 			bool boolVal;
 		};
 		struct {
-			
-		};
-		struct {
 			V2 v2Val;
 		};
 		struct {
@@ -70,6 +73,9 @@ typedef struct {
 		struct {
 			//NOTE(ollie): Point to a string allocated in memory
 			char *stringVal;
+		};
+		struct {
+			void *ptrVal;
 		};
 		struct {
 			float floatValues[4];
@@ -167,6 +173,20 @@ static inline void easyVM_pushScopeDepth(EasyVM_State *state) {
 	scope->basePointerAt = state->basePointerAt;
 }
 
+static inline void easyVM_emptyLocalVariables_exceptGlobals(EasyVM_State *state) {
+	state->depthAt = 0;
+
+	//NOTE(ollie): Walk backwards so we know when we reach a different depth we can exit
+	for(int i = (state->localVariableCount - 1); i >= 0; --i) {
+		EasyVM_Variable *l = &state->localVariables[i];
+
+		if(l->depth > state->depthAt) {
+			//NOTE(ollie): Get rid of the variable
+			state->localVariableCount--;
+		}
+	}
+}
+
 static inline void easyVM_popScopeDepth(EasyVM_State *state) {
 	state->depthAt--;
 
@@ -176,11 +196,6 @@ static inline void easyVM_popScopeDepth(EasyVM_State *state) {
 
 		if(l->depth > state->depthAt) {
 			//NOTE(ollie): Cleanup any memory
-			if(l->type == VAR_STRING) {
-				easyPlatform_freeMemory(l->stringVal);	
-			}
-
-			easyPlatform_freeMemory(l->name);	
 
 			//NOTE(ollie): Get rid of the variable
 			state->localVariableCount--;
@@ -195,51 +210,55 @@ static inline void easyVM_popScopeDepth(EasyVM_State *state) {
 
 }
 
-static void easyVM_assignVariable(EasyVM_Variable *var, VarType type, u8 *value) {
+static void easyVM_assignVariable(EasyVM_Variable *var, VarType type, u8 *value, bool isPointer) {
 	var->name = 0;
 	var->type = type;
 
 	if(value) {
-		switch(type) {
-			case VAR_INT: {
-				var->intVal = *((s32 *)value);
-			} break;
-			case VAR_V2: {
-				var->v2Val = *((V2 *)value);
-			} break;
-			case VAR_V3: {
-				var->v3Val = *((V3 *)value);
-			} break;
-			case VAR_V4: {
-				var->v4Val = *((V4 *)value);
-			} break;
-			case VAR_FLOAT: {
-				var->floatVal = *((float *)value);
-			} break;
-			case VAR_BOOL: {
-				var->boolVal = *((bool *)value);
-			} break;
-			case VAR_STRING: {
-				//NOTE(ollie): We just assume memory is handled for us for strings
-				//TODO(ollie): Will have to revist this when variables get added
-				var->stringVal = (char *)value;
-				// u32 bytes = easyString_getStringSizeInBytes(value);
-				// var->stringVal = (char *)easyPlatform_allocateMemory(bytes, EASY_PLATFORM_MEMORY_ZERO);
+		if(isPointer) {
+			var->ptrVal = value;
+		} else {
+			switch(type) {
+				case VAR_INT: {
+					var->intVal = *((s32 *)value);
+				} break;
+				case VAR_V2: {
+					var->v2Val = *((V2 *)value);
+				} break;
+				case VAR_V3: {
+					var->v3Val = *((V3 *)value);
+				} break;
+				case VAR_V4: {
+					var->v4Val = *((V4 *)value);
+				} break;
+				case VAR_FLOAT: {
+					var->floatVal = *((float *)value);
+				} break;
+				case VAR_BOOL: {
+					var->boolVal = *((bool *)value);
+				} break;
+				case VAR_STRING: {
+					//NOTE(ollie): We just assume memory is handled for us for strings
+					//TODO(ollie): Will have to revist this when variables get added
+					var->stringVal = (char *)value;
 
-				// //NOTE(ollie): Copy the string
-				// easyPlatform_copyMemory(var->stringVal, value, bytes);
-			} break;
+					//NOTE(ollie): SHould always be a pointer, so shouldn't get here
+					assert(false);
+				} break;
+			}
 		}
 	}
+
+	var->isPointer = isPointer;
 }
 
 //NOTE(ollie): for literal values
-static inline void easyVM_pushOnStack_literal(EasyVM_State *state, VarType type, u8 *value) {
+static inline void easyVM_pushOnStack_literal(EasyVM_State *state, VarType type, u8 *value, bool isPointer) {
 	u32 sizeOfVar = sizeof(EasyVM_Variable);
 
 	if((state->offsetAt + sizeOfVar) <= state->stackSize) {
 		EasyVM_Variable *var = (EasyVM_Variable *)(state->stack + state->offsetAt);
-		easyVM_assignVariable(var, type, value);	
+		easyVM_assignVariable(var, type, value, isPointer);	
 		state->offsetAt += sizeOfVar;
 	} else {
 		//NOTE(ollie): Message the user stack overflow, shouldn't get there though i think
@@ -275,9 +294,11 @@ static inline EasyVM_Variable easyVM_popOffStack(EasyVM_State *state, VarType ty
 }
 
 ///////////////////////************ Load & Store instructions *************////////////////////
+
+//NOTE(ollie): Finds the variable in the variable pool
 static EasyVM_Variable *easyVM_findVariable(EasyVM_State *state, char *name) {
 	EasyVM_Variable *result = 0;
-	//TODO(ollie): Either move to hash table or better yet, indexe ids
+	//TODO(ollie): Either move to hash table or better yet, index ids
 	//NOTE(ollie): Walk backwards so we know when we reach variable faster?
 	for(int i = (state->localVariableCount - 1); i >= 0 && !result; --i) {
 		EasyVM_Variable *l = &state->localVariables[i];
@@ -290,10 +311,23 @@ static EasyVM_Variable *easyVM_findVariable(EasyVM_State *state, char *name) {
 	return result;
 }
 
+//NOTE(ollie): Loads variable onto the stack from the variable pool 
+//NOTE(ollie): OP_CODE_LOAD
 static inline void easyVM_loadVariableOntoStack(EasyVM_State *state, char *name) {
 	EasyVM_Variable *var = easyVM_findVariable(state, name);
 
-	easyVM_pushOnStack_variable(state, var);
+	EasyVM_Variable varOnStack = {0};
+
+	///////////////////////************* If pointer, dereference ************////////////////////
+	if(var->isPointer) {
+		bool varOnStackPtr = (var->type == VAR_STRING);
+		easyVM_assignVariable(&varOnStack, var->type, (u8 *)var->ptrVal, varOnStackPtr);
+	} else {
+		easyVM_assignVariable(&varOnStack, var->type, var->bytes, false);
+	}
+	////////////////////////////////////////////////////////////////////
+
+	easyVM_pushOnStack_variable(state, &varOnStack);
 }
 
 //NOTE(ollie): OP_CODE_UPDATE
@@ -305,25 +339,23 @@ static void easyVM_updateVariable(EasyVM_State *state, char *name, EasyVM_Variab
 	*var = *incomingVar;
 }
 
-//NOTE(ollie): STORE INSTRUCTION
-static EasyVM_Variable *easyVM_createVariable(EasyVM_State *state, char *name, VarType type, u8 *value) {
+//NOTE(ollie): OP_CODE_STORE
+static EasyVM_Variable *easyVM_createVariable(EasyVM_State *state, char *name, VarType type, u8 *value, bool isPointer) {
 	EasyVM_Variable *var = 0;
 
 	if(state->localVariableCount < arrayCount(state->localVariables)) {
 
 		var = state->localVariables + state->localVariableCount++;
 
-		easyVM_assignVariable(var, type, value);
+		easyVM_assignVariable(var, type, value, isPointer);
 
-		//NOTE(ollie): Only if it is a local variable do we set the name
-		u32 nameSizeInBytes = easyString_getStringSizeInBytes((u8 *)name);
-		//NOTE(ollie): Allocate the memory for the string
-		var->name = (char *)easyPlatform_allocateMemory(nameSizeInBytes, EASY_PLATFORM_MEMORY_ZERO);
-
-		//NOTE(ollie): Copy the string
-		easyPlatform_copyMemory(var->name, name, nameSizeInBytes);	
+		//NOTE(ollie): The name exists in the data, so don't need to allocate anything, & the string will be around
+		//NOTE(ollie): For the lifetime of the virtual machine
+		var->name = name;
 
 	} else {
+		//NOTE(ollie): local variable array full up
+		//NOTE(ollie): Shouldn't happen for user
 		//TODO(ollie): Show error message to user
 		assert(false);
 	}
@@ -332,6 +364,17 @@ static EasyVM_Variable *easyVM_createVariable(EasyVM_State *state, char *name, V
 
 	return var;
 }
+
+static inline EasyVM_Variable *easyVM_createVariablePtr(EasyVM_State *state, char *name, VarType type, u8 *value) {
+	EasyVM_Variable *var = easyVM_createVariable(state, name, type, 0, true);
+	
+	var->isPointer = true;
+	var->ptrVal = value;
+
+	return var;
+}
+
+////////////////////////////////////////////////////////////////////
 
 static V4 easyVM_buildV4FromStack(EasyVM_State *state) {
 	V4 result = {0};
@@ -368,6 +411,8 @@ static V2 easyVM_buildV2FromStack(EasyVM_State *state) {
 
 static void easyVM_runVM(EasyVM_State *state) {
 	u32 byteOffset = 0; //NOTE(ollie): Into the opcodes
+
+	state->depthAt = 1;
 
 	bool running = true;
 	while(byteOffset < state->opCodeStreamLength && running) {
@@ -406,7 +451,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 					}
 				}
 
-				easyVM_pushOnStack_literal(state, result.type, result.bytes);
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
 			} break;
 			case OP_CODE_MULT: {
 				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
@@ -436,7 +481,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 					}
 				}
 
-				easyVM_pushOnStack_literal(state, result.type, result.bytes);
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
 			} break;
 			case OP_CODE_MINUS: {
 				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
@@ -466,7 +511,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 					}
 				}
 
-				easyVM_pushOnStack_literal(state, result.type, result.bytes);
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
 			} break;
 			case OP_CODE_DIVIDE: {
 				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
@@ -496,7 +541,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 					}
 				}
 
-				easyVM_pushOnStack_literal(state, result.type, result.bytes);
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
 			} break;
 			case OP_CODE_OFFSET_BASE_POINTER: {
 
@@ -506,20 +551,19 @@ static void easyVM_runVM(EasyVM_State *state) {
 
 				easyVM_loadVariableOntoStack(state, varName);
 
-				//NOTE(ollie): Free the string now
-				easyPlatform_freeMemory(varName);
-								
 				byteOffset = opCode->nextOpCode;
 			} break;
 			case OP_CODE_STORE: {
-				char *varName = easyVM_popOffStack(state, VAR_STRING).stringVal;
-
 				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
 
-				easyVM_createVariable(state, varName, var.type, var.bytes);
+				char *varName = easyVM_popOffStack(state, VAR_STRING).stringVal;
 
-				//NOTE(ollie): Free the string now
-				easyPlatform_freeMemory(varName);
+				u8 *data = var.bytes;
+				if(var.isPointer) {
+					data = (u8 *)var.ptrVal;
+				}
+
+				easyVM_createVariable(state, varName, var.type, data, var.isPointer);
 
 			} break;
 			case OP_CODE_UPDATE: {
@@ -529,9 +573,6 @@ static void easyVM_runVM(EasyVM_State *state) {
 
 				easyVM_updateVariable(state, varName, &var);
 
-				//NOTE(ollie): Free the string now
-				easyPlatform_freeMemory(varName);
-
 			} break;
 			case OP_CODE_LITERAL: {
 				byteOffset += sizeof(EasyVM_OpCode);
@@ -539,10 +580,36 @@ static void easyVM_runVM(EasyVM_State *state) {
 				EasyVM_Variable *nextVar = (EasyVM_Variable *)(state->opCodeStream + byteOffset);
 
 				void *ptrToData = nextVar->bytes;
-				if(nextVar->type == VAR_STRING) {
-					ptrToData = nextVar->stringVal;
+				if(nextVar->isPointer) {
+					ptrToData = nextVar->ptrVal;
 				}
-				easyVM_pushOnStack_literal(state, nextVar->type, (u8 *)ptrToData);
+				easyVM_pushOnStack_literal(state, nextVar->type, (u8 *)ptrToData, nextVar->isPointer);
+			} break;
+			case OP_CODE_SIN: {
+				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
+
+				assert(var.type == VAR_FLOAT || var.type == VAR_INT);
+
+				if(var.type == VAR_INT) {
+					var.type = VAR_FLOAT;
+					var.floatVal = (float)var.intVal;
+				}
+
+				float newValue = (float)sin(var.floatVal);
+				easyVM_pushOnStack_literal(state, VAR_FLOAT, (u8 *)&newValue, false);
+			} break;
+			case OP_CODE_COSINE: {
+				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
+
+				assert(var.type == VAR_FLOAT || var.type == VAR_INT);
+
+				if(var.type == VAR_INT) {
+					var.type = VAR_FLOAT;
+					var.floatVal = (float)var.intVal;
+				}
+
+				float newValue = (float)cos(var.floatVal);
+				easyVM_pushOnStack_literal(state, VAR_FLOAT, (u8 *)&newValue, false);
 			} break;
 			case OP_CODE_PUSH_SCOPE: {
 				easyVM_pushScopeDepth(state);
@@ -560,11 +627,14 @@ static void easyVM_runVM(EasyVM_State *state) {
 			case OP_CODE_EXIT: {
 				state->offsetAt = 0;
 
-				//NOTE(ollie): Free all string memory
-				state->depthAt= 0;
+				//NOTE(ollie): Empty all the variables except globals
+				//NOTE(ollie): Since globals get created at compile time, we want to keep them around
+				//NOTE(ollie): And not destory them
+				easyVM_emptyLocalVariables_exceptGlobals(state);
+
+				state->depthAt = 0;
 				state->scopeOffsetCount = 0;
 				state->basePointerAt = 0;
-				state->localVariableCount = 0;
 
 				running = false;
 			} break;
@@ -682,6 +752,12 @@ static void easyVM_writeMathOpCode(EasyVM_State *state, EasyAst_Node *nodeAt) {
 		easyVM_writeOpCode(state, OP_CODE_DIVIDE);
 	} else {
 		assert(!"something went wrong!");
+	}
+}
+
+static void easyVM_maybeWriteMathOpcode(EasyVM_State *state, EasyAst_Node *nodeAt) {
+	if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
+		easyVM_writeMathOpCode(state, nodeAt);
 	}
 }
 

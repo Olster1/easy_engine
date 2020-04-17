@@ -62,13 +62,3 @@ bool cmpStrNull(char *a, char *b) {
     bool result = stringsMatchN(a, strlen(a), b, strlen(b));
     return result;
 }
-
-//NOTE(ollie): This will have to be upgraded to unicode
-static inline u32 easyString_getStringSizeInBytes(u8 *val_) {
-    char *val = (char *)val_;
-
-    //NOTE(ollie): For null terminator 
-    u32 result = (strlen(val) + 1)*sizeof(char);
-
-    return result;
-} 

@@ -27,10 +27,17 @@ static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push
 
 static LogicBlockType global_logicBlockTypes[] = { LOGIC_BLOCK_TYPE(ENUM) };
 
+typedef enum {
+	LOGIC_BLOCK_PARAM_DEFAULT = 0,
+	LOGIC_BLOCK_PARAM_JUST_ALPHA_NUMERIC = 1 << 0,
+} LogicBlock_ParamFlag;
+
 typedef struct {
 	//NOTE(ollie): This string is allocated as a global string stored in the exe, so we never have to free it. 
 	char *name;
 	VarType varType;
+
+	LogicBlock_ParamFlag flags;
 
 	//NOTE(ollie): Buffer to edit with the ui, we then create ast out of it when we compile
 	s32 innerCount;
@@ -77,7 +84,7 @@ static inline s32 logicBlock_getInnerParamCount(LogicParameter *param) {
 
 }
 
-static void logicBlock_addParameter(LogicBlock *block, char *name, VarType type, char *valueAsString) {
+static LogicParameter *logicBlock_addParameter(LogicBlock *block, char *name, VarType type, char *valueAsString) {
 	assert(block->parameterCount < arrayCount(block->parameters));
 	LogicParameter *var = block->parameters + block->parameterCount++;
 
@@ -85,6 +92,7 @@ static void logicBlock_addParameter(LogicBlock *block, char *name, VarType type,
 	//NOTE(ollie): This string should only be a global string, so we never have to free it!
 	var->name = name;
 	var->varType = type;
+	var->flags = LOGIC_BLOCK_PARAM_DEFAULT;
 
 	var->innerCount = logicBlock_getInnerParamCount(var);
 	
@@ -93,6 +101,8 @@ static void logicBlock_addParameter(LogicBlock *block, char *name, VarType type,
 		easyString_initInputBuffer(&var->buffers[j], true);	
 		splice(&var->buffers[j], valueAsString, true);	
 	}
+
+	return var;
 }
 
 
@@ -160,8 +170,10 @@ static void initBlock(LogicBlock *block, LogicBlockType type) {
 
 		} break;
 		case LOGIC_BLOCK_VARIABLE_INIT: {
-			logicBlock_addParameter(block, "Name", VAR_STRING, "Empty");
-			logicBlock_addParameter(block, "Value", VAR_NULL, "\"Empty\"");
+			LogicParameter *param = logicBlock_addParameter(block, "Name", VAR_STRING, "Empty");
+			param->flags = LOGIC_BLOCK_PARAM_JUST_ALPHA_NUMERIC;
+
+			logicBlock_addParameter(block, "Value", VAR_NULL, "\"Hey there!\"");
 		} break;
 		case LOGIC_BLOCK_PRINT: {
 			logicBlock_addParameter(block, "Value", VAR_STRING, "\"Empty\"");
@@ -301,6 +313,8 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 		add
 		*/
 
+		EasyVM_OpCodeType variableOpcode = ((u32)param->flags & LOGIC_BLOCK_PARAM_JUST_ALPHA_NUMERIC) ? OP_CODE_STORE : OP_CODE_LOAD;
+
 		for(int innerIndex = 0; innerIndex < param->innerCount; ++innerIndex) {
 
 			EasyAst ast = easyAst_generateAst(param->buffers[innerIndex].chars, &globalScratchArena);
@@ -347,6 +361,7 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 						//NOTE(ollie): Since we will be altering it while VM is running. 
 						//NOTE(ollie): In the program it then can look up this pointer to the arena
 						varToWrite.stringVal = nullTerminateArena(nodeAt->token.at, nodeAt->token.size, &state->stringArena);
+						varToWrite.isPointer = true;
 						
 					} else {
 						assert(false);
@@ -361,7 +376,18 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 					}
 
 				} else if(nodeAt->type == EASY_AST_NODE_VARIABLE) {
-
+					//TODO(ollie): We need to check if this variable has actually been created
+					//NOTE(ollie): Like above we store the string of the variable name in the string arena	
+					EasyVM_Variable varToWrite = {0}; 				
+					varToWrite.type = VAR_STRING;
+					varToWrite.isPointer = true;
+					varToWrite.stringVal = nullTerminateArena(nodeAt->token.at, nodeAt->token.size, &state->stringArena);
+					easyVM_writeLiteral(state, varToWrite);
+					//NOTE(ollie): Since we want to do different things based on whether we're declaring a variable,	
+					//NOTE(ollie): or using one, a STORE opcode in the first case, & a LOAD opcode in the latter case. 
+					if(variableOpcode == OP_CODE_LOAD) {
+						easyVM_writeOpCode(state, OP_CODE_LOAD);
+					}
 				} else if(nodeAt->type == EASY_AST_NODE_EVALUATE) {
 					//NOTE(ollie): Do nothing 
 				} else if(nodeAt->type == EASY_AST_NODE_OPERATOR_FUNCTION) {
@@ -374,6 +400,10 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 
 					advanceNode = false;
 
+				} else if(nodeAt->type == EASY_AST_NODE_FUNCTION_COS) {
+
+				} else if(nodeAt->type == EASY_AST_NODE_FUNCTION_SIN) {
+
 				} else {
 					easyAst_addError(&ast, "There was a unkown symbol in the expression.", 0);
 					assert(false);
@@ -381,9 +411,15 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 
 				if(advanceNode) {
 					
-					///////////////////////*********** Add Math Opcode **************////////////////////
+					///////////////////////*********** Add Math & Function Opcodes **************////////////////////
 					if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
 						easyVM_writeMathOpCode(state, nodeAt);
+					} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_COS) {
+						//TODO(ollie): Error to user,forgot barkets?
+						assert(false);
+					} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_SIN) {
+						//TODO(ollie): Error to user,forgot barkets?
+						assert(false);
 					}
 					////////////////////////////////////////////////////////////////////
 
@@ -405,7 +441,12 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 								//NOTE(ollie): wouldn't have been added yet as an opcode 
 								if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
 									easyVM_writeMathOpCode(state, nodeAt);
+								} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_COS) {
+									easyVM_writeOpCode(state, OP_CODE_COSINE);
+								} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_SIN) {
+									easyVM_writeOpCode(state, OP_CODE_SIN);
 								}
+								////////////////////////////////////////////////////////////////////
 								////////////////////////////////////////////////////////////////////
 
 							} else {
@@ -441,6 +482,10 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuaxResolution) {
 	///////////////////////********** Reset the VM ***************////////////////////
 	easyVM_resetVM(state);
+	////////////////////////////////////////////////////////////////////
+
+	//NOTE(ollie): Add global variables
+	easyVM_createVariablePtr(state, "global_timeSinceStart", VAR_FLOAT, (u8 *)&globalTimeSinceStart);
 	////////////////////////////////////////////////////////////////////
 
 	for(u32 blockIndex = 0; blockIndex < set->logicBlocks.count; ++blockIndex) {
@@ -486,6 +531,10 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		easyVM_writeLiteral(state, logicBlock_initFloat(fuaxResolution.y));
 
 	    		easyVM_writeOpCode(state, OP_CODE_CLEAR_COLOR);
+	    	} break;
+	    	case LOGIC_BLOCK_VARIABLE_INIT: {
+	    		writeArguments(state, block);
+	    		easyVM_writeOpCode(state, OP_CODE_STORE);
 	    	} break;
 	    	case LOGIC_BLOCK_PRINT: {
 	    		writeArguments(state, block);
