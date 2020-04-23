@@ -50,7 +50,7 @@ void main (void) {
     // specTex = pow(specTex, vec4(gamma));
     
     vec3 lightDir = vec3(normalize(-lights[0].direction));
-    float diff = max(dot(normal, lightDir), 0.2);
+    float diff = max(dot(normal, lightDir), 0.0);
 
     vec3 viewDir = normalize(eye_worldspace - fragPos);
     vec3 halfwayVector = normalize(viewDir + lightDir);
@@ -64,8 +64,9 @@ void main (void) {
     diffuseColor.w = diffTex.w;
     specularColor.w = specTex.w;
 
-    vec4 tempColor = c * vec4(ambientColor + diffuseColor + specularColor);
+    vec4 tempColor = c * vec4(0.5f*ambientColor + diffuseColor + specularColor);
     tempColor.w = min(1, tempColor.w);
+    tempColor.rgb *= tempColor.a;
 
     float tAt = min(fragPosInViewSpace.z/100.0f, 1.0f);
     color = tempColor;//mix(tempColor, vec4(0.4f, 0.6f, 1.0f, 1.0f), pow(tAt, 3.0f));

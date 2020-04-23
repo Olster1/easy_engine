@@ -15,6 +15,7 @@ typedef enum {
 	OP_CODE_LITERAL, //NOTE(ollie): Reads next byte code and pushes it onto the stack
 	OP_CODE_PUSH_SCOPE,
 	OP_CODE_POP_SCOPE,
+	OP_CODE_WHEN,
 	OP_CODE_GOTO,
 	OP_CODE_PRINT, //NOTE(ollie): Printing to the console
 	OP_CODE_RETURN, //NOTE(ollie): Return from a function
@@ -23,7 +24,15 @@ typedef enum {
 	OP_CODE_SIN,
 	OP_CODE_COSINE,
 
+	OP_CODE_EQUAL_TO,
+
+	OP_CODE_LESS_THAN,
+	OP_CODE_GREATER_THAN,
+	OP_CODE_LESS_THAN_OR_EQUAL_TO,
+	OP_CODE_GREATER_THAN_OR_EQUAL_TO,
+
 	//NOTE(ollie): Stuff the engine actually does
+	OP_CODE_DRAW_CUBE,
 	OP_CODE_DRAW_RECTANGLE,
 	OP_CODE_CLEAR_COLOR,
 } EasyVM_OpCodeType;
@@ -92,6 +101,11 @@ typedef struct {
 } EasyVM_ScopeInfo;
 
 typedef struct {
+	s32 partnerId;
+	u32 offsetAt;
+} EasyVM_GotoLiteral;
+
+typedef struct {
 	//NOTE(ollie): A mixture of op codes & actual data
 	u8 *opCodeStream;	
 	u32 opCodeStreamLength; //NOTE(ollie): In bytes
@@ -121,6 +135,11 @@ typedef struct {
 
 	////////////////////////////////////////////////////////////////////
 
+	///////////////////////*********** Used for compiling **************////////////////////
+	EasyVM_GotoLiteral gotoLiterals[1028];
+	u32 gotoLiteralsCount;
+	////////////////////////////////////////////////////////////////////
+
 	//NOTE(ollie): Where all the strings live for the lifetime of the VM
 	Arena stringArena;
 	//NOTE(ollie): To reset the arena when were done with the VM
@@ -135,6 +154,8 @@ static void easyVM_resetVM(EasyVM_State *state) {
 
 	state->offsetAt = 0;
 	state->opCodeStreamLength = 0;
+
+	state->gotoLiteralsCount = 0;
 
 	state->depthAt= 0;
 	state->scopeOffsetCount = 0;
@@ -210,7 +231,7 @@ static inline void easyVM_popScopeDepth(EasyVM_State *state) {
 
 }
 
-static void easyVM_assignVariable(EasyVM_Variable *var, VarType type, u8 *value, bool isPointer) {
+static EasyVM_Variable *easyVM_assignVariable(EasyVM_Variable *var, VarType type, u8 *value, bool isPointer) {
 	var->name = 0;
 	var->type = type;
 
@@ -250,6 +271,8 @@ static void easyVM_assignVariable(EasyVM_Variable *var, VarType type, u8 *value,
 	}
 
 	var->isPointer = isPointer;
+
+	return var;
 }
 
 //NOTE(ollie): for literal values
@@ -322,8 +345,10 @@ static inline void easyVM_loadVariableOntoStack(EasyVM_State *state, char *name)
 	if(var->isPointer) {
 		bool varOnStackPtr = (var->type == VAR_STRING);
 		easyVM_assignVariable(&varOnStack, var->type, (u8 *)var->ptrVal, varOnStackPtr);
+		varOnStack.name = name;
 	} else {
 		easyVM_assignVariable(&varOnStack, var->type, var->bytes, false);
+		varOnStack.name = name;
 	}
 	////////////////////////////////////////////////////////////////////
 
@@ -417,12 +442,149 @@ static void easyVM_runVM(EasyVM_State *state) {
 	bool running = true;
 	while(byteOffset < state->opCodeStreamLength && running) {
 
+		bool incrementOpCode = true;
+
 		EasyVM_OpCode *opCode = (EasyVM_OpCode *)(state->opCodeStream + byteOffset);
 
 		//NOTE(ollie): For debugging, to ensure were reading the right bytes. Remove from release build
 		assert(opCode->magicNumber == EASY_VM_OP_CODE_MAGIC);
 
 		switch(opCode->type) {
+			case OP_CODE_EQUAL_TO: {
+					EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
+					EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
+
+					EasyVM_Variable result = {0};
+					result.type = VAR_INT;
+
+					if(var1.type == VAR_INT) {
+						if(var2.type == VAR_FLOAT) {
+							result.intVal =  var2.floatVal == var1.intVal; 
+						}
+						if(var2.type == VAR_INT) {
+							result.intVal = var2.intVal == var2.intVal; 
+						}
+					}
+
+					if(var1.type == VAR_FLOAT) {
+						if(var2.type == VAR_FLOAT) {
+							result.intVal = var2.floatVal == var1.floatVal; 
+						}
+						if(var2.type == VAR_INT) {
+							result.intVal = var2.floatVal == var1.intVal; 
+						}
+					}
+
+					easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
+			} break;
+			case OP_CODE_LESS_THAN: {
+				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
+				EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
+
+				EasyVM_Variable result = {0};
+				result.type = VAR_INT;
+
+				if(var1.type == VAR_INT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal =  var2.floatVal < var1.intVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.intVal < var2.intVal; 
+					}
+				}
+
+				if(var1.type == VAR_FLOAT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal = var2.floatVal < var1.floatVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.floatVal < var1.intVal; 
+					}
+				}
+
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
+			} break;
+			case OP_CODE_GREATER_THAN: {
+				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
+				EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
+
+				EasyVM_Variable result = {0};
+				result.type = VAR_INT;
+
+				if(var1.type == VAR_INT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal =  var2.floatVal > var1.intVal; 
+					}	
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.intVal > var2.intVal; 
+					}
+				}
+
+				if(var1.type == VAR_FLOAT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal = var2.floatVal > var1.floatVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.floatVal > var1.intVal; 
+					}
+				}
+
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
+			} break;
+			case OP_CODE_LESS_THAN_OR_EQUAL_TO: {
+				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
+				EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
+
+				EasyVM_Variable result = {0};
+				result.type = VAR_INT;
+
+				if(var1.type == VAR_INT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal =  var2.floatVal <= var1.intVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.intVal <= var2.intVal; 
+					}
+				}
+
+				if(var1.type == VAR_FLOAT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal = var2.floatVal <= var1.floatVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.floatVal <= var1.intVal; 
+					}
+				}
+
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
+			} break;
+			case OP_CODE_GREATER_THAN_OR_EQUAL_TO: {
+				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
+				EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
+
+				EasyVM_Variable result = {0};
+				result.type = VAR_INT;
+
+				if(var1.type == VAR_INT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal =  var2.floatVal >= var1.intVal; 
+					}	
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.intVal >= var2.intVal; 
+					}
+				}
+
+				if(var1.type == VAR_FLOAT) {
+					if(var2.type == VAR_FLOAT) {
+						result.intVal = var2.floatVal >= var1.floatVal; 
+					}
+					if(var2.type == VAR_INT) {
+						result.intVal = var2.floatVal >= var1.intVal; 
+					}
+				}
+
+				easyVM_pushOnStack_literal(state, result.type, result.bytes, false);
+			} break;
 			case OP_CODE_ADD: {
 				EasyVM_Variable var1 = easyVM_popOffStack(state, VAR_NULL);
 				EasyVM_Variable var2 = easyVM_popOffStack(state, VAR_NULL);
@@ -567,10 +729,10 @@ static void easyVM_runVM(EasyVM_State *state) {
 
 			} break;
 			case OP_CODE_UPDATE: {
+				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
 				char *varName = easyVM_popOffStack(state, VAR_STRING).stringVal;
 
-				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
-
+				var.name = varName;
 				easyVM_updateVariable(state, varName, &var);
 
 			} break;
@@ -624,6 +786,27 @@ static void easyVM_runVM(EasyVM_State *state) {
 			case OP_CODE_RETURN: {
 
 			} break;
+			case OP_CODE_WHEN: {
+				s32 offsetGoTo = easyVM_popOffStack(state, VAR_INT).intVal;
+				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
+
+				bool value = false;
+				if(var.type == VAR_INT) {
+					value = (bool)var.intVal;
+				} else if(var.type == VAR_BOOL) {
+					value = (bool)var.boolVal;
+				} else if(var.type == VAR_FLOAT) {
+					value = (bool)(var.floatVal > 0.0f);
+				} else {
+					//NOTE(ollie): Wrong type
+					assert(false);
+				}
+
+				if(!value) {
+					byteOffset = offsetGoTo;
+					incrementOpCode = false;
+				}
+			} break;
 			case OP_CODE_EXIT: {
 				state->offsetAt = 0;
 
@@ -637,6 +820,25 @@ static void easyVM_runVM(EasyVM_State *state) {
 				state->basePointerAt = 0;
 
 				running = false;
+			} break;
+			case OP_CODE_DRAW_CUBE: {
+				V4 color = easyVM_buildV4FromStack(state);
+				V3 centerPos = easyVM_buildV3FromStack(state);
+				V3 rotation = easyVM_buildV3FromStack(state);
+				V3 dim = easyVM_buildV3FromStack(state);
+				
+				Matrix4 matrix = Matrix4_scale(mat4(), dim);
+
+				Matrix4 rotationMat = quaternionToMatrix(eulerAnglesToQuaternion(rotation.y, rotation.x, rotation.z));
+
+				matrix = Mat4Mult(rotationMat, matrix);
+
+				renderSetShader(globalRenderGroup, &phongProgram);
+				////////////////////////////////////////////////////////////////////
+				setModelTransform(globalRenderGroup, Matrix4_translate(matrix, centerPos));
+				renderDrawCube(globalRenderGroup, &globalWhiteMaterial, color);
+				////////////////////////////////////////////////////////////////////
+				renderSetShader(globalRenderGroup, &phongProgram);
 			} break;
 			case OP_CODE_DRAW_RECTANGLE: {
 				V4 color = easyVM_buildV4FromStack(state);
@@ -703,8 +905,9 @@ static void easyVM_runVM(EasyVM_State *state) {
 				assert(false);
 			}
 		}
-
-		byteOffset = opCode->nextOpCode;
+		if(incrementOpCode) {
+			byteOffset = opCode->nextOpCode;
+		}
 	}
 	
 
@@ -722,8 +925,10 @@ static void easyVM_tryExpandOpcodeMemory(EasyVM_State *state, u32 size) {
 	}
 }
 
-static EasyVM_OpCode *easyVM_writeOpCode(EasyVM_State *state, EasyVM_OpCodeType type) {
+static u32 easyVM_writeOpCode(EasyVM_State *state, EasyVM_OpCodeType type) {
 	easyVM_tryExpandOpcodeMemory(state, sizeof(EasyVM_OpCode));
+
+	u32 opcodeAt = state->opCodeStreamLength;
 
 	EasyVM_OpCode *at = (EasyVM_OpCode *)(state->opCodeStream + state->opCodeStreamLength);	
 
@@ -735,7 +940,7 @@ static EasyVM_OpCode *easyVM_writeOpCode(EasyVM_State *state, EasyVM_OpCodeType 
 	assert(state->opCodeStreamLength <= state->opCodeStreamTotal);
 	at->nextOpCode = state->opCodeStreamLength;
 
-	return at;
+	return opcodeAt;
 }
 
 static void easyVM_writeMathOpCode(EasyVM_State *state, EasyAst_Node *nodeAt) {
@@ -750,6 +955,20 @@ static void easyVM_writeMathOpCode(EasyVM_State *state, EasyAst_Node *nodeAt) {
 
 	} else if(nodeAt->prev->token.type == TOKEN_FORWARD_SLASH) {
 		easyVM_writeOpCode(state, OP_CODE_DIVIDE);
+
+	} else if(nodeAt->prev->token.type == TOKEN_GREATER_THAN) {
+		easyVM_writeOpCode(state, OP_CODE_GREATER_THAN);
+
+	} else if(nodeAt->prev->token.type == TOKEN_LESS_THAN) {
+		easyVM_writeOpCode(state, OP_CODE_LESS_THAN);
+
+	} else if(nodeAt->prev->token.type == TOKEN_GREATER_THAN_OR_EQUAL_TO) {
+		easyVM_writeOpCode(state, OP_CODE_GREATER_THAN_OR_EQUAL_TO);
+
+	} else if(nodeAt->prev->token.type == TOKEN_LESS_THAN_OR_EQUAL_TO) {
+		easyVM_writeOpCode(state, OP_CODE_LESS_THAN_OR_EQUAL_TO);
+	} else if(nodeAt->prev->token.type == TOKEN_DOUBLE_EQUAL) {
+			easyVM_writeOpCode(state, OP_CODE_EQUAL_TO);
 	} else {
 		assert(!"something went wrong!");
 	}
@@ -761,13 +980,16 @@ static void easyVM_maybeWriteMathOpcode(EasyVM_State *state, EasyAst_Node *nodeA
 	}
 }
 
-static void easyVM_writeLiteral(EasyVM_State *state, EasyVM_Variable var) {
-	EasyVM_OpCode *opCode = easyVM_writeOpCode(state, OP_CODE_LITERAL);
+static s32 easyVM_writeLiteral(EasyVM_State *state, EasyVM_Variable var) {
+	//NOTE(ollie): This Pointer isn't safe, since we reallocate the array, so we just return the offset where it is in the stream
+	u32 opcodeOffset = easyVM_writeOpCode(state, OP_CODE_LITERAL);
 
 	u32 sizeOfAddition = sizeof(EasyVM_Variable);
 	easyVM_tryExpandOpcodeMemory(state, sizeOfAddition);
 
 	EasyVM_Variable *at = (EasyVM_Variable *)(state->opCodeStream + state->opCodeStreamLength);	
+
+	s32 literalAt = state->opCodeStreamLength;
 
 	*at = var;
 
@@ -775,9 +997,27 @@ static void easyVM_writeLiteral(EasyVM_State *state, EasyVM_Variable var) {
 	assert(state->opCodeStreamLength <= state->opCodeStreamTotal);
 
 	//NOTE(ollie): Advance where the next opcode is
+	EasyVM_OpCode *opCode = (EasyVM_OpCode *)(state->opCodeStream + opcodeOffset);
 	opCode->nextOpCode = state->opCodeStreamLength;
+
+	return literalAt;
 	
 }
+
+
+
+static void easyVM_pushGoToLiteral(EasyVM_State *state, EasyVM_GotoLiteral lit) {
+	assert(state->gotoLiteralsCount < arrayCount(state->gotoLiterals));
+	state->gotoLiterals[state->gotoLiteralsCount++] = lit;
+}
+
+static EasyVM_GotoLiteral easyVM_popGoToLiteral(EasyVM_State *state) {
+	assert(state->gotoLiteralsCount > 0);
+	EasyVM_GotoLiteral result = state->gotoLiterals[--state->gotoLiteralsCount];
+
+	return result;
+}
+
 
 
 ////////////////////////////////////////////////////////////////////

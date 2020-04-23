@@ -41,6 +41,11 @@ typedef struct {
 	V2 startPos;
 	V2 currentPos;
 
+	V2 startMouseP;
+
+	//NOTE(ollie): Out grab offset so the logic block doesn't jump when we grab it
+	V2 grabOffset;
+
 	Timer animationTimer;
 } ProgramInteraction;
 
@@ -86,6 +91,8 @@ static inline bool logicUI_isInteracting(InteractionState *state) {
 
 static inline void logicUI_endInteraction(InteractionState *state) {
 	state->interaction.isActive = false;
+	zeroStruct(&state->interaction, ProgramInteraction);
+
 }
 
 static ProgramInteraction *logicUI_startInteraction(InteractionState *state, InteractionId id) {

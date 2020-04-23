@@ -15,6 +15,11 @@ FUNC(LOGIC_BLOCK_WHILE)\
 FUNC(LOGIC_BLOCK_DRAW_CUBE)\
 FUNC(LOGIC_BLOCK_VARIABLE_INIT)\
 FUNC(LOGIC_BLOCK_PRINT)\
+FUNC(LOGIC_BLOCK_END_WHEN)\
+FUNC(LOGIC_BLOCK_END_FUNCTION)\
+FUNC(LOGIC_BLOCK_START_FUNCTION)\
+FUNC(LOGIC_BLOCK_UPDATE_VARIABLE)\
+FUNC(LOGIC_BLOCK_LOOP_END)\
 
 
 typedef enum {
@@ -23,7 +28,7 @@ typedef enum {
 
 static char *global_logicBlockTypeStrings[] = { LOGIC_BLOCK_TYPE(STRING) };
 
-static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable", "Print" };
+static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable", "Print", "End When", "End Function", "Start Function", "Update Variable", "Loop End"};
 
 static LogicBlockType global_logicBlockTypes[] = { LOGIC_BLOCK_TYPE(ENUM) };
 
@@ -45,6 +50,7 @@ typedef struct {
 } LogicParameter;	
 
 typedef struct {
+	s32 id;
 	LogicBlockType type;
 
 	//NOTE(ollie): For rendering when the user hovers over the block, to make room
@@ -56,12 +62,19 @@ typedef struct {
 	float bottomSpacing;
 	float currentBottomSpacing;
 
+	//NOTE(ollie): For when  & loop blocks
+	s32 partnerId;
+
+
 	//NOTE(ollie): For rendering the drop down options
 	bool isOpen;
 
 	//NOTE(ollie): Parameters into the functions
 	u32 parameterCount;
 	LogicParameter parameters[32];	
+
+	//NOTE(ollie): Custom name
+	char *customName;
 
 } LogicBlock;
 
@@ -105,10 +118,39 @@ static LogicParameter *logicBlock_addParameter(LogicBlock *block, char *name, Va
 	return var;
 }
 
+typedef struct {
+	char *name;
+	u32 sizeInBytes;
+	bool isReadOnly;
+} LogicBlock_DeclaredVar;
 
 typedef struct {
 	InfiniteAlloc logicBlocks;
+
+	u32 declaredVariableCount;
+	LogicBlock_DeclaredVar declaredVars[1028];
 } LogicBlock_Set;
+
+static void logicBlocks_addDeclaredVar(LogicBlock_Set *set, char *name, u32 sizeInBytes, bool isReadOnly) {
+	if(set->declaredVariableCount < arrayCount(set->declaredVars)) {
+		LogicBlock_DeclaredVar *v = &set->declaredVars[set->declaredVariableCount++];
+		v->name = name;
+		v->sizeInBytes = sizeInBytes;
+	}
+}
+
+static bool logicBlocks_hasBeenDeclared(LogicBlock_Set *set, char *name, u32 sizeInBytes) {
+	bool result = false;
+	for(u32 i = 0; i < set->declaredVariableCount && !result; ++i) {
+		LogicBlock_DeclaredVar *v = set->declaredVars + i;
+
+		if(stringsMatchN(v->name, v->sizeInBytes, name, sizeInBytes)) {
+			result = true;
+			break;
+		}
+	}
+	return result;
+}	
 
 static void logicBlock_deinit(LogicBlock *block) {
 	for(int i = 0; i < block->parameterCount; ++i) {
@@ -119,12 +161,15 @@ static void logicBlock_deinit(LogicBlock *block) {
 	}
 }
 
+static s32 global_logicBlockId = 0;
+
 static void initBlock(LogicBlock *block, LogicBlockType type) {
 	//NOTE(ollie): Clear all fields
 	zeroStruct(block, LogicBlock);
 
 	//NOTE(ollie): Set the type
 	block->type = type;
+	block->id = global_logicBlockId++;
 
 	//NOTE(ollie): Add parameters to the functions
 	switch(type) {
@@ -141,32 +186,48 @@ static void initBlock(LogicBlock *block, LogicBlockType type) {
 			logicBlock_addParameter(block, "Count", VAR_INT, "10");
 		} break;
 		case LOGIC_BLOCK_DRAW_RECTANGLE: {
-			logicBlock_addParameter(block, "Size", VAR_V2, "100");
-			logicBlock_addParameter(block, "Position", VAR_V3, "100");
+			logicBlock_addParameter(block, "Size", VAR_V2, "1");
+			logicBlock_addParameter(block, "Position", VAR_V3, "0.0");
 			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 		} break;
 		case LOGIC_BLOCK_PLAY_SOUND: {
-
+			logicBlock_addParameter(block, "File Name", VAR_BOOL, "pop.wav");
 		} break;
 		case LOGIC_BLOCK_WHEN: {
+			logicBlock_addParameter(block, "Value", VAR_BOOL, "true");
+		} break;
+		case LOGIC_BLOCK_END_WHEN: {
+
+		} break;
+		case LOGIC_BLOCK_START_FUNCTION: {
+			block->customName = "main:";
+		} break;
+		case LOGIC_BLOCK_END_FUNCTION: {
 
 		} break;
 		case LOGIC_BLOCK_BUTTON_PRESSED: {
 
 		} break;
 		case LOGIC_BLOCK_BUTTON_DOWN: {
-
+			logicBlock_addParameter(block, "Button Name", VAR_INT, "BUTTON_LEFT_MOUSE");
 		} break;
 		case LOGIC_BLOCK_BUTTON_RELEASED: {
-
+			logicBlock_addParameter(block, "Button Name", VAR_INT, "BUTTON_LEFT_MOUSE");
 		} break;
 		case LOGIC_BLOCK_DRAW_CIRCLE: {
-
+			logicBlock_addParameter(block, "Size", VAR_V2, "1");
+			logicBlock_addParameter(block, "Rotation (degrees)", VAR_V3, "0.0");
+			logicBlock_addParameter(block, "Position", VAR_V3, "0");
+			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 		} break;
 		case LOGIC_BLOCK_WHILE: {
 
 		} break;
 		case LOGIC_BLOCK_DRAW_CUBE: {
+			logicBlock_addParameter(block, "Size", VAR_V3, "1");
+			logicBlock_addParameter(block, "Rotation (degrees)", VAR_V3, "0.0");
+			logicBlock_addParameter(block, "Position", VAR_V3, "0");
+			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 
 		} break;
 		case LOGIC_BLOCK_VARIABLE_INIT: {
@@ -174,6 +235,12 @@ static void initBlock(LogicBlock *block, LogicBlockType type) {
 			param->flags = LOGIC_BLOCK_PARAM_JUST_ALPHA_NUMERIC;
 
 			logicBlock_addParameter(block, "Value", VAR_NULL, "\"Hey there!\"");
+		} break;
+		case LOGIC_BLOCK_UPDATE_VARIABLE: {
+			LogicParameter *param = logicBlock_addParameter(block, "Name", VAR_STRING, "Empty");
+			param->flags = LOGIC_BLOCK_PARAM_JUST_ALPHA_NUMERIC;
+
+			logicBlock_addParameter(block, "New Value", VAR_NULL, "\"Hey there!\"");
 		} break;
 		case LOGIC_BLOCK_PRINT: {
 			logicBlock_addParameter(block, "Value", VAR_STRING, "\"Empty\"");
@@ -196,17 +263,19 @@ static void pushLogicBlock(LogicBlock_Set *set, LogicBlockType type) {
 	addElementInfinteAlloc_notPointer(&set->logicBlocks, block);
 }
 
-static void spliceLogicBlock(LogicBlock_Set *set, LogicBlockType type, s32 index) {
+static s32 spliceLogicBlock(LogicBlock_Set *set, LogicBlockType type, s32 index) {
 	//NOTE(ollie): Add space for the one being added
 	//NOTE(ollie): Just has to be empty because the data is about ot be override
 	LogicBlock bogusBlock = {0};
 	addElementInfinteAlloc_notPointer(&set->logicBlocks, bogusBlock);
 
-	//NOTE(ollie): Start from the other end, and move them all up one
-	for(int i = (set->logicBlocks.count - 1); i > index; i--) {
-		LogicBlock *blockA = getElementFromAlloc(&set->logicBlocks, i, LogicBlock);
-		LogicBlock *blockB = getElementFromAlloc(&set->logicBlocks, i - 1, LogicBlock);
-		*blockA = *blockB;
+	{
+		//NOTE(ollie): Start from the other end, and move them all up one
+		for(int i = (set->logicBlocks.count - 1); i > index; i--) {
+			LogicBlock *blockA = getElementFromAlloc(&set->logicBlocks, i, LogicBlock);
+			LogicBlock *blockB = getElementFromAlloc(&set->logicBlocks, i - 1, LogicBlock);
+			*blockA = *blockB;
+		}
 	}
 
 	//NOTE(ollie): Now add the new one
@@ -214,6 +283,36 @@ static void spliceLogicBlock(LogicBlock_Set *set, LogicBlockType type, s32 index
 	assert(block);
 	
 	initBlock(block, type);
+
+	return block->id;
+}
+
+typedef struct {
+	LogicBlock *ptr;
+	s32 index;
+} LogicBlockArrayInfo;
+	
+#define findLogicBlockPtr(set, id) findLogicBlock_fullInfo(set, id).ptr
+#define findLogicBlockIndex(set, id) findLogicBlock_fullInfo(set, id).index 
+
+static LogicBlockArrayInfo findLogicBlock_fullInfo(LogicBlock_Set *set, s32 id) {
+	//NOTE(ollie): Init the info
+	LogicBlockArrayInfo result = {0};
+	result.index = -1;
+
+	//NOTE(ollie): Loop through array
+	bool found = false;
+	for(int i = 0; i < set->logicBlocks.count && !found; i++) {
+		LogicBlock *b = getElementFromAlloc(&set->logicBlocks, i, LogicBlock);
+		if(b && b->id == id) {
+			result.ptr = b;
+			result.index = i; 
+			break;
+		}
+	}
+
+	//NOTE(ollie): return the result
+	return result;
 }
 
 static void removeLogicBlock(LogicBlock_Set *set, s32 index) {
@@ -479,14 +578,20 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 
 ////////////////////////////////////////////////////////////////////
 
+
+////////////////////////////////////////////////////////////////////
+
 static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuaxResolution) {
 	///////////////////////********** Reset the VM ***************////////////////////
 	easyVM_resetVM(state);
 	////////////////////////////////////////////////////////////////////
 
 	//NOTE(ollie): Add global variables
-	easyVM_createVariablePtr(state, "global_timeSinceStart", VAR_FLOAT, (u8 *)&globalTimeSinceStart);
+	char *globalTimeVarName = "inbuilt_time";
+	easyVM_createVariablePtr(state, globalTimeVarName, VAR_FLOAT, (u8 *)&globalTimeSinceStart);
+	logicBlocks_addDeclaredVar(set, globalTimeVarName, easyString_getSizeInBytes_utf8(globalTimeVarName), true);
 	////////////////////////////////////////////////////////////////////
+	set->declaredVariableCount = 0;
 
 	for(u32 blockIndex = 0; blockIndex < set->logicBlocks.count; ++blockIndex) {
 	    LogicBlock *block = getElementFromAlloc(&set->logicBlocks, blockIndex, LogicBlock);
@@ -517,9 +622,34 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    	case LOGIC_BLOCK_POP_SCOPE: {
 	    		easyVM_writeOpCode(state, OP_CODE_POP_SCOPE);
 	    	} break;
+	    	case LOGIC_BLOCK_LOOP_END: {
+
+	    	} break;
 	    	case LOGIC_BLOCK_LOOP: {
+	    		// easyVM_writeOpCode(state, OP_CODE_PUSH_SCOPE);
+
+	    		// writeArguments(state, block);
+
+	    		// {
+		    	// 	EasyVM_Variable varToWrite = {0};
+		    	// 	varToWrite.type = VAR_INT;
+
+
+		    	// 	EasyVM_GotoLiteral lit = {0};
+
+		    	// 	lit.offsetAt = easyVM_writeLiteral(state, varToWrite);
+		    	// 	lit.partnerId = block->partnerId;
+
+		    	// 	easyVM_pushGoToLiteral(state, lit);
+	    		// }
+
+	    		// easyVM_writeOpCode(state, OP_CODE_WHEN);
+	    		// easyVM_writeOpCode(state, OP_CODE_PUSH_SCOPE);
 	    		
-	    		
+	    	} break;
+	    	case LOGIC_BLOCK_DRAW_CUBE: {
+	    		writeArguments(state, block);
+	    		easyVM_writeOpCode(state, OP_CODE_DRAW_CUBE);
 	    	} break;
 	    	case LOGIC_BLOCK_DRAW_RECTANGLE: {
 	    		writeArguments(state, block);
@@ -533,12 +663,57 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		easyVM_writeOpCode(state, OP_CODE_CLEAR_COLOR);
 	    	} break;
 	    	case LOGIC_BLOCK_VARIABLE_INIT: {
-	    		writeArguments(state, block);
-	    		easyVM_writeOpCode(state, OP_CODE_STORE);
+	    		char *name = block->parameters[0].buffers[0].chars;
+	    		u32 sizeInBytes = easyString_getSizeInBytes_utf8(name);
+
+	    		if(!logicBlocks_hasBeenDeclared(set, name, sizeInBytes)) {
+	    			writeArguments(state, block);
+	    			easyVM_writeOpCode(state, OP_CODE_STORE);
+
+	    			logicBlocks_addDeclaredVar(set, name, sizeInBytes, false);
+	    		}
+	    	} break;
+	    	case LOGIC_BLOCK_UPDATE_VARIABLE: {
+	    		char *name = block->parameters[0].buffers[0].chars;
+	    		if(logicBlocks_hasBeenDeclared(set, name, easyString_getSizeInBytes_utf8(name))) {
+		    		writeArguments(state, block);
+		    		easyVM_writeOpCode(state, OP_CODE_UPDATE);
+	    		}
 	    	} break;
 	    	case LOGIC_BLOCK_PRINT: {
 	    		writeArguments(state, block);
 	    		easyVM_writeOpCode(state, OP_CODE_PRINT);
+	    	} break;
+	    	case LOGIC_BLOCK_END_WHEN: {
+	    		EasyVM_GotoLiteral lit = easyVM_popGoToLiteral(state);
+	    		assert(lit.partnerId == block->id);
+
+	    		EasyVM_Variable *at = (EasyVM_Variable *)(state->opCodeStream + lit.offsetAt);	
+	    		assert(at->type == VAR_INT);
+	    		//NOTE(ollie): Write where the opcode stream is up to 
+	    		at->intVal = state->opCodeStreamLength;
+
+	    		easyVM_writeOpCode(state, OP_CODE_POP_SCOPE);
+
+	    	} break;
+	    	case LOGIC_BLOCK_WHEN: {
+	    		writeArguments(state, block);
+
+	    		{
+		    		EasyVM_Variable varToWrite = {0};
+		    		varToWrite.type = VAR_INT;
+
+
+		    		EasyVM_GotoLiteral lit = {0};
+
+		    		lit.offsetAt = easyVM_writeLiteral(state, varToWrite);
+		    		lit.partnerId = block->partnerId;
+
+		    		easyVM_pushGoToLiteral(state, lit);
+	    		}
+
+	    		easyVM_writeOpCode(state, OP_CODE_WHEN);
+	    		easyVM_writeOpCode(state, OP_CODE_PUSH_SCOPE);
 	    	} break;
 	    	default: {
 	    		//NOTE(ollie): Shouldn't be here!
@@ -549,4 +724,5 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 
 	 easyVM_writeOpCode(state, OP_CODE_EXIT);
 }
+
 

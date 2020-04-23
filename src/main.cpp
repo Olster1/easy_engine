@@ -50,10 +50,9 @@ int main(int argc, char *args[]) {
         EasyTransform sunTransform;
         easyTransform_initTransform(&sunTransform, v3(0, -10, 0), EASY_TRANSFORM_TRANSIENT_ID);
         
-        EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 1));//easy_makeLight(v4(0, -1, 0, 0), v3(1, 1, 1), v3(1, 1, 1), v3(1, 1, 1));
+        EasyLight *light = easy_makeLight(&sunTransform, EASY_LIGHT_DIRECTIONAL, 1.0f, v3(1, 1, 1));
         easy_addLight(globalRenderGroup, light);
         
-
         GameState *gameState = initGameState((resolution.y / resolution.x));
 
         GameScene *mainScene = findGameSceneByName(gameState, "Main");
@@ -62,11 +61,15 @@ int main(int argc, char *args[]) {
 
         assert(mainScene);
 
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_START_FUNCTION);
         pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_CLEAR_COLOR);
-        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_LOOP);
-        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_DRAW_RECTANGLE);
+        // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_LOOP);
+        // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_DRAW_RECTANGLE);
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_DRAW_CUBE);
         // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_POP_SCOPE);
         // pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_POP_SCOPE);
+        pushLogicBlock(&mainScene->logicSet, LOGIC_BLOCK_END_FUNCTION);
+        
 
         assert(playWindow);
         compileLogicBlocks(&mainScene->logicSet, &mainScene->vmMachine, easyRender_getDefaultFauxResolution(getDim(playWindow->dim)));
@@ -74,6 +77,9 @@ int main(int argc, char *args[]) {
 
         ///////////************************/////////////////
         while(appInfo->running) {
+
+            light->T->pos.x = 10*sin(globalTimeSinceStart);
+            light->T->pos.z = 10*cos(globalTimeSinceStart);
             
             easyOS_processKeyStates(&appInfo->keyStates, resolution, &screenDim, &appInfo->running, !appInfo->hasBlackBars);
             easyOS_beginFrame(resolution, appInfo);
@@ -82,7 +88,6 @@ int main(int argc, char *args[]) {
             
             clearBufferAndBind(appInfo->frameBackBufferId, COLOR_BLACK, FRAMEBUFFER_COLOR, 0);
             clearBufferAndBind(mainFrameBuffer.bufferId, COLOR_WHITE, mainFrameBuffer.flags, globalRenderGroup);
-            clearBufferAndBind(toneMappedBuffer.bufferId, COLOR_PINK, toneMappedBuffer.flags, globalRenderGroup);
             
             renderEnableDepthTest(globalRenderGroup);
             renderEnableCulling(globalRenderGroup);
@@ -119,6 +124,10 @@ int main(int argc, char *args[]) {
             ////////////////////////////////////////////////////////////////////
 
             drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
+
+            
+            //NOTE(ollie): Make sure the transition is on top
+            renderClearDepthBuffer(mainFrameBuffer.bufferId);
             
             //NOTE(ollie): Update the console
             if(easyConsole_update(&appInfo->console, &appInfo->keyStates, appInfo->dt, (resolution.y / resolution.x))) {
@@ -131,10 +140,9 @@ int main(int argc, char *args[]) {
                 }
             }
 
-
             //////////////////////////////////////////////////////////////////////////////////////////////
 
-            easyOS_endFrame(resolution, screenDim, toneMappedBuffer.bufferId, appInfo, appInfo->hasBlackBars);
+            easyOS_endFrame(resolution, screenDim, mainFrameBuffer.bufferId, appInfo, appInfo->hasBlackBars);
             DEBUG_TIME_BLOCK_FOR_FRAME_END(beginFrame, wasPressed(appInfo->keyStates.gameButtons, BUTTON_F4))
             DEBUG_TIME_BLOCK_FOR_FRAME_START(beginFrame, "Per frame")
             easyOS_endKeyState(&appInfo->keyStates);

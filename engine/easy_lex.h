@@ -79,6 +79,10 @@ FUNC(TOKEN_EQUALS) \
 FUNC(TOKEN_PLUS) \
 FUNC(TOKEN_MINUS) \
 FUNC(TOKEN_DOUBLE_EQUAL)\
+FUNC(TOKEN_GREATER_THAN)\
+FUNC(TOKEN_LESS_THAN)\
+FUNC(TOKEN_GREATER_THAN_OR_EQUAL_TO)\
+FUNC(TOKEN_LESS_THAN_OR_EQUAL_TO)\
 
 
 typedef enum {
@@ -254,6 +258,32 @@ EasyToken lexGetToken_(EasyTokenizer *tokenizer, bool advanceWithToken) {
         case '=': {
             token = lexInitToken(TOKEN_EQUALS, at, 1, *lineNumber);
             at++;
+
+            if(*at && *at == '=') {
+                token.type = TOKEN_DOUBLE_EQUAL;
+                token.size = 2;
+                at++;
+            }
+        } break;
+        case '>': {
+            token = lexInitToken(TOKEN_GREATER_THAN, at, 1, *lineNumber);
+            at++;
+
+            if(*at && *at == '=') {
+                token.type = TOKEN_GREATER_THAN_OR_EQUAL_TO;
+                token.size = 2;
+                at++;
+            }
+        } break;
+        case '<': {
+            token = lexInitToken(TOKEN_LESS_THAN, at, 1, *lineNumber);
+            at++;
+
+            if(*at && *at == '=') {
+                token.type = TOKEN_LESS_THAN_OR_EQUAL_TO;
+                token.size = 2;
+                at++;
+            }
         } break;
         case '*': {
             token = lexInitToken(TOKEN_ASTRIX, at, 1, *lineNumber);

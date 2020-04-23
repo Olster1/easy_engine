@@ -635,6 +635,7 @@ typedef struct {
 } EasyMaterial;
 
 static EasyMaterial globalWhiteMaterial;
+static EasyMaterial globalWhiteMaterial_HalfAmbient;
 
 typedef struct {
     int vertexCount;
@@ -1077,6 +1078,10 @@ void initRenderGroup(RenderGroup *group, float bufferWidth, float bufferHeight) 
         globalWhiteTexture.name = "white texture";
 
         easy3d_initMaterial(&globalWhiteMaterial);
+
+        easy3d_initMaterial(&globalWhiteMaterial_HalfAmbient);
+        globalWhiteMaterial_HalfAmbient.defaultAmbient = v4(0.5f, 0.5f, 0.5f, 1.0f);
+        
     } 
 }
 
@@ -1093,8 +1098,10 @@ static inline void renderClearDepthBuffer(u32 frameBufferId) {
     
 }
 
-void renderSetShader(RenderGroup *group, RenderProgram *shader) {
+static inline RenderProgram *renderSetShader(RenderGroup *group, RenderProgram *shader) {
+    RenderProgram *current = group->currentShader;
     group->currentShader = shader;
+    return current;
 }
 
 void easy_setEyePosition(RenderGroup *group, V3 pos) {
@@ -1557,9 +1564,10 @@ static inline V3 screenSpaceToWorldSpace(Matrix4 perspectiveMat, V2 screenP, V2 
 
 }
 void render_enableCullFace() {
-    glEnable(GL_CULL_FACE); 
-    glCullFace(GL_BACK);  
-    glFrontFace(GL_CW);  
+    // glEnable(GL_CULL_FACE); 
+    // glCullFace(GL_BACK);  
+    // glFrontFace(GL_CW);  
+    glDisable(GL_CULL_FACE);
 }
 
 void render_disableCullFace() {

@@ -745,6 +745,18 @@ typedef union {
     };
 } Quaternion;
 
+
+Quaternion easyMath_v4ToQuaternion(V4 in) {
+    Quaternion result = {0};
+    
+    result.r = in.x;
+    result.i = in.y;
+    result.j = in.z;
+    result.k = in.w;
+
+    return result;
+}
+
 Quaternion identityQuaternion() {
     Quaternion result = {};
     result.r = 1;

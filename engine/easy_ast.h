@@ -40,6 +40,7 @@ static char *EasyAst_NodeTypeStrings[] = { EASY_AST_NODE_TYPE(STRING) };
 
 #define EASY_AST_NODE_PRECEDENCE(FUNC) \
 FUNC(EASY_AST_NODE_CURRENT_PRECEDENCE)\
+FUNC(EASY_AST_NODE_PRECEDENCE_EQUALITY)\
 FUNC(EASY_AST_NODE_PRECEDENCE_PLUS_MINUS)\
 FUNC(EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE)\
 FUNC(EASY_AST_NODE_PRECEDENCE_BRANCH)\
@@ -184,6 +185,15 @@ static EasyAst_Node *easyAst_pushEmptyNodeAsChild(EasyAst *ast, EasyAst_NodeType
 static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyToken token, EasyAst_NodePrecedence precedence) {
 	EasyAst_Node *currentNode = ast->currentNode;
 
+	/*
+		3 + 4 < 3 - 4
+
+		3 + 4 < o
+				|
+				3 - 4
+
+	*/
+
 	///////////////////////************ Create a new node *************////////////////////
 
 	EasyAst_Node *node = pushStruct(ast->arena, EasyAst_Node);
@@ -215,12 +225,17 @@ static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyT
 			assert(currentNode->precedence != EASY_AST_NODE_PRECEDENCE_BRANCH);
 
 			assert(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS
-					|| currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE);
+					|| currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE
+					|| currentNode->precedence == EASY_AST_NODE_PRECEDENCE_EQUALITY);
 
 			if(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE && precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS) {
 				//NOTE(ollie): Drop the node back down to PLUS_MINUS precedence, so if a multiply_divide comes on, it will go to 
 				// 				a new node level. 
 				node->precedence = EASY_AST_NODE_PRECEDENCE_PLUS_MINUS;
+			} else if((currentNode->precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE || currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS) && precedence == EASY_AST_NODE_PRECEDENCE_EQUALITY) {
+				//NOTE(ollie): Drop the node back down to PLUS_MINUS precedence, so if a multiply_divide comes on, it will go to 
+				// 				a new node level. 
+				node->precedence = EASY_AST_NODE_PRECEDENCE_EQUALITY;
 			} else {
 				node->precedence = currentNode->precedence;
 			}
@@ -243,8 +258,8 @@ static EasyAst_Node *easyAst_pushNode(EasyAst *ast, EasyAst_NodeType type, EasyT
 		EasyAst_NodePrecedence precedenceForParentNode = EASY_AST_NODE_CURRENT_PRECEDENCE;
 		EasyAst_Node *swapChildWithParentNode = 0;
 
-		if(precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE) {
-			assert(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS);
+		if(precedence == EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE || precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS) {
+			assert(currentNode->precedence == EASY_AST_NODE_PRECEDENCE_PLUS_MINUS || currentNode->precedence == EASY_AST_NODE_PRECEDENCE_EQUALITY);
 
 			switch(currentNode->type) {
 				case EASY_AST_NODE_PRIMITIVE:
@@ -539,6 +554,9 @@ static EasyAst easyAst_generateAst(char *streamNullTerminated, Arena *arena) {
         	case TOKEN_ASTRIX: {
         		easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MATH, token, EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE);
         	} break;
+        	case TOKEN_DOUBLE_EQUAL: {
+        		easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MATH, token, EASY_AST_NODE_PRECEDENCE_EQUALITY);
+        	} break;
         	case TOKEN_FORWARD_SLASH: {
         		easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MATH, token, EASY_AST_NODE_PRECEDENCE_MULTIPLY_DIVIDE);
         	} break;
@@ -597,6 +615,12 @@ static EasyAst easyAst_generateAst(char *streamNullTerminated, Arena *arena) {
         			ast.errors.crashCompilation = true;
         		}
         	} break;
+        	case TOKEN_GREATER_THAN:
+        	case TOKEN_GREATER_THAN_OR_EQUAL_TO:
+        	case TOKEN_LESS_THAN: 
+        	case TOKEN_LESS_THAN_OR_EQUAL_TO: {
+        		easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_MATH, token, EASY_AST_NODE_PRECEDENCE_EQUALITY);
+        	} break;
         	case TOKEN_OPEN_BRACKET: {
         		easyAst_pushNode(&ast, EASY_AST_NODE_SCOPE, token, EASY_AST_NODE_PRECEDENCE_BRANCH);
         	} break;
@@ -619,6 +643,14 @@ static EasyAst easyAst_generateAst(char *streamNullTerminated, Arena *arena) {
         			easyAst_pushNode(&ast, EASY_AST_NODE_FUNCTION_SIN, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
         		} else if(stringsMatchNullN("if", token.at, token.size)) {
         			easyAst_pushNode(&ast, EASY_AST_NODE_OPERATOR_IF, token, EASY_AST_NODE_PRECEDENCE_BRANCH);	
+        		} else if(stringsMatchNullN("true", token.at, token.size)) {
+        			token.type = TOKEN_INTEGER;
+        			token.intVal = 1;
+        			easyAst_pushNode(&ast, EASY_AST_NODE_PRIMITIVE, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	
+        		} else if(stringsMatchNullN("false", token.at, token.size)) {
+        			token.type = TOKEN_INTEGER;
+        			token.intVal = 0;
+        			easyAst_pushNode(&ast, EASY_AST_NODE_PRIMITIVE, token, EASY_AST_NODE_CURRENT_PRECEDENCE);	
         		} else {
         			EasyToken nxtToken = lexSeeNextToken(&tokenizer);
         			if(nxtToken.type == TOKEN_OPEN_PARENTHESIS) {

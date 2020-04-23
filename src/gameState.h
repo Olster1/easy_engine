@@ -67,7 +67,7 @@ static void gameState_pushGameScene(GameState *state, char *name) {
 		scene->name = name;
 
 		initLogicBlockSet(&scene->logicSet);
-		easy3d_initCamera(&scene->camera, v3(0, 0, 0));
+		easy3d_initCamera(&scene->camera, v3(0, 0, -10));
 		scene->FOV = 60.0f;
 
 		easyVM_initVM(&scene->vmMachine);
@@ -105,11 +105,12 @@ static WindowScene *findFirstWindowByType(GameState *state, WindowType type) {
 }
 
 ///////////////////////************ Window State Functions *************////////////////////
-static bool pushWindowScene(GameState *state, WindowType type) {
-	bool result = true;
+static WindowScene *pushWindowScene(GameState *state, WindowType type) {
+	WindowScene *result = 0;
 	//NOTE(ollie): Check if room for any more
 	if(state->windowSceneCount < arrayCount(state->windowScenes)) {
 		WindowScene *window = state->windowScenes + state->windowSceneCount++;
+		result = window;
 
 		//NOTE(ollie): Init the window 
 		window->type = type;
@@ -140,13 +141,12 @@ static bool pushWindowScene(GameState *state, WindowType type) {
 			}
 		}
 		window->dim = dim;
-		window->isActive = true;
+		window->isActive = false;
 		window->isVisible = true;
 		window->cameraPos = v2(-100, -100);
 
 	} else {
 		easyConsole_addToStream(DEBUG_globalEasyConsole, "Reached max scenes");
-		result = false;
 	}
 	return result;
 }
@@ -174,7 +174,8 @@ static GameState *initGameState(float yOverX_aspectRatio) {
 	//NOTE(ollie): Which windows you can see
 	state->windowSceneCount = 0;
 	pushWindowScene(state, WINDOW_TYPE_SCENE_GAME);
-	pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS);
+	WindowScene *scene = pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS);
+	scene->isActive = true;
 	pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS_CHOOSER);
 	////////////////////////////////////////////////////////////////////
 
