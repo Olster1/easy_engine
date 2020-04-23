@@ -118,12 +118,12 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
         	} break;
         	case LOGIC_BLOCK_POP_SCOPE: {
         	} break;
-            case LOGIC_BLOCK_LOOP_END: 
-            case LOGIC_BLOCK_END_WHEN: {
-                assert(depthAt > 0);
-                depthAt--;
-            } break;
+            
         	default: {
+                if(block->type == LOGIC_BLOCK_LOOP_END || block->type == LOGIC_BLOCK_END_WHEN) {
+                    assert(depthAt > 0);
+                    depthAt--;
+                }
 
                 ///////////////////////************ Id for this interaction *************////////////////////
                 InteractionId id = interaction_getNullId();
