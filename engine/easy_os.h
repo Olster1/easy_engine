@@ -1,3 +1,7 @@
+#if _WIN32
+#include <Shlobj.h>
+#endif
+
 #define PRINT_FRAME_RATE 1
 static bool globalDebugWriteShaders = false;
 
@@ -25,6 +29,8 @@ typedef struct {
 	EasyTransitionState *transitionState;
 	AppKeyStates keyStates;
 	EasyProfile_ProfilerDrawState *profilerState;
+	//NOTE(ollie): This is Romaing/Appdata folder to store user info in
+	char *saveFolderLocation;
 	////////////////////////////////////////////////////////////////////
 
 	//NOTE(ollie): Whether the game is running for the game loop 
@@ -35,6 +41,62 @@ typedef struct {
 	//
 
 } OSAppInfo;
+
+
+static u8 *easyOs_getSaveFolderLocation() {
+	u8 *result = 0;
+#if _WIN32
+	PWSTR  win32_wideString_utf16 = 0;
+
+	//NOTE(ollie): Get the folder name
+	if(SHGetKnownFolderPath(
+	  FOLDERID_LocalAppData,
+	  KF_FLAG_CREATE,
+	  0,
+	  (PWSTR *)&win32_wideString_utf16
+	) != S_OK) {
+		assert(false);
+		return result;
+	}
+
+	///////////////////////************* Convert the string now to utf8 ************////////////////////
+
+	int bufferSize_inBytes = WideCharToMultiByte(
+	  CP_UTF8,
+	  0,
+	  win32_wideString_utf16,
+	  -1,
+	  (LPSTR)result, 
+	  0,
+	  0, 
+	  0
+	);
+
+
+
+	result = pushArray(&globalLongTermArena, bufferSize_inBytes, u8);
+
+	WideCharToMultiByte(
+	  CP_UTF8,
+	  0,
+	  win32_wideString_utf16,
+	  -1,
+	  (LPSTR)result, 
+	  bufferSize_inBytes,
+	  0, 
+	  0
+	);
+
+	u32 bytes = easyString_getSizeInBytes_utf8((char *)result);
+
+	//NOTE(ollie): Free the string
+	CoTaskMemFree(win32_wideString_utf16);
+#else 
+	assert(false);
+#endif
+
+	return result;
+}
 
 //NOTE(ollie): Have to do this first since our profiler relies on it
 #define EASY_ENGINE_ENTRY_SETUP() EasyTime_setupTimeDatums();\
@@ -159,8 +221,17 @@ OSAppInfo *easyOS_createApp(char *windowName, V2 *screenDim, bool fullscreen) {
 
 void easyOS_setupApp(OSAppInfo *result, V2 *resolution, char *resPathFolder) {
 	DEBUG_TIME_BLOCK()
+
+	//NOTE(ollie): Get the folder location of AppData/Roaming
+	result->saveFolderLocation = concatInArena((char *)easyOs_getSaveFolderLocation(), "/easy_engine", &globalLongTermArena);
+
+	if(!platformDoesDirectoryExist((char *)result->saveFolderLocation)) {
+	    platformCreateDirectory((char *)result->saveFolderLocation);
+	}
 	
     assets = (Asset **)pushSize(&globalLongTermArena, GLOBAL_ASSET_ARRAY_SIZE*sizeof(Asset *));
+
+    easyAssets_initAssetIdentifier(&global_easyArrayIdentifierstate);
 
     ///////////////////////*********** Init the sound state **************////////////////////
     globalSoundState = pushStruct(&globalLongTermArena, EasySound_SoundState);
@@ -506,6 +577,20 @@ static inline void easyOS_processKeyStates(AppKeyStates *state, V2 resolution, V
 		    case SDL_FINGERUP: {
 		        // SDL_Log("Finger Up");
 		    } break;
+		    case SDL_DROPFILE: {      // In case if dropped file
+		    	/*
+				//NOTE(ollie): MAC_OS: To enable drag&drop on your SDL app, you must also edit your info.plist file. Add/Modify Document Types. For example, to enable all document types, add the "public.data" mime type as a document type.
+		    	*/
+                state->droppedFilePath = event.drop.file;
+                // Shows directory of dropped file
+                // SDL_ShowSimpleMessageBox(
+                //     SDL_MESSAGEBOX_INFORMATION,
+                //     "File dropped on window",
+                //     dropped_filedir,
+                //     0
+                // );
+                
+           } break;
 		}
 		
 	    if (event.type == SDL_WINDOWEVENT) {
@@ -708,5 +793,10 @@ void easyOS_endKeyState(AppKeyStates *keystates) {
 	if(keystates->inputString) {
 		free(keystates->inputString);
 	}
+	if(keystates->droppedFilePath) {
+		SDL_free(keystates->droppedFilePath);	
+	}
+
 	keystates->inputString = 0;
+	keystates->droppedFilePath = 0;
 }

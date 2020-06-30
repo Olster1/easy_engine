@@ -43,6 +43,7 @@ int main(int argc, char *args[]) {
         }
 
         loadAndAddImagesToAssets("img/engine_icons/");
+        loadAndAddImagesToAssets_(concatInArena(appInfo->saveFolderLocation, "/", &globalPerFrameArena));
         
         EasyCamera camera;
         easy3d_initCamera(&camera, v3(0, 0, 0));
@@ -93,6 +94,57 @@ int main(int argc, char *args[]) {
             renderEnableCulling(globalRenderGroup);
             setBlendFuncType(globalRenderGroup, BLEND_FUNC_STANDARD_PREMULTIPLED_ALPHA);
             renderSetViewport(globalRenderGroup, 0, 0, resolution.x, resolution.y);
+
+            ///////////////////////*********** See if the user dragged any files into the program **************////////////////////
+
+            //NOTE(ollie): File dropped something onto the program
+            if(appInfo->keyStates.droppedFilePath) {
+                //NOTE(ollie): copy the file to a new folder
+
+                //NOTE(ollie): Check if a folder exists, if not make one
+                if(!platformDoesDirectoryExist(appInfo->saveFolderLocation)) {
+                    platformCreateDirectory(appInfo->saveFolderLocation);
+                }
+                ////////////////////////////////////////////////////////////////////
+
+                ///////////////////////************ Check if assets folder exists *************////////////////////
+
+                char *programFolderAssetName = concatInArena(appInfo->saveFolderLocation, "/Assets", &globalPerFrameArena);
+                
+                //NOTE(ollie): Check if a folder exists, if not make one
+                if(!platformDoesDirectoryExist(programFolderAssetName)) {
+                    platformCreateDirectory(programFolderAssetName);
+                }
+
+                ///////////////////////************ Copy the file over to the folder*************////////////////////
+
+                char *fileNameToCopy = appInfo->keyStates.droppedFilePath;
+
+                char *shortName = getFileLastPortionWithArena(fileNameToCopy, &globalPerFrameArena);
+
+                char *fullName = concatInArena(concatInArena(programFolderAssetName, "/", &globalPerFrameArena), shortName, &globalPerFrameArena);
+
+                FileContents fileToCopyContents = platformReadEntireFile(fileNameToCopy, false);
+
+                assert(fileToCopyContents.valid);
+
+                game_file_handle handle = platformBeginFileWrite(fullName);
+
+                if(!handle.HasErrors) {
+                    platformWriteFile(&handle, fileToCopyContents.memory, fileToCopyContents.fileSize, 0);
+                } else {
+                    assert(false);
+                }
+                
+                platformEndFile(handle);
+
+                easyFile_endFileContents(&fileToCopyContents);
+
+
+                ////////////////////////////////////////////////////////////////////
+            }
+
+            ////////////////////////////////////////////////////////////////////
             
             
             EasyCamera_MoveType camMove = (EasyCamera_MoveType)(EASY_CAMERA_MOVE | EASY_CAMERA_ROTATE | EASY_CAMERA_ZOOM);
@@ -107,7 +159,7 @@ int main(int argc, char *args[]) {
 
             ///////////////////////************* Update the Windows ************////////////////////
 
-	            updateAndRenderSceneWindows(gameState, appInfo);
+	        updateAndRenderSceneWindows(gameState, appInfo);
             
             ////////////////////////////////////////////////////////////////////
 

@@ -135,6 +135,10 @@ static WindowScene *pushWindowScene(GameState *state, WindowType type) {
 				dim = rect2fMinDim(quarterR.x, 0, quarterR.x, fullR.y);
 				window->dockType = WINDOW_DOCK_MIDDLE;
 			} break;
+			case WINDOW_TYPE_SCENE_ASSETS: {
+				dim = rect2fMinDim(quarterR.x, 0, quarterR.x, fullR.y);
+				window->dockType = WINDOW_DOCK_MIDDLE;
+			} break;
 			default: {
 				//NOTE(ollie): Case not handled
 				assert(false);
@@ -176,7 +180,8 @@ static GameState *initGameState(float yOverX_aspectRatio) {
 	pushWindowScene(state, WINDOW_TYPE_SCENE_GAME);
 	WindowScene *scene = pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS);
 	scene->isActive = true;
-	pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS_CHOOSER);
+	// pushWindowScene(state, WINDOW_TYPE_SCENE_LOGIC_BLOCKS_CHOOSER);
+	pushWindowScene(state, WINDOW_TYPE_SCENE_ASSETS);
 	////////////////////////////////////////////////////////////////////
 
 	gameScene_initMenuBar(state);

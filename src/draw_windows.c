@@ -3,8 +3,8 @@ static void logicBlock_spliceLogicBlock(GameState *gameState, GameScene *activeS
         s32 newLogicBlockId = spliceLogicBlock(logicSet, blockType, indexToSpliceAt);
 
         //NOTE(ollie): Add the partner block in aswell
-        if(blockType == LOGIC_BLOCK_WHEN || blockType == LOGIC_BLOCK_LOOP) {
-            LogicBlockType endBlockType = (blockType == LOGIC_BLOCK_WHEN) ? LOGIC_BLOCK_END_WHEN: LOGIC_BLOCK_LOOP_END;
+        if(blockType == LOGIC_BLOCK_WHEN || blockType == LOGIC_BLOCK_LOOP || blockType == LOGIC_BLOCK_WHILE) {
+            LogicBlockType endBlockType = logicBlock_getEndBlockType(blockType);
             s32 nextId = spliceLogicBlock(logicSet, endBlockType, indexToSpliceAt + 1);
             assert(nextId != newLogicBlockId);
 
@@ -32,11 +32,11 @@ static void logicBlock_deleteLogicBlock(GameState *gameState, GameScene *activeS
         ///////////////////////************ THis is going to invalidate the pointer, to have to do stuff before this *************////////////////////
         removeLogicBlock(logicSet, indexToDelete);
 
-        if(blockTypeToDelete == LOGIC_BLOCK_WHEN || blockTypeToDelete == LOGIC_BLOCK_LOOP) {
+        if(blockTypeToDelete == LOGIC_BLOCK_WHEN || blockTypeToDelete == LOGIC_BLOCK_LOOP || blockTypeToDelete == LOGIC_BLOCK_WHILE) {
             LogicBlockArrayInfo partnerInfo = findLogicBlock_fullInfo(logicSet, partnerId);
             
             //NOTE(ollie): Make sure the block was found & was the right type
-            assert(partnerInfo.ptr && (partnerInfo.ptr->type == LOGIC_BLOCK_END_WHEN || partnerInfo.ptr->type == LOGIC_BLOCK_LOOP_END));
+            assert(partnerInfo.ptr && (partnerInfo.ptr->type == LOGIC_BLOCK_END_WHEN || partnerInfo.ptr->type == LOGIC_BLOCK_LOOP_END || partnerInfo.ptr->type == LOGIC_BLOCK_WHILE_END));
                 
             //NOTE(ollie): Now remove the partner block
             removeLogicBlock(logicSet, partnerInfo.index);          
@@ -120,7 +120,7 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
         	} break;
             
         	default: {
-                if(block->type == LOGIC_BLOCK_LOOP_END || block->type == LOGIC_BLOCK_END_WHEN) {
+                if(block->type == LOGIC_BLOCK_LOOP_END || block->type == LOGIC_BLOCK_END_WHEN || block->type == LOGIC_BLOCK_WHILE_END) {
                     assert(depthAt > 0);
                     depthAt--;
                 }
@@ -185,19 +185,19 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
                         s32 newIndex = blockIndex;
 
                         if(inBounds(mouseP, checkBounds, BOUNDS_RECT)) {
-                            if(lastBlock && (lastBlock->type == LOGIC_BLOCK_END_WHEN || lastBlock->type == LOGIC_BLOCK_LOOP_END)) {
-                                float margin = (mouseP.x - gameState->interactionState.interaction.grabOffset.x) - readOnly_xAt;
-                                if(margin > 70) 
-                                {
-                                    isIndented = true;
-                                    newIndex--;
+                            if(lastBlock && (lastBlock->type == LOGIC_BLOCK_END_WHEN || lastBlock->type == LOGIC_BLOCK_LOOP_END || lastBlock->type == LOGIC_BLOCK_WHILE_END)) {
+                                // float margin = (mouseP.x - gameState->interactionState.interaction.grabOffset.x) - readOnly_xAt;
+                                // if(margin > 70) 
+                                // {
+                                //     isIndented = true;
+                                //     newIndex--;
 
-                                    assert(newIndex >= 0);
+                                //     assert(newIndex >= 0);
 
-                                    Rect2f indentRect = rect2fMinDim(readOnly_xAt, readOnly_yAt - globalDebugFont->fontHeight, 100.0f, 0.8f*globalDebugFont->fontHeight);
-                                    renderDrawRect(indentRect, NEAR_CLIP_PLANE, COLOR_RED, 0, mat4TopLeftToBottomLeft(gameState->fuaxResolution.y), gameState->orthoFuaxMatrix);
+                                //     Rect2f indentRect = rect2fMinDim(readOnly_xAt, readOnly_yAt - globalDebugFont->fontHeight, 100.0f, 0.8f*globalDebugFont->fontHeight);
+                                //     renderDrawRect(indentRect, NEAR_CLIP_PLANE, COLOR_RED, 0, mat4TopLeftToBottomLeft(gameState->fuaxResolution.y), gameState->orthoFuaxMatrix);
 
-                                }
+                                // }
                             }
 
                             gameState->interactionState.interaction.indexToSpliceAt = newIndex;
@@ -424,7 +424,7 @@ static void updateAndRenderLogicWindowForScene(GameState *gameState, GameScene *
         	}
         }
 
-        if(block->type == LOGIC_BLOCK_WHEN) {
+        if(block->type == LOGIC_BLOCK_WHEN || block->type == LOGIC_BLOCK_LOOP || block->type == LOGIC_BLOCK_WHILE) {
             depthAt++;
         }
 
@@ -540,6 +540,7 @@ static void updateAndRenderLogicChooserForScene(GameState *gameState, GameScene 
 	    	} break;
 	    	case LOGIC_BLOCK_POP_SCOPE: {
 	    	} break;
+            case LOGIC_BLOCK_WHILE_END:
             case LOGIC_BLOCK_LOOP_END:
             case LOGIC_BLOCK_START_FUNCTION:
             case LOGIC_BLOCK_END_FUNCTION:
@@ -857,6 +858,28 @@ static void updateAndRenderSceneWindows(GameState *gameState, OSAppInfo *appInfo
 				case WINDOW_TYPE_SCENE_LOGIC_BLOCKS_CHOOSER: {
 					updateAndRenderLogicChooserForScene(gameState, activeScene, window, appInfo);
 				} break;
+                case WINDOW_TYPE_SCENE_ASSETS: {
+                    float xAt = 100 + window->dim.min.x;
+                    float yAt = 100 + window->dim.min.y;
+
+                    for(int i = 0; i < global_easyArrayIdentifierstate.count; ++i) {
+                        EasyAssetIdentifier *identifier = global_easyArrayIdentifierstate.identifiers + i;
+
+                        Texture *texToDraw = 0;
+            
+                        switch(identifier->type) {
+                            case ASSET_TEXTURE: {
+                                texToDraw = findTextureAsset("trash_can.png");
+                            } break;
+                            default: {
+
+                            }                         
+                        }
+
+                        drawBlockWithNameWithZ(gameState, &xAt, &yAt, NEAR_CLIP_PLANE, identifier->name, COLOR_ORANGE, COLOR_BLUE, 1.0f);
+
+                    }
+                } break;
 				default: {
 					//NOTE(ollie): Case not handled
 					assert(false);

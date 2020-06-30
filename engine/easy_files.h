@@ -41,7 +41,7 @@ char *getFileExtension(char *fileName) {
 char *getFileLastPortion_(char *buffer, int bufferLen, char *at, Arena *arena) {
     char *recent = at;
     while(*at) {
-        if(*at == '/' && at[1] != '\0') { 
+        if((*at == '/' || (*at == '\\'))&& at[1] != '\0') { 
             recent = (at + 1); //plus 1 to pass the slash
         }
         at++;
@@ -361,7 +361,7 @@ bool platformCreateDirectory(char *fileName) {
         assert(!"something went wrong");
     }
 #elif _WIN32
-    if (CreateDirectory(fileName, NULL) == 0) {
+    if (CreateDirectory(fileName, NULL) != 0) {
         result = true;
     } else {
         assert(!"couldn't create directory");

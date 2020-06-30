@@ -35,6 +35,7 @@ typedef enum {
 	OP_CODE_DRAW_CUBE,
 	OP_CODE_DRAW_RECTANGLE,
 	OP_CODE_CLEAR_COLOR,
+	OP_CODE_RANDOM_BETWEEN,
 } EasyVM_OpCodeType;
 	
 #define EASY_VM_OP_CODE_MAGIC 'EASY'
@@ -102,7 +103,8 @@ typedef struct {
 
 typedef struct {
 	s32 partnerId;
-	u32 offsetAt;
+	u32 offsetAt; //Value that gets patched
+	u32 gotoLoopEnd;
 } EasyVM_GotoLiteral;
 
 typedef struct {
@@ -359,6 +361,11 @@ static inline void easyVM_loadVariableOntoStack(EasyVM_State *state, char *name)
 static void easyVM_updateVariable(EasyVM_State *state, char *name, EasyVM_Variable *incomingVar) {
 	EasyVM_Variable *var = easyVM_findVariable(state, name);
 	assert(var);
+
+	//TODO(ollie): This is error prone for future stuff we stick in a variable. 
+	//TODO(ollie): I'm not sure the best way to handle this?
+	incomingVar->depth = var->depth;
+	incomingVar->isPointer = var->isPointer;
 
 	//NOTE(ollie): Copy Variable to storage
 	*var = *incomingVar;
@@ -732,6 +739,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);
 				char *varName = easyVM_popOffStack(state, VAR_STRING).stringVal;
 
+
 				var.name = varName;
 				easyVM_updateVariable(state, varName, &var);
 
@@ -782,6 +790,7 @@ static void easyVM_runVM(EasyVM_State *state) {
 			case OP_CODE_GOTO: {
 				s32 offsetFromBasePointer = easyVM_popOffStack(state, VAR_INT).intVal;
 				byteOffset = offsetFromBasePointer + state->basePointerAt; 
+				incrementOpCode = false;
 			} break;
 			case OP_CODE_RETURN: {
 
@@ -860,6 +869,14 @@ static void easyVM_runVM(EasyVM_State *state) {
 
 				renderClearDepthBuffer(globalRenderGroup->currentBufferId);
 				drawRenderGroup(globalRenderGroup, (RenderDrawSettings)(RENDER_DRAW_SORT));
+			} break;
+			case OP_CODE_RANDOM_BETWEEN: {
+				float max = easyVM_popOffStack(state, VAR_FLOAT).floatVal;
+				float min = easyVM_popOffStack(state, VAR_FLOAT).floatVal;
+
+				float value = randomBetween(min, max);
+				easyVM_pushOnStack_literal(state, VAR_FLOAT, (u8 *)&value, false);
+
 			} break;
 			case OP_CODE_PRINT: {
 				EasyVM_Variable var = easyVM_popOffStack(state, VAR_NULL);

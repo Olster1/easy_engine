@@ -20,6 +20,7 @@ FUNC(LOGIC_BLOCK_END_FUNCTION)\
 FUNC(LOGIC_BLOCK_START_FUNCTION)\
 FUNC(LOGIC_BLOCK_UPDATE_VARIABLE)\
 FUNC(LOGIC_BLOCK_LOOP_END)\
+FUNC(LOGIC_BLOCK_WHILE_END)\
 
 
 typedef enum {
@@ -28,7 +29,7 @@ typedef enum {
 
 static char *global_logicBlockTypeStrings[] = { LOGIC_BLOCK_TYPE(STRING) };
 
-static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable", "Print", "End When", "End Function", "Start Function", "Update Variable", "Loop End"};
+static char *global_logicBlockTypeTidyStrings[] = { "Null", "Clear Color", "Push Scope", "Pop Scope", "Loop", "Draw Rectangle", "Play Sound", "When",  "Button Pressed", "Button Held Down", "Button Released", "Draw Circle", "While",  "Draw Cube", "Create Variable", "Print", "End When", "End Function", "Start Function", "Update Variable", "Loop End", "While End"};
 
 static LogicBlockType global_logicBlockTypes[] = { LOGIC_BLOCK_TYPE(ENUM) };
 
@@ -220,8 +221,11 @@ static void initBlock(LogicBlock *block, LogicBlockType type) {
 			logicBlock_addParameter(block, "Position", VAR_V3, "0");
 			logicBlock_addParameter(block, "Color", VAR_V4, "1.0");
 		} break;
-		case LOGIC_BLOCK_WHILE: {
+		case LOGIC_BLOCK_WHILE_END: {
 
+		} break;
+		case LOGIC_BLOCK_WHILE: {
+			logicBlock_addParameter(block, "Value", VAR_BOOL, "false");
 		} break;
 		case LOGIC_BLOCK_DRAW_CUBE: {
 			logicBlock_addParameter(block, "Size", VAR_V3, "1");
@@ -469,9 +473,10 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 					easyVM_writeLiteral(state, varToWrite);
 
 					//NOTE(ollie): There has to be a math operator every second node
-					if(nodeAt->next && !(nodeAt->next->type == EASY_AST_NODE_OPERATOR_MATH || nodeAt->next->type == EASY_AST_NODE_EVALUATE)) {
+					if(nodeAt->next && !(nodeAt->next->type == EASY_AST_NODE_OPERATOR_MATH || nodeAt->next->type == EASY_AST_NODE_EVALUATE || nodeAt->next->type == EASY_AST_NODE_OPERATOR_COMMA)) {
 						finished = true;
 						easyAst_addError(&ast, "There is supposed to be a math symbol following literals. ", 0);
+						assert(false);
 					}
 
 				} else if(nodeAt->type == EASY_AST_NODE_VARIABLE) {
@@ -503,6 +508,8 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 
 				} else if(nodeAt->type == EASY_AST_NODE_FUNCTION_SIN) {
 
+				} else if(nodeAt->type == EASY_AST_NODE_OPERATOR_COMMA) {
+
 				} else {
 					easyAst_addError(&ast, "There was a unkown symbol in the expression.", 0);
 					assert(false);
@@ -514,12 +521,15 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 					if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_MATH) {
 						easyVM_writeMathOpCode(state, nodeAt);
 					} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_COS) {
-						//TODO(ollie): Error to user,forgot barkets?
+						//TODO(ollie): Error to user,forgot brackets?
 						assert(false);
 					} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_SIN) {
-						//TODO(ollie): Error to user,forgot barkets?
+						//TODO(ollie): Error to user,forgot brackets?
+						assert(false);
+					} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_FUNCTION) {
 						assert(false);
 					}
+
 					////////////////////////////////////////////////////////////////////
 
 					if(nodeAt->next) {
@@ -544,6 +554,11 @@ static void writeArguments(EasyVM_State *state, LogicBlock *block) {
 									easyVM_writeOpCode(state, OP_CODE_COSINE);
 								} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_FUNCTION_SIN) {
 									easyVM_writeOpCode(state, OP_CODE_SIN);
+								} else if(nodeAt->prev && nodeAt->prev->type == EASY_AST_NODE_OPERATOR_FUNCTION) {
+									if(stringsMatchNullN("rand", nodeAt->prev->token.at, nodeAt->prev->token.size)) {
+										easyVM_writeOpCode(state, OP_CODE_RANDOM_BETWEEN);
+									}
+									
 								}
 								////////////////////////////////////////////////////////////////////
 								////////////////////////////////////////////////////////////////////
@@ -685,6 +700,8 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		easyVM_writeOpCode(state, OP_CODE_PRINT);
 	    	} break;
 	    	case LOGIC_BLOCK_END_WHEN: {
+	    		easyVM_writeOpCode(state, OP_CODE_POP_SCOPE);
+
 	    		EasyVM_GotoLiteral lit = easyVM_popGoToLiteral(state);
 	    		assert(lit.partnerId == block->id);
 
@@ -693,7 +710,7 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		//NOTE(ollie): Write where the opcode stream is up to 
 	    		at->intVal = state->opCodeStreamLength;
 
-	    		easyVM_writeOpCode(state, OP_CODE_POP_SCOPE);
+	    		
 
 	    	} break;
 	    	case LOGIC_BLOCK_WHEN: {
@@ -715,6 +732,47 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	    		easyVM_writeOpCode(state, OP_CODE_WHEN);
 	    		easyVM_writeOpCode(state, OP_CODE_PUSH_SCOPE);
 	    	} break;
+	    	case LOGIC_BLOCK_WHILE_END: {
+	    		easyVM_writeOpCode(state, OP_CODE_POP_SCOPE);
+
+	    		EasyVM_GotoLiteral lit = easyVM_popGoToLiteral(state);
+	    		assert(lit.partnerId == block->id);
+
+	    		//NOTE(ollie): Write Where to jump back to, to retest the if statement of the loop
+	    		EasyVM_Variable varToWrite = {0};
+	    		varToWrite.type = VAR_INT;
+	    		varToWrite.intVal = lit.gotoLoopEnd;
+	    		easyVM_writeLiteral(state, varToWrite);
+	    		easyVM_writeOpCode(state, OP_CODE_GOTO);
+
+	    		//NOTE(ollie): Now write Where to jump to, to avoid the while loop
+	    		EasyVM_Variable *at = (EasyVM_Variable *)(state->opCodeStream + lit.offsetAt);	
+	    		assert(at->type == VAR_INT);
+	    		//NOTE(ollie): Write where the opcode stream is up to 
+	    		at->intVal = state->opCodeStreamLength;
+
+	    	} break;
+	    	case LOGIC_BLOCK_WHILE: {
+	    		u32 streamBeforeWhile = state->opCodeStreamLength;
+	    		writeArguments(state, block);
+
+	    		{
+		    		EasyVM_Variable varToWrite = {0};
+		    		varToWrite.type = VAR_INT;
+
+
+		    		EasyVM_GotoLiteral lit = {0};
+
+		    		lit.offsetAt = easyVM_writeLiteral(state, varToWrite);
+		    		lit.partnerId = block->partnerId;
+		    		lit.gotoLoopEnd = streamBeforeWhile;
+
+		    		easyVM_pushGoToLiteral(state, lit);
+	    		}
+
+	    		easyVM_writeOpCode(state, OP_CODE_WHEN);
+	    		easyVM_writeOpCode(state, OP_CODE_PUSH_SCOPE);
+	    	} break;
 	    	default: {
 	    		//NOTE(ollie): Shouldn't be here!
 	    		// assert(false);
@@ -725,4 +783,26 @@ static void compileLogicBlocks(LogicBlock_Set *set, EasyVM_State *state, V2 fuax
 	 easyVM_writeOpCode(state, OP_CODE_EXIT);
 }
 
+
+////////////////////////////////////////////////////////////////////
+
+static LogicBlockType logicBlock_getEndBlockType(LogicBlockType type) {
+	LogicBlockType result = LOGIC_BLOCK_NULL;
+
+	switch(type) {
+		case LOGIC_BLOCK_WHEN: {
+			result = LOGIC_BLOCK_END_WHEN;
+		} break;
+		case LOGIC_BLOCK_LOOP: {
+			result = LOGIC_BLOCK_LOOP_END;
+		} break;
+		case LOGIC_BLOCK_WHILE: {
+			result = LOGIC_BLOCK_WHILE_END;
+		} break;
+		default: {
+			assert(false);
+		}
+	}
+	return result;
+}
 

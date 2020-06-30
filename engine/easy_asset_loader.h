@@ -1,7 +1,8 @@
-int loadAndAddImagesToAssets(char *folderName) {
+#define loadAndAddImagesToAssets(folderName) loadAndAddImagesToAssets_(concatInArena(globalExeBasePath, folderName, &globalPerFrameArena))
+int loadAndAddImagesToAssets_(char *folderNameAbsolute) {
 	DEBUG_TIME_BLOCK()
 	char *imgFileTypes[] = {"jpg", "jpeg", "png", "bmp", "PNG"};
-	FileNameOfType fileNames = getDirectoryFilesOfType(concat(globalExeBasePath, folderName), imgFileTypes, arrayCount(imgFileTypes));
+	FileNameOfType fileNames = getDirectoryFilesOfType(folderNameAbsolute, imgFileTypes, arrayCount(imgFileTypes));
 	int result = fileNames.count;
 	
 	for(int i = 0; i < fileNames.count; ++i) {

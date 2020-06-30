@@ -21,9 +21,58 @@ typedef struct Asset {
 	Asset *next;
 } Asset;
 
+typedef struct {
+    char *name;
+    AssetType type;
+} EasyAssetIdentifier;
+
 #define GLOBAL_ASSET_ARRAY_SIZE 4096
 //NOTE(ol): This gets allocated in the easy_os when starting up the app
 static Asset **assets = 0;
+
+#define EASY_ASSET_IDENTIFIER_INCREMENT 512
+
+typedef struct {
+    u32 totalCount;
+    u32 count;
+
+    EasyAssetIdentifier *identifiers;
+
+} EasyAssetIdentifier_State;
+
+static EasyAssetIdentifier_State global_easyArrayIdentifierstate;
+
+static void easyAssets_initAssetIdentifier(EasyAssetIdentifier_State *state) {
+    state->count = 0;
+    state->totalCount = 0;
+    state->identifiers = 0;
+}
+
+static void easyAssets_addAssetIdentifier(EasyAssetIdentifier_State *state, char *name, AssetType type) {
+    EasyAssetIdentifier id = {0};
+    id.name = name;
+    id.type = type;
+
+    if(state->count >= state->totalCount) {
+        //NOTE(ollie): Resize the array 
+        u32 oldSize = state->count*sizeof(EasyAssetIdentifier);
+
+        state->totalCount += EASY_ASSET_IDENTIFIER_INCREMENT;
+
+        u32 newSize = state->totalCount*sizeof(EasyAssetIdentifier);
+
+        if(state->identifiers) {
+            state->identifiers = (EasyAssetIdentifier *)easyPlatform_reallocMemory(state->identifiers, oldSize, newSize);
+        } else {
+            state->identifiers = (EasyAssetIdentifier *)easyPlatform_allocateMemory(newSize, EASY_PLATFORM_MEMORY_NONE);
+        }
+
+    }
+
+    assert(state->count < state->totalCount);
+    state->identifiers[state->count++] = id;
+    
+}
 
 int getAssetHash(char *at, int maxSize) {
     DEBUG_TIME_BLOCK()
@@ -155,26 +204,32 @@ static void easyAsset_removeAsset(char *fileName) {
 
 Asset *addAssetTexture(char *fileName, Texture *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
+
+    easyAssets_addAssetIdentifier(&global_easyArrayIdentifierstate, result->name, ASSET_TEXTURE);
     return result;
 }
 
 Asset *addAssetSound(char *fileName, WavFile *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
+    easyAssets_addAssetIdentifier(&global_easyArrayIdentifierstate, result->name, ASSET_SOUND);
     return result;
 }
 
 Asset *addAssetEvent(char *fileName, Event *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
+    easyAssets_addAssetIdentifier(&global_easyArrayIdentifierstate, result->name, ASSET_EVENT);
     return result;
 }
 
 Asset *addAssetMaterial(char *fileName, EasyMaterial *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
+    easyAssets_addAssetIdentifier(&global_easyArrayIdentifierstate, result->name, ASSET_MATERIAL);
     return result;
 }
 
 Asset *addAssetModel(char *fileName, EasyModel *asset) { // we have these for type checking
     Asset *result = addAsset_(fileName, asset);
+    easyAssets_addAssetIdentifier(&global_easyArrayIdentifierstate, result->name, ASSET_MODEL);
     return result;
 }
 

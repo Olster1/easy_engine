@@ -8,6 +8,7 @@ typedef struct {
 	V2 mouseP_left_up;
 
 	char *inputString;
+    char *droppedFilePath;
     
 	int scrollWheelY;
 } AppKeyStates;
